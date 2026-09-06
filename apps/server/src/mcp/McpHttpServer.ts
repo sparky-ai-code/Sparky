@@ -15,6 +15,8 @@ import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import { PluginToolkitHandlersLive } from "./toolkits/plugins/handlers.ts";
 import { PluginToolkit } from "./toolkits/plugins/tools.ts";
+import { ThreadToolkitHandlersLive } from "./toolkits/threads/handlers.ts";
+import { ThreadToolkit } from "./toolkits/threads/tools.ts";
 import {
   PreviewSnapshotToolkitHandlersLive,
   PreviewStandardToolkitHandlersLive,
@@ -214,9 +216,14 @@ export const PluginToolkitRegistrationLive = McpServer.toolkit(PluginToolkit).pi
   Layer.provide(PluginToolkitHandlersLive),
 );
 
+export const ThreadToolkitRegistrationLive = McpServer.toolkit(ThreadToolkit).pipe(
+  Layer.provide(ThreadToolkitHandlersLive),
+);
+
 const ToolkitRegistrationLive = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   PluginToolkitRegistrationLive,
+  ThreadToolkitRegistrationLive,
 );
 
 const McpTransportLive = McpServer.layerHttp({

@@ -260,7 +260,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain(className);
   });
 
-  it("assigns distinct semantic icons to filesystem and search tools", () => {
+  it("uses the Sparky logo for every tool call", () => {
     const tools = [
       { name: "ls", iconClass: "lucide-folder" },
       { name: "list_files", iconClass: "lucide-folder" },
@@ -283,7 +283,7 @@ describe("MessagesTimeline", () => {
     ]);
     expect(new Set(iconNames).size).toBe(6);
 
-    for (const { name, iconClass } of tools) {
+    for (const { name } of tools) {
       const markup = renderToStaticMarkup(
         <MessagesTimeline
           {...buildProps()}
@@ -305,7 +305,7 @@ describe("MessagesTimeline", () => {
         />,
       );
 
-      expect(markup).toContain(iconClass);
+      expect(markup).toContain("sparky-logo-small.svg");
     }
   });
 

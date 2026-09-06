@@ -209,40 +209,49 @@ const buildCmd = Command.make(
 // stage desktop runtime subcommand
 // ---------------------------------------------------------------------------
 
-const stageDesktopRuntimeCmd = Command.make(
-  "stage-desktop-runtime",
-  {},
-  () =>
-    Effect.gen(function* () {
-      const path = yield* Path.Path;
-      const fs = yield* FileSystem.FileSystem;
-      const repoRoot = yield* RepoRoot;
-      const desktopDir = path.join(repoRoot, "apps/desktop");
-      const serverDir = path.join(repoRoot, "apps/server");
-      const desktopDist = path.join(desktopDir, "dist-electron");
-      const desktopResources = path.join(desktopDir, "resources");
-      const stagedDesktopDir = path.join(serverDir, "dist/desktop");
-      const sparkyExecutable = process.platform === "win32" ? "sparky.exe" : "sparky";
-      const sparkyBinary = path.resolve(repoRoot, "..", "..", "target", "release", sparkyExecutable);
-
-      for (const sourcePath of [desktopDist, desktopResources]) {
-        if (!(yield* fs.exists(sourcePath))) {
-          return yield* new ServerCliBuildAssetMissingError({ assetPath: sourcePath });
-        }
+const stageDesktopRuntimeCmd = Command.make("stage-desktop-runtime", {}, () =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const fs = yield* FileSystem.FileSystem;
+    const repoRoot = yield* RepoRoot;
+    const desktopDir = path.join(repoRoot, "apps/desktop");
+    const serverDir = path.join(repoRoot, "apps/server");
+    const desktopDist = path.join(desktopDir, "dist-electron");
+    const desktopResources = path.join(desktopDir, "resources");
+    const stagedDesktopDir = path.join(serverDir, "dist/desktop");
+    const sparkyExecutable = process.platform === "win32" ? "sparky.exe" : "sparky";
+    const sparkyBinaryCandidates = [
+      path.join(repoRoot, "target", "release", sparkyExecutable),
+      path.resolve(repoRoot, "..", "..", "target", "release", sparkyExecutable),
+    ];
+    let sparkyBinary = sparkyBinaryCandidates[0]!;
+    for (const candidate of sparkyBinaryCandidates) {
+      if (yield* fs.exists(candidate)) {
+        sparkyBinary = candidate;
+        break;
       }
+    }
 
-      yield* fs.remove(stagedDesktopDir, { recursive: true, force: true });
-      yield* fs.makeDirectory(stagedDesktopDir, { recursive: true });
-      yield* fs.copy(desktopDist, path.join(stagedDesktopDir, "dist-electron"));
-      yield* fs.copy(desktopResources, path.join(stagedDesktopDir, "resources"));
-      if (!(yield* fs.exists(sparkyBinary))) {
-        return yield* new ServerCliBuildAssetMissingError({ assetPath: sparkyBinary });
+    for (const sourcePath of [desktopDist, desktopResources]) {
+      if (!(yield* fs.exists(sourcePath))) {
+        return yield* new ServerCliBuildAssetMissingError({ assetPath: sourcePath });
       }
-      const stagedSparkyDir = path.join(stagedDesktopDir, "resources", "sparky");
-      yield* fs.makeDirectory(stagedSparkyDir, { recursive: true });
-      yield* fs.copyFile(sparkyBinary, path.join(stagedSparkyDir, sparkyExecutable));
-      yield* Effect.log("[cli] Staged native Electron runtime into the npm package.");
-    }),
+    }
+
+    yield* fs.remove(stagedDesktopDir, { recursive: true, force: true });
+    yield* fs.makeDirectory(stagedDesktopDir, { recursive: true });
+    yield* fs.copy(desktopDist, path.join(stagedDesktopDir, "dist-electron"));
+    yield* fs.copy(desktopResources, path.join(stagedDesktopDir, "resources"));
+    if (!(yield* fs.exists(sparkyBinary))) {
+      return yield* new ServerCliBuildAssetMissingError({
+        assetPath: sparkyBinaryCandidates.join(" or "),
+      });
+    }
+    const stagedSparkyDir = path.join(stagedDesktopDir, "resources", "sparky");
+    yield* fs.makeDirectory(stagedSparkyDir, { recursive: true });
+    yield* fs.copyFile(sparkyBinary, path.join(stagedSparkyDir, sparkyExecutable));
+    yield* Effect.log("[cli] Staged native Electron runtime into the npm package.");
+  }),
 ).pipe(Command.withDescription("Stage the native Electron desktop runtime into the npm package."));
 
 // ---------------------------------------------------------------------------

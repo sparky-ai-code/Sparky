@@ -1,0 +1,32 @@
+[package]
+name = "sparky_cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "sparky"
+path = "src/main.rs"
+
+[dependencies]
+sparky_ai = { path = "../sparky_ai" }
+sparky_tools = { path = "../sparky_tools" }
+sparky_memory = { path = "../sparky_memory" }
+sparky_session = { path = "../sparky_session" }
+sparky_compaction = { path = "../sparky_compaction" }
+sparky_prompt = { path = "../sparky_prompt" }
+sparky_extensions = { path = "../sparky_extensions" }
+sparky_agent = { path = "../sparky_agent" }
+sparky_config = { path = "../sparky_config" }
+tokio.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+dotenvy.workspace = true
+base64.workspace = true

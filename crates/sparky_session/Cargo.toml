@@ -1,0 +1,20 @@
+[package]
+name = "sparky_session"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+sparky_ai = { path = "../sparky_ai" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+tempfile = "3.8"
+

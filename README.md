@@ -60,8 +60,16 @@ pnpm test:desktop-smoke
 Build the desktop runtime without producing an installer:
 
 ```bash
+cargo build --release -p sparky_cli
 pnpm build:desktop
 ```
+
+The Rust backend is part of this repository and must be built before packaging.
+The public release workflow in `.github/workflows/release-build.yml` builds the
+Rust backend and the JavaScript/Electron layers on the correct platform runners,
+then produces Windows, macOS x64/arm64, and Linux AppImage/DEB artifacts. It
+uses repository Secrets and Variables for optional signing and public runtime
+configuration; no credentials are stored in source control.
 
 ### Windows installers
 

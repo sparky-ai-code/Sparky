@@ -1,0 +1,21 @@
+[package]
+name = "sparky_extensions"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+sparky_ai = { path = "../sparky_ai" }
+sparky_tools = { path = "../sparky_tools" }
+sparky_session = { path = "../sparky_session" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+boa_engine.workspace = true
+
+[dev-dependencies]
+tempfile = "3.8"

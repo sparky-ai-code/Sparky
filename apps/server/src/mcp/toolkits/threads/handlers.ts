@@ -166,6 +166,29 @@ type ModelSelectionResolution =
   | { readonly selection: ModelSelection; readonly provider: ServerProvider }
   | { readonly error: ToolResult };
 
+export function modelSelectionsMatch(left: ModelSelection, right: ModelSelection): boolean {
+  return (
+    left.instanceId === right.instanceId &&
+    left.model === right.model &&
+    left.contextWindowSource === right.contextWindowSource &&
+    JSON.stringify(left.options ?? null) === JSON.stringify(right.options ?? null)
+  );
+}
+
+const waitForPersistedModelSelection = Effect.fnUntraced(function* (
+  query: ProjectionSnapshotQuery["Service"],
+  threadId: ThreadId,
+  expected: ModelSelection,
+) {
+  const maxAttempts = 80;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const thread = Option.getOrUndefined(yield* query.getThreadShellById(threadId));
+    if (thread && modelSelectionsMatch(thread.modelSelection, expected)) return thread;
+    if (attempt + 1 < maxAttempts) yield* Effect.sleep("25 millis");
+  }
+  return undefined;
+});
+
 function providerIsSelectable(provider: ServerProvider): boolean {
   return (
     provider.enabled &&
@@ -429,11 +452,23 @@ const handlers = {
         threadId,
         modelSelection: resolved.selection,
       });
+      const persistedThread = yield* waitForPersistedModelSelection(
+        query,
+        threadId,
+        resolved.selection,
+      );
+      if (!persistedThread) {
+        return errorResult(
+          "model_set_not_persisted",
+          `The requested model selection was not visible in the authoritative thread state after dispatch. The selection was not reported as applied; retry after the thread projection catches up.`,
+          { threadId, selection: modelSelectionResult(resolved.selection, resolved.provider) },
+        );
+      }
       return ok(`Selected ${resolved.selection.model} for ${thread.title}.`, {
         threadId,
         title: thread.title,
         deepLink: deepLink(invocation.environmentId, threadId),
-        selection: modelSelectionResult(resolved.selection, resolved.provider),
+        selection: modelSelectionResult(persistedThread.modelSelection, resolved.provider),
       });
     }).pipe(
       Effect.catch((error) => Effect.succeed(errorResult("model_set_failed", errorMessage(error)))),

@@ -1,0 +1,139 @@
+import type {
+  AuthClientMetadata,
+  AuthClientMetadataDeviceType,
+  AuthClientPresentationMetadata,
+} from "@sparky/contracts";
+import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as NodeCrypto from "node:crypto";
+import * as Encoding from "effect/Encoding";
+import * as Result from "effect/Result";
+
+const SESSION_COOKIE_NAME = "t3_session";
+
+export function resolveSessionCookieName(input: {
+  readonly mode: "web" | "desktop";
+  readonly port: number;
+}): string {
+  if (input.mode !== "desktop") {
+    return SESSION_COOKIE_NAME;
+  }
+
+  return `${SESSION_COOKIE_NAME}_${input.port}`;
+}
+
+export function base64UrlEncode(input: string | Uint8Array): string {
+  return typeof input === "string"
+    ? Encoding.encodeBase64Url(new TextEncoder().encode(input))
+    : Encoding.encodeBase64Url(input);
+}
+
+export function base64UrlDecodeUtf8(input: string): string {
+  return Result.getOrThrow(Encoding.decodeBase64UrlString(input));
+}
+
+export function signPayload(payload: string, secret: Uint8Array): string {
+  return NodeCrypto.createHmac("sha256", Buffer.from(secret)).update(payload).digest("base64url");
+}
+
+export function timingSafeEqualBase64Url(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left, "base64url");
+  const rightBuffer = Buffer.from(right, "base64url");
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+  return NodeCrypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function normalizeNonEmptyString(value: string | null | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeIpAddress(value: string | null | undefined): string | undefined {
+  const normalized = normalizeNonEmptyString(value);
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized.startsWith("::ffff:") ? normalized.slice("::ffff:".length) : normalized;
+}
+
+function inferDeviceType(userAgent: string | undefined): AuthClientMetadataDeviceType {
+  if (!userAgent) {
+    return "unknown";
+  }
+
+  const normalized = userAgent.toLowerCase();
+  if (/bot|crawler|spider|slurp|curl|wget/.test(normalized)) {
+    return "bot";
+  }
+  if (/ipad|tablet/.test(normalized)) {
+    return "tablet";
+  }
+  if (/iphone|android.+mobile|mobile/.test(normalized)) {
+    return "mobile";
+  }
+  return "desktop";
+}
+
+function inferBrowser(userAgent: string | undefined): string | undefined {
+  if (!userAgent) {
+    return undefined;
+  }
+  const normalized = userAgent.toLowerCase();
+  if (/edg\//.test(normalized)) return "Edge";
+  if (/opr\//.test(normalized)) return "Opera";
+  if (/firefox\//.test(normalized)) return "Firefox";
+  if (/electron\//.test(normalized)) return "Electron";
+  if (/chrome\//.test(normalized) || /crios\//.test(normalized)) return "Chrome";
+  if (/safari\//.test(normalized) && !/chrome\//.test(normalized)) return "Safari";
+  return undefined;
+}
+
+function inferOs(userAgent: string | undefined): string | undefined {
+  if (!userAgent) {
+    return undefined;
+  }
+  const normalized = userAgent.toLowerCase();
+  if (/iphone|ipad|ipod/.test(normalized)) return "iOS";
+  if (/android/.test(normalized)) return "Android";
+  if (/mac os x|macintosh/.test(normalized)) return "macOS";
+  if (/windows nt/.test(normalized)) return "Windows";
+  if (/linux/.test(normalized)) return "Linux";
+  return undefined;
+}
+
+function readRemoteAddressFromSource(source: unknown): string | undefined {
+  if (!source || typeof source !== "object") {
+    return undefined;
+  }
+
+  const candidate = source as {
+    readonly remoteAddress?: string | null;
+    readonly socket?: {
+      readonly remoteAddress?: string | null;
+    };
+  };
+
+  return normalizeIpAddress(candidate.socket?.remoteAddress ?? candidate.remoteAddress);
+}
+
+export function deriveAuthClientMetadata(input: {
+  readonly request: HttpServerRequest.HttpServerRequest;
+  readonly presented?: AuthClientPresentationMetadata;
+}): AuthClientMetadata {
+  const userAgent = normalizeNonEmptyString(input.request.headers["user-agent"]);
+  const ipAddress = readRemoteAddressFromSource(input.request.source);
+  const os = input.presented?.os ?? inferOs(userAgent);
+  const browser = inferBrowser(userAgent);
+  return {
+    ...(input.presented?.label ? { label: input.presented.label } : {}),
+    ...(ipAddress ? { ipAddress } : {}),
+    ...(userAgent ? { userAgent } : {}),
+    deviceType: input.presented?.deviceType ?? inferDeviceType(userAgent),
+    ...(os ? { os } : {}),
+    ...(browser ? { browser } : {}),
+  };
+}

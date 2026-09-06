@@ -1,0 +1,35 @@
+.chat-composer-context-strip {
+  --chat-composer-outline: rgb(0 0 0 / 8%);
+  position: relative;
+  isolation: isolate;
+}
+
+.chat-composer-context-strip::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border: 1px solid var(--chat-composer-outline);
+  border-radius: 0 0 16px 16px;
+  /* Match T3Code: the strip outline begins where the composer's curve reaches its tangent. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0 1rem, black 1rem);
+  mask-image: linear-gradient(to bottom, transparent 0 1rem, black 1rem);
+  box-shadow: 0 12px 28px -18px rgb(0 0 0 / 40%);
+  content: "";
+}
+
+.dark .chat-composer-context-strip {
+  --chat-composer-outline: color-mix(in srgb, var(--color-white) 5%, transparent);
+}
+
+.dark .chat-composer-context-strip::before {
+  border-color: rgb(255 255 255 / 7%);
+  background:
+    linear-gradient(
+      to bottom,
+      transparent 0 1rem,
+      rgb(0 0 0 / 18%) 1rem,
+      transparent calc(1rem + 10px)
+    ),
+    rgb(255 255 255 / 2%);
+  box-shadow: 0 14px 32px -18px rgb(0 0 0 / 75%);
+}

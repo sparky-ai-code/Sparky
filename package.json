@@ -1,0 +1,53 @@
+{
+  "name": "@sparky/monorepo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "effect-tsgo patch && vp config --no-agent",
+    "dev": "node scripts/dev-runner.ts dev",
+    "dev:server": "node scripts/dev-runner.ts dev:server",
+    "dev:web": "node scripts/dev-runner.ts dev:web",
+    "dev:desktop": "node scripts/dev-runner.ts dev:desktop",
+    "start": "vp run --filter t3 start",
+    "start:desktop": "vp run --filter @sparky/desktop start",
+    "icons:export": "node scripts/export-brand-icons.ts",
+    "icons:check": "node scripts/export-brand-icons.ts --check",
+    "build": "vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build",
+    "build:desktop": "vp run --filter @sparky/desktop --filter t3 build && node apps/server/scripts/cli.ts stage-desktop-runtime",
+    "typecheck": "vp run -r --concurrency-limit 2 typecheck",
+    "tc": "vp run -r --concurrency-limit 2 typecheck",
+    "lint": "vp lint --report-unused-disable-directives",
+    "test": "vp run -r test",
+    "test:desktop-smoke": "vp run --filter @sparky/desktop smoke-test",
+    "fmt": "vp fmt",
+    "fmt:check": "vp fmt --check",
+    "build:contracts": "vp run --filter @sparky/contracts build",
+    "dist:desktop:artifact": "node scripts/build-desktop-artifact.ts",
+    "dist:desktop:dmg": "node scripts/build-desktop-artifact.ts --platform mac --target dmg",
+    "dist:desktop:dmg:arm64": "node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64",
+    "dist:desktop:dmg:x64": "node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch x64",
+    "dist:desktop:linux": "node scripts/build-desktop-artifact.ts --platform linux --target AppImage --arch x64",
+    "dist:desktop:linux:deb": "node scripts/build-desktop-artifact.ts --platform linux --target deb --arch x64",
+    "dist:desktop:win": "node scripts/build-desktop-artifact.ts --platform win --target nsis",
+    "dist:desktop:win:arm64": "node scripts/build-desktop-artifact.ts --platform win --target nsis --arch arm64",
+    "dist:desktop:win:x64": "node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64",
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist apps/*/dist-electron packages/*/dist .vite-plus apps/*/.vite-plus packages/*/.vite-plus"
+  },
+  "devDependencies": {
+    "@babel/plugin-transform-react-jsx": "7.28.6",
+    "@effect/tsgo": "catalog:",
+    "@oxlint/plugins": "^1.63.0",
+    "@types/node": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": "^24.13.1"
+  },
+  "packageManager": "pnpm@11.10.0",
+  "msw": {
+    "workerDirectory": [
+      "apps/web/public"
+    ]
+  }
+}

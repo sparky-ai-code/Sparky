@@ -1,0 +1,38 @@
+{
+  "name": "@sparky/desktop",
+  "version": "1.1.13",
+  "private": true,
+  "author": "Sparky contributors",
+  "type": "module",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "ensure:electron": "node scripts/ensure-electron-runtime.mjs",
+    "start": "node scripts/start-electron.mjs",
+    "typecheck": "tsgo --noEmit",
+    "test": "vp test run --passWithNoTests",
+    "smoke-test": "node scripts/smoke-test.mjs"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@sparky/client-runtime": "workspace:*",
+    "@sparky/contracts": "workspace:*",
+    "@sparky/shared": "workspace:*",
+    "@sparky/ssh": "workspace:*",
+    "@sparky/tailscale": "workspace:*",
+    "effect": "catalog:",
+    "electron": "41.5.0",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.6.2",
+    "playwright-core": "1.60.0",
+    "react-grab": "^0.1.32"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "cross-env": "^10.1.0",
+    "electron-builder": "26.15.6",
+    "tailwindcss": "^4.0.0",
+    "vite-plus": "catalog:"
+  },
+  "productName": "Sparky"
+}

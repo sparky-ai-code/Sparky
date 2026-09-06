@@ -8,6 +8,7 @@ import {
 } from "@sparky/contracts";
 import {
   modelSelectionsMatch,
+  mergeModelSelectionOptions,
   resolveModelSelectionForProviders,
   resolveProjectTarget,
 } from "./handlers.ts";
@@ -30,6 +31,7 @@ const provider = (input: {
     readonly slug: string;
     readonly contextWindowSource?: "oauth" | "provider";
     readonly isDefault?: boolean;
+    readonly capabilities?: ServerProvider["models"][number]["capabilities"];
   }>;
 }): ServerProvider => ({
   instanceId: ProviderInstanceId.make(input.instanceId),
@@ -49,7 +51,7 @@ const provider = (input: {
     slug: model.slug,
     name: model.slug,
     isCustom: false,
-    capabilities: null,
+    capabilities: model.capabilities ?? null,
     ...(model.contextWindowSource ? { contextWindowSource: model.contextWindowSource } : {}),
     ...(model.isDefault ? { isDefault: true } : {}),
   })),
@@ -160,5 +162,73 @@ describe("cross-project model routing", () => {
         options: [{ id: "reasoningEffort", value: "low" as const }],
       }),
     ).toBe(false);
+  });
+
+  it("exposes and validates exact OAuth reasoning choices", () => {
+    const oauthWithEffort = provider({
+      instanceId: "sparky",
+      auth: "authenticated",
+      models: [
+        {
+          slug: "openai-codex/gpt-5.6-sol",
+          isDefault: true,
+          capabilities: {
+            optionDescriptors: [
+              {
+                id: "reasoningEffort",
+                label: "Reasoning effort",
+                type: "select",
+                options: [
+                  { id: "low", label: "Low" },
+                  { id: "high", label: "High" },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(
+      resolveModelSelectionForProviders([oauthWithEffort], {
+        providerInstanceId: "sparky",
+        model: "openai-codex/gpt-5.6-sol",
+        options: [{ id: "reasoningEffort", value: "high" }],
+        validateOptions: true,
+      }),
+    ).toMatchObject({
+      selection: {
+        instanceId: ProviderInstanceId.make("sparky"),
+        model: "openai-codex/gpt-5.6-sol",
+        options: [{ id: "reasoningEffort", value: "high" }],
+      },
+    });
+
+    expect(
+      resolveModelSelectionForProviders([oauthWithEffort], {
+        providerInstanceId: "sparky",
+        model: "openai-codex/gpt-5.6-sol",
+        options: [{ id: "reasoningEffort", value: "xhigh" }],
+        validateOptions: true,
+      }),
+    ).toMatchObject({ error: { data: { code: "unsupported_model_option" } } });
+  });
+
+  it("lets explicit effort override an inherited option without dropping other settings", () => {
+    expect(
+      mergeModelSelectionOptions(
+        [
+          { id: "reasoningEffort", value: "low" },
+          { id: "fastMode", value: true },
+        ],
+        { reasoningEffort: "high" },
+      ),
+    ).toEqual({
+      explicit: true,
+      options: [
+        { id: "reasoningEffort", value: "high" },
+        { id: "fastMode", value: true },
+      ],
+    });
   });
 });

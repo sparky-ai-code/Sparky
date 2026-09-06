@@ -1,0 +1,254 @@
+name: Build public desktop installers
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "SemVer to verify for a manual build"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - id: version
+        name: Resolve version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${{ inputs.version }}"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release version: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Verify release parity
+        shell: pwsh
+        run: ./scripts/assert-release-parity.ps1 -ExpectedVersion "${{ steps.version.outputs.version }}"
+
+  build-wsl-node-pty:
+    name: Build Windows WSL native dependency
+    needs: preflight
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install server dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile --filter './apps/*' --filter './packages/*' --filter './scripts'
+
+      - name: Build Linux node-pty prebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['./apps/server'] }))")"
+          pty_dir="$(dirname "$pty_pkg")"
+          ( cd "$pty_dir" && npx --yes node-gyp rebuild )
+          mkdir -p wsl-prebuild
+          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
+
+      - name: Upload WSL prebuild
+        uses: actions/upload-artifact@v4
+        with:
+          name: wsl-node-pty-x64
+          path: wsl-prebuild/pty.node
+          if-no-files-found: error
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: [preflight, build-wsl-node-pty]
+    if: ${{ !cancelled() && needs.preflight.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows x64
+            runner: windows-2025
+            platform: win
+            arch: x64
+            rust_target: x86_64-pc-windows-msvc
+            update_url: https://sparky.llc/get/updates/windows
+            package_command: dist:desktop:win:x64
+          - label: macOS x64
+            runner: macos-13
+            platform: mac
+            arch: x64
+            rust_target: x86_64-apple-darwin
+            update_url: https://sparky.llc/get/updates/macos/x64
+            package_command: dist:desktop:dmg:x64
+          - label: macOS arm64
+            runner: macos-14
+            platform: mac
+            arch: arm64
+            rust_target: aarch64-apple-darwin
+            update_url: https://sparky.llc/get/updates/macos/arm64
+            package_command: dist:desktop:dmg:arm64
+          - label: Linux x64
+            runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+            rust_target: x86_64-unknown-linux-gnu
+            update_url: https://sparky.llc/get/updates/linux
+            package_command: dist:desktop:linux
+    env:
+      SPARKY_UPDATE_URL: ${{ matrix.update_url }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.rust_target }}
+
+      - name: Build Rust backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.platform }}" == "mac" ]]; then
+            cargo build --release -p sparky_cli --target "${{ matrix.rust_target }}"
+          else
+            cargo build --release -p sparky_cli
+          fi
+
+      - name: Install JavaScript dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile --filter './apps/*' --filter './packages/*' --filter './scripts'
+
+      - name: Ensure Electron runtime
+        run: pnpm --filter @sparky/desktop ensure:electron
+
+      - name: Build web, server, and desktop bundles
+        env:
+          NODE_ENV: production
+        run: pnpm exec vp run --filter './apps/*' --filter './packages/*' --filter './scripts' build
+
+      - name: Download WSL prebuild
+        if: matrix.platform == 'win'
+        uses: actions/download-artifact@v4
+        with:
+          name: wsl-node-pty-x64
+          path: wsl-prebuild
+
+      - name: Build desktop package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf release release-appimage release-deb
+          mkdir -p release
+          if [[ "${{ matrix.platform }}" == "linux" ]]; then
+            mkdir -p release-appimage release-deb
+            T3CODE_DESKTOP_OUTPUT_DIR=release-appimage pnpm dist:desktop:linux
+            T3CODE_DESKTOP_OUTPUT_DIR=release-deb pnpm dist:desktop:linux:deb
+            appimage="$(find release-appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+            deb="$(find release-deb -maxdepth 1 -type f -name '*.deb' -print -quit)"
+            test -n "$appimage" && test -n "$deb"
+            cp "$appimage" release/Sparky-x64.AppImage
+            cp "$deb" release/Sparky-amd64.deb
+            if [[ -f release-appimage/latest-linux.yml ]]; then
+              cp release-appimage/latest-linux.yml release/latest-linux.yml
+            fi
+          elif [[ "${{ matrix.platform }}" == "win" ]]; then
+            pnpm dist:desktop:win:x64 -- --wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
+          else
+            pnpm "${{ matrix.package_command }}"
+          fi
+
+      - name: Normalize macOS updater manifest
+        if: matrix.platform == 'mac'
+        shell: bash
+        run: mv release/latest-mac.yml "release/latest-mac-${{ matrix.arch }}.yml"
+
+      - name: Verify generated artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          find release -maxdepth 1 -type f -printf '%f\n' | sort
+          if [[ "${{ matrix.platform }}" == "win" ]]; then
+            test -s release/Sparky-x64.exe
+            test -s release/Sparky-x64.exe.blockmap
+            test -s release/latest.yml
+          elif [[ "${{ matrix.platform }}" == "mac" ]]; then
+            test -s release/Sparky-${{ matrix.arch }}.dmg
+            test -s release/Sparky-${{ matrix.arch }}.zip
+            test -s "release/latest-mac-${{ matrix.arch }}.yml"
+          else
+            test -s release/Sparky-x64.AppImage
+            test -s release/Sparky-amd64.deb
+          fi
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish tagged release artifacts
+    needs: [preflight, build]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.build.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: release-assets/*

@@ -316,6 +316,7 @@ const DesktopBuildInputArtifact = Schema.Literals([
   "desktop-resources",
   "server-dist",
   "bundled-server-client",
+  "rust-backend",
 ]);
 type DesktopBuildInputArtifact = typeof DesktopBuildInputArtifact.Type;
 const desktopBuildInputArtifactNames = {
@@ -323,6 +324,7 @@ const desktopBuildInputArtifactNames = {
   "desktop-resources": "desktopResources",
   "server-dist": "serverDist",
   "bundled-server-client": "bundled server client",
+  "rust-backend": "Rust backend",
 } satisfies Record<DesktopBuildInputArtifact, string>;
 
 export class MissingDesktopBuildInputError extends Schema.TaggedErrorClass<MissingDesktopBuildInputError>()(
@@ -330,7 +332,7 @@ export class MissingDesktopBuildInputError extends Schema.TaggedErrorClass<Missi
   {
     artifact: DesktopBuildInputArtifact,
     artifactPath: Schema.String,
-    buildCommand: Schema.Literal("vp run build:desktop"),
+    buildCommand: Schema.String,
   },
 ) {
   override get message(): string {
@@ -1568,6 +1570,16 @@ const stageWslNodePtyPrebuild = Effect.fn("stageWslNodePtyPrebuild")(function* (
   );
 });
 
+const findFirstExistingPath = Effect.fn("findFirstExistingPath")(function* (
+  fs: FileSystem.FileSystem,
+  candidates: ReadonlyArray<string>,
+) {
+  for (const candidate of candidates) {
+    if (yield* fs.exists(candidate)) return candidate;
+  }
+  return undefined;
+});
+
 const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   options: ResolvedBuildOptions,
 ) {
@@ -1689,23 +1701,37 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* fs.copy(distDirs.desktopDist, path.join(stageAppDir, "apps/desktop/dist-electron"));
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
   yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
+  const rustTargetRoots = [
+    path.join(repoRoot, "target"),
+    path.resolve(repoRoot, "../..", "target"),
+  ];
   if (options.platform === "win") {
-    const sparkyBinary = path.resolve(repoRoot, "../..", "target", "release", "sparky.exe");
+    const candidates = rustTargetRoots.map((root) => path.join(root, "release", "sparky.exe"));
+    const sparkyBinary = yield* findFirstExistingPath(fs, candidates);
+    if (sparkyBinary === undefined) {
+      return yield* new MissingDesktopBuildInputError({
+        artifact: "rust-backend",
+        artifactPath: candidates.join(" or "),
+        buildCommand: "cargo build --release -p sparky_cli",
+      });
+    }
     const stagedSparkyDir = path.join(stageResourcesDir, "sparky");
     yield* fs.makeDirectory(stagedSparkyDir, { recursive: true });
     yield* fs.copyFile(sparkyBinary, path.join(stagedSparkyDir, "sparky.exe"));
   } else if (options.platform === "mac") {
     const rustTarget = options.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
-    const targetedBinary = path.resolve(
-      repoRoot,
-      "../..",
-      "target",
-      rustTarget,
-      "release",
-      "sparky",
-    );
-    const hostBinary = path.resolve(repoRoot, "../..", "target", "release", "sparky");
-    const sparkyBinary = (yield* fs.exists(targetedBinary)) ? targetedBinary : hostBinary;
+    const candidates = rustTargetRoots.flatMap((root) => [
+      path.join(root, rustTarget, "release", "sparky"),
+      path.join(root, "release", "sparky"),
+    ]);
+    const sparkyBinary = yield* findFirstExistingPath(fs, candidates);
+    if (sparkyBinary === undefined) {
+      return yield* new MissingDesktopBuildInputError({
+        artifact: "rust-backend",
+        artifactPath: candidates.join(" or "),
+        buildCommand: "cargo build --release -p sparky_cli",
+      });
+    }
     const stagedSparkyDir = path.join(stageResourcesDir, "sparky");
     yield* fs.makeDirectory(stagedSparkyDir, { recursive: true });
     yield* fs.copyFile(sparkyBinary, path.join(stagedSparkyDir, "sparky"));

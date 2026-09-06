@@ -1,13 +1,16 @@
+import { ProviderOptionSelections } from "@sparky/contracts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProviderRegistry } from "../../../provider/Services/ProviderRegistry.ts";
 
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
   ProjectionSnapshotQuery,
   OrchestrationEngineService,
+  ProviderRegistry,
 ];
 
 const ToolResult = Schema.Struct({
@@ -31,11 +34,25 @@ const CreateThreadInput = Schema.Struct({
   projectTitle: Schema.optional(Schema.String),
   title: Schema.optional(Schema.String),
   initialPrompt: Schema.String,
+  providerInstanceId: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  options: Schema.optional(ProviderOptionSelections),
   runtimeMode: Schema.optional(
     Schema.Literals(["approval-required", "auto-accept-edits", "full-access"]),
   ),
   interactionMode: Schema.optional(Schema.Literals(["default", "plan"])),
   idempotencyKey: Schema.optional(Schema.String),
+});
+
+const ListModelsInput = Schema.Struct({
+  query: Schema.optional(Schema.String),
+});
+
+const SetModelInput = Schema.Struct({
+  threadId: Schema.optional(Schema.String),
+  providerInstanceId: Schema.optional(Schema.String),
+  model: Schema.String,
+  options: Schema.optional(ProviderOptionSelections),
 });
 
 const SendMessageInput = Schema.Struct({
@@ -71,13 +88,37 @@ export const ListThreadsTool = Tool.make("sparky_list_threads", {
 
 export const CreateThreadTool = Tool.make("sparky_create_thread", {
   description:
-    "Create a new thread in an existing Sparky project and send its initial prompt. First call sparky_list_projects. Pass an exact projectId, or a projectTitle only when it uniquely identifies one project; if the title is ambiguous, stop and ask the user instead of guessing. Use idempotencyKey when retrying so a network retry cannot create a duplicate thread. The result includes a target-thread deep link.",
+    "Create a new thread in an existing Sparky project and send its initial prompt. By default, inherit the current thread's exact provider instance and model, including OAuth-backed selections; do not replace them with the target project's API-key default. To choose explicitly, pass providerInstanceId and model from sparky_list_models. First call sparky_list_projects. Pass an exact projectId, or a projectTitle only when it uniquely identifies one project; if the title is ambiguous, stop and ask the user instead of guessing. Use idempotencyKey when retrying so a network retry cannot create a duplicate thread. The result includes a target-thread deep link.",
   parameters: CreateThreadInput,
   success: ToolResult,
   failure: Schema.Never,
   dependencies,
 })
   .annotate(Tool.Title, "Create thread")
+  .annotate(Tool.Destructive, true)
+  .annotate(Tool.Idempotent, true);
+
+export const ListModelsTool = Tool.make("sparky_list_models", {
+  description:
+    "List the live configured provider instances, their authentication status, and selectable model slugs. Use this before explicit model selection. OAuth-backed Codex models are labeled with the openai-codex/ prefix; do not substitute openai/ models because those require OPENAI_API_KEY.",
+  parameters: ListModelsInput,
+  success: ToolResult,
+  failure: Schema.Never,
+  dependencies,
+})
+  .annotate(Tool.Title, "List models")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Idempotent, true);
+
+export const SetModelTool = Tool.make("sparky_set_model", {
+  description:
+    "Set the model for the current thread or an exact target thread. Pass the providerInstanceId and model returned by sparky_list_models when switching providers. The server validates the configured connection, model availability, and auth state, persists the selection, and the next turn uses it; it preserves the existing session when the provider supports in-session switching and restarts only when the runtime requires it.",
+  parameters: SetModelInput,
+  success: ToolResult,
+  failure: Schema.Never,
+  dependencies,
+})
+  .annotate(Tool.Title, "Set model")
   .annotate(Tool.Destructive, true)
   .annotate(Tool.Idempotent, true);
 
@@ -96,6 +137,8 @@ export const SendMessageTool = Tool.make("sparky_send_message", {
 export const ThreadToolkit = Toolkit.make(
   ListProjectsTool,
   ListThreadsTool,
+  ListModelsTool,
+  SetModelTool,
   CreateThreadTool,
   SendMessageTool,
 );

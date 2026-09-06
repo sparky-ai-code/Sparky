@@ -117,6 +117,7 @@ import { cn } from "~/lib/utils";
 import { type TimestampFormat } from "@sparky/contracts/settings";
 import { getPluginById, PLUGINS, type PluginId } from "../plugins/pluginCatalog";
 import { PluginLogo } from "../plugins/PluginLogo";
+import { SparkyIcon } from "../Icons";
 import type { StreamingTextAnimation } from "@sparky/contracts/settings";
 import { formatChatTimestampTooltip, formatShortTimestamp } from "../../timestampFormat";
 
@@ -1886,6 +1887,7 @@ function formatWorkingTimerNow(startIso: string): string {
 
 type WorkEntryIconName =
   | "bot"
+  | "sparky"
   | "check"
   | "circle-alert"
   | "eye"
@@ -1916,6 +1918,8 @@ type WorkEntryIconName =
 
 function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; className: string }) {
   switch (name) {
+    case "sparky":
+      return <SparkyIcon className={className} aria-hidden />;
     case "bot":
       return <BotIcon className={className} aria-hidden />;
     case "check":
@@ -2186,6 +2190,18 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
     workEntry.sourceActivityKind === "user-input.resolved"
   ) {
     return "message-circle";
+  }
+  if (
+    workLogEntryIsToolLike(workEntry) &&
+    (workEntry.tone === "tool" ||
+      workEntry.toolName !== undefined ||
+      workEntry.toolTitle !== undefined ||
+      workEntry.toolLifecycleStatus !== undefined ||
+      workEntry.itemType !== undefined ||
+      workEntry.command !== undefined ||
+      workEntry.requestKind !== undefined)
+  ) {
+    return "sparky";
   }
   const toolIconName = resolveWorkEntryToolIconName(workEntry.toolName);
   if (toolIconName) return toolIconName;

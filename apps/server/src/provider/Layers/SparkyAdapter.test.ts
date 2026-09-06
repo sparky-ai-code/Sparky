@@ -309,11 +309,13 @@ describe("sparkyToolPresentation", () => {
   });
 
   it("preserves plugin identity in the lifecycle payload", () => {
-    expect(sparkyToolPresentation("sparky_plugin_call", {
-      pluginId: "GMAIL",
-      action: "search_messages",
-      input: {},
-    })).toMatchObject({
+    expect(
+      sparkyToolPresentation("sparky_plugin_call", {
+        pluginId: "GMAIL",
+        action: "search_messages",
+        input: {},
+      }),
+    ).toMatchObject({
       itemType: "dynamic_tool_call",
       title: "Sparky Plugin Call",
       data: {
@@ -327,6 +329,21 @@ describe("sparkyToolPresentation", () => {
     expect(sparkyToolPresentation("update_plan", {})).toMatchObject({
       itemType: "dynamic_tool_call",
       title: "Update plan",
+    });
+  });
+
+  it("uses readable titles for cross-project thread tools", () => {
+    expect(sparkyToolPresentation("sparky_list_projects", {})).toMatchObject({
+      title: "List projects",
+    });
+    expect(sparkyToolPresentation("sparky_list_threads", {})).toMatchObject({
+      title: "List threads",
+    });
+    expect(sparkyToolPresentation("sparky_create_thread", {})).toMatchObject({
+      title: "Create thread",
+    });
+    expect(sparkyToolPresentation("sparky_send_message", {})).toMatchObject({
+      title: "Send thread message",
     });
   });
 });
@@ -528,9 +545,13 @@ describe("Sparky session continuity", () => {
 
   it("caps only the OAuth Codex context window", () => {
     const environment = { SPARKY_CODEX_HOME: "C:\\sparky-test-codex-home-that-does-not-exist" };
-    expect(normalizeSparkyContextWindow("openai-codex/gpt-5.6-sol", "1m", environment)).toBe("258400");
+    expect(normalizeSparkyContextWindow("openai-codex/gpt-5.6-sol", "1m", environment)).toBe(
+      "258400",
+    );
     expect(normalizeSparkyContextWindow("openai/gpt-5.6-sol", "1m", environment)).toBe("1m");
-    expect(normalizeSparkyContextWindow("openai-codex/gpt-5.6-sol", "128k", environment)).toBe("128k");
+    expect(normalizeSparkyContextWindow("openai-codex/gpt-5.6-sol", "128k", environment)).toBe(
+      "128k",
+    );
   });
 
   it("does not pass an unverified Models.dev context window to the runtime", () => {

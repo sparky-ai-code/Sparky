@@ -434,7 +434,15 @@ function humanizeSparkyToolName(toolName: string): string {
     .map((word) => word.trim())
     .filter(Boolean);
   return words.length > 0
-    ? words.map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`).join(" ")
+    ? words
+        .map((word) => {
+          const lower = word.toLowerCase();
+          if (lower === "api") return "API";
+          if (lower === "mcp") return "MCP";
+          if (lower === "url") return "URL";
+          return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
+        })
+        .join(" ")
     : "Tool";
 }
 
@@ -502,6 +510,10 @@ export function sparkyToolPresentation(
     preview_wait_for: "Wait for browser",
     preview_recording_start: "Start browser recording",
     preview_recording_stop: "Stop browser recording",
+    sparky_list_projects: "List projects",
+    sparky_list_threads: "List threads",
+    sparky_create_thread: "Create thread",
+    sparky_send_message: "Send thread message",
   };
   return {
     itemType,

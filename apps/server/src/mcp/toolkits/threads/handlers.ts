@@ -160,6 +160,7 @@ type ModelSelectionRequest = {
   readonly providerInstanceId?: string | undefined;
   readonly model?: string | undefined;
   readonly options?: ReadonlyArray<ProviderOptionSelection> | undefined;
+  readonly validateOptions?: boolean | undefined;
 };
 
 type ModelSelectionResolution =
@@ -189,6 +190,51 @@ const waitForPersistedModelSelection = Effect.fnUntraced(function* (
   return undefined;
 });
 
+const waitForThreadRuntimeAcceptance = Effect.fnUntraced(function* (
+  query: ProjectionSnapshotQuery["Service"],
+  threadId: ThreadId,
+  expected: ModelSelection,
+  previousTurnId: string | undefined,
+  failureCode: string,
+) {
+  const maxAttempts = 120;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const thread = Option.getOrUndefined(yield* query.getThreadShellById(threadId));
+    const hasNewTurn =
+      thread?.latestTurn !== null &&
+      thread?.latestTurn !== undefined &&
+      (previousTurnId === undefined || thread.latestTurn.turnId !== previousTurnId);
+    const selectionApplied =
+      thread !== undefined && modelSelectionsMatch(thread.modelSelection, expected);
+    const runtimeBound = thread?.session?.providerInstanceId === expected.instanceId;
+    if (thread && selectionApplied && hasNewTurn && runtimeBound) {
+      if (thread.latestTurn?.state === "error") {
+        return {
+          error: errorResult(
+            failureCode,
+            `The thread accepted the requested model selection, but its turn failed before it could run. Inspect the thread for the provider error and retry with a supported model or option.`,
+            {
+              threadId,
+              turnId: thread.latestTurn.turnId,
+              selection: expected,
+              state: thread.latestTurn.state,
+            },
+          ),
+        } as const;
+      }
+      return { thread } as const;
+    }
+    if (attempt + 1 < maxAttempts) yield* Effect.sleep("25 millis");
+  }
+  return {
+    error: errorResult(
+      failureCode,
+      `The requested model selection was not observed on the authoritative thread runtime after dispatch. The operation was not reported as started; retry after the projection catches up.`,
+      { threadId, selection: expected },
+    ),
+  } as const;
+});
+
 function providerIsSelectable(provider: ServerProvider): boolean {
   return (
     provider.enabled &&
@@ -211,8 +257,79 @@ function availableModelSummary(provider: ServerProvider) {
       subProvider: model.subProvider,
       isDefault: model.isDefault,
       contextWindowSource: model.contextWindowSource,
+      supportedOptions: modelSupportedOptions(model),
     })),
   };
+}
+
+function modelSupportedOptions(model: ServerProvider["models"][number]) {
+  return (model.capabilities?.optionDescriptors ?? []).map((descriptor) => ({
+    id: descriptor.id,
+    label: descriptor.label,
+    type: descriptor.type,
+    ...(descriptor.type === "select"
+      ? {
+          choices: descriptor.options.map((choice) => ({
+            id: choice.id,
+            label: choice.label,
+            isDefault: choice.isDefault,
+          })),
+        }
+      : {}),
+    ...(descriptor.currentValue === undefined ? {} : { currentValue: descriptor.currentValue }),
+  }));
+}
+
+export function mergeModelSelectionOptions(
+  options: ReadonlyArray<ProviderOptionSelection> | undefined,
+  overrides: {
+    readonly reasoningEffort?: string | undefined;
+    readonly fastMode?: boolean | undefined;
+  },
+): {
+  readonly options: ReadonlyArray<ProviderOptionSelection> | undefined;
+  readonly explicit: boolean;
+} {
+  const values = new Map((options ?? []).map((option) => [option.id, option.value] as const));
+  let explicit = options !== undefined;
+  const reasoningEffort = normalizeOptional(overrides.reasoningEffort);
+  if (reasoningEffort !== undefined) {
+    values.set("reasoningEffort", reasoningEffort);
+    explicit = true;
+  }
+  if (overrides.fastMode !== undefined) {
+    values.set("fastMode", overrides.fastMode);
+    explicit = true;
+  }
+  return {
+    options: explicit ? [...values].map(([id, value]) => ({ id, value })) : undefined,
+    explicit,
+  };
+}
+
+function validateModelSelectionOptions(
+  model: ServerProvider["models"][number],
+  options: ReadonlyArray<ProviderOptionSelection>,
+): ToolResult | undefined {
+  const descriptors = model.capabilities?.optionDescriptors ?? [];
+  const invalid = options.filter((selection) => {
+    const descriptor = descriptors.find((candidate) => candidate.id === selection.id);
+    if (!descriptor) return true;
+    if (descriptor.type === "boolean") return typeof selection.value !== "boolean";
+    return (
+      typeof selection.value !== "string" ||
+      !descriptor.options.some((choice) => choice.id === selection.value)
+    );
+  });
+  if (invalid.length === 0) return undefined;
+  return errorResult(
+    "unsupported_model_option",
+    `Model '${model.slug}' does not support the requested model option value(s). Use sparky_list_models and pass an exact supported option.`,
+    {
+      requested: invalid,
+      supportedOptions: modelSupportedOptions(model),
+    },
+  );
 }
 
 export function resolveModelSelectionForProviders(
@@ -298,6 +415,10 @@ export function resolveModelSelectionForProviders(
 
   const sameSelection = inherited?.instanceId === provider.instanceId && inherited.model === model;
   const options = input.options ?? (sameSelection ? inherited?.options : undefined);
+  if (input.validateOptions && options !== undefined) {
+    const invalidOptions = validateModelSelectionOptions(modelEntry, options);
+    if (invalidOptions) return { error: invalidOptions };
+  }
   return {
     provider,
     selection: {
@@ -405,6 +526,7 @@ const handlers = {
               isDefault: model.isDefault,
               contextWindowSource: model.contextWindowSource,
               capabilities: model.capabilities,
+              supportedOptions: modelSupportedOptions(model),
             })),
         }))
         .filter((provider) => query === undefined || provider.models.length > 0);
@@ -436,11 +558,16 @@ const handlers = {
         );
       }
       const providers = yield* registry.getProviders;
+      const optionInput = mergeModelSelectionOptions(input.options, {
+        reasoningEffort: input.reasoningEffort,
+        fastMode: input.fastMode,
+      });
       const resolved = resolveModelSelectionForProviders(providers, {
         inherited: thread.modelSelection,
         providerInstanceId: input.providerInstanceId,
         model: input.model,
-        options: input.options,
+        options: optionInput.options,
+        validateOptions: optionInput.explicit,
       });
       if ("error" in resolved) return resolved.error;
       const createdAt = DateTime.formatIso(yield* DateTime.now);
@@ -489,6 +616,10 @@ const handlers = {
       const sourceThreadOption = yield* query.getThreadShellById(invocation.threadId);
       const sourceThread = Option.getOrUndefined(sourceThreadOption);
       const providers = yield* registry.getProviders;
+      const optionInput = mergeModelSelectionOptions(input.options, {
+        reasoningEffort: input.reasoningEffort,
+        fastMode: input.fastMode,
+      });
       const resolved = resolveModelSelectionForProviders(providers, {
         // The source thread is the authority for cross-project inheritance.
         // A target project's default may be an API-key model even when the
@@ -496,7 +627,8 @@ const handlers = {
         inherited: sourceThread?.modelSelection ?? target.project.defaultModelSelection,
         providerInstanceId: input.providerInstanceId,
         model: input.model,
-        options: input.options,
+        options: optionInput.options,
+        validateOptions: optionInput.explicit,
       });
       if ("error" in resolved) return resolved.error;
       const modelSelection = resolved.selection;
@@ -556,6 +688,15 @@ const handlers = {
           ),
         );
 
+      const accepted = yield* waitForThreadRuntimeAcceptance(
+        query,
+        threadId,
+        modelSelection,
+        undefined,
+        "thread_initial_turn_failed",
+      );
+      if ("error" in accepted) return accepted.error;
+
       return ok(`Created a thread in ${target.project.title} and sent its initial prompt.`, {
         projectId: target.project.id,
         projectTitle: target.project.title,
@@ -609,6 +750,7 @@ const handlers = {
       const createdAt = DateTime.formatIso(yield* DateTime.now);
       const commandId = CommandId.make(stableIdentifier("command", operationKey));
       const messageId = MessageId.make(stableIdentifier("message", operationKey));
+      const previousTurnId = targetThread.latestTurn?.turnId;
       yield* engine.dispatch({
         type: "thread.turn.start",
         commandId,
@@ -620,6 +762,14 @@ const handlers = {
         interactionMode: targetThread.interactionMode,
         createdAt,
       });
+      const accepted = yield* waitForThreadRuntimeAcceptance(
+        query,
+        targetThread.id,
+        targetThread.modelSelection,
+        previousTurnId,
+        "thread_message_failed",
+      );
+      if ("error" in accepted) return accepted.error;
       return ok(`Sent a follow-up message to ${targetThread.title}.`, {
         projectId: targetProject.id,
         projectTitle: targetProject.title,

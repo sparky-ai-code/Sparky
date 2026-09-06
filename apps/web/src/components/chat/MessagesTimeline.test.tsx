@@ -260,7 +260,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain(className);
   });
 
-  it("uses the Sparky logo for every tool call", () => {
+  it("uses distinct icons for ordinary tools and the Sparky logo for thread tools", () => {
     const tools = [
       { name: "ls", iconClass: "lucide-folder" },
       { name: "list_files", iconClass: "lucide-folder" },
@@ -305,6 +305,35 @@ describe("MessagesTimeline", () => {
         />,
       );
 
+      expect(markup).not.toContain("sparky-logo-small.svg");
+    }
+
+    for (const name of [
+      "sparky_create_thread",
+      "sparky_list_threads",
+      "sparky_set_model",
+      "sparky_send_message",
+    ]) {
+      const markup = renderToStaticMarkup(
+        <MessagesTimeline
+          {...buildProps()}
+          timelineEntries={[
+            {
+              id: `entry-${name}`,
+              kind: "work",
+              createdAt: MESSAGE_CREATED_AT,
+              entry: {
+                id: `work-${name}`,
+                createdAt: MESSAGE_CREATED_AT,
+                label: name,
+                tone: "tool",
+                toolName: name,
+                itemType: "dynamic_tool_call",
+              },
+            },
+          ]}
+        />,
+      );
       expect(markup).toContain("sparky-logo-small.svg");
     }
   });

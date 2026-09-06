@@ -6,7 +6,11 @@ import {
   ProviderInstanceId,
   type ServerProvider,
 } from "@sparky/contracts";
-import { resolveModelSelectionForProviders, resolveProjectTarget } from "./handlers.ts";
+import {
+  modelSelectionsMatch,
+  resolveModelSelectionForProviders,
+  resolveProjectTarget,
+} from "./handlers.ts";
 
 const project = (id: string, title: string) => ({
   id: ProjectId.make(id),
@@ -127,5 +131,34 @@ describe("cross-project model routing", () => {
     expect(unauthenticated).toMatchObject({
       error: { data: { code: "provider_not_authenticated" } },
     });
+  });
+
+  it("requires the persisted selection to match provider, model, context, and options", () => {
+    const expected = {
+      instanceId: ProviderInstanceId.make("sparky"),
+      model: "openai-codex/gpt-5.6-sol",
+      contextWindowSource: "oauth" as const,
+      options: [{ id: "reasoningEffort", value: "high" as const }],
+    };
+
+    expect(modelSelectionsMatch(expected, { ...expected })).toBe(true);
+    expect(
+      modelSelectionsMatch(expected, {
+        ...expected,
+        instanceId: ProviderInstanceId.make("opencode"),
+      }),
+    ).toBe(false);
+    expect(
+      modelSelectionsMatch(expected, { ...expected, model: "opencode/deepseek-v4-flash-free" }),
+    ).toBe(false);
+    expect(modelSelectionsMatch(expected, { ...expected, contextWindowSource: "provider" })).toBe(
+      false,
+    );
+    expect(
+      modelSelectionsMatch(expected, {
+        ...expected,
+        options: [{ id: "reasoningEffort", value: "low" as const }],
+      }),
+    ).toBe(false);
   });
 });

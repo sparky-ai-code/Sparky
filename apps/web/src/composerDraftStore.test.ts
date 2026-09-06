@@ -67,6 +67,7 @@ import {
   markPromotedDraftThreadsByRef,
   type ComposerImageAttachment,
   useComposerDraftStore,
+  shouldAdoptServerModelSelection,
   DraftId,
 } from "./composerDraftStore";
 import { removeLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
@@ -1155,6 +1156,36 @@ describe("composerDraftStore modelSelection", () => {
 
   beforeEach(() => {
     resetComposerDraftStore();
+  });
+
+  it("adopts a tool-persisted server selection instead of a stale composer draft", () => {
+    const serverSelection = modelSelection(CODEX_DRIVER, "gpt-5.6-codex");
+    const staleDraft = modelSelection(CODEX_DRIVER, "gpt-5.3-codex");
+
+    expect(
+      shouldAdoptServerModelSelection({
+        serverSelection,
+        draftSelection: staleDraft,
+        locallyChanged: false,
+        serverSelectionChanged: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAdoptServerModelSelection({
+        serverSelection,
+        draftSelection: staleDraft,
+        locallyChanged: true,
+        serverSelectionChanged: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAdoptServerModelSelection({
+        serverSelection,
+        draftSelection: serverSelection,
+        locallyChanged: true,
+        serverSelectionChanged: true,
+      }),
+    ).toBe(false);
   });
 
   it("stores a model selection in the draft", () => {

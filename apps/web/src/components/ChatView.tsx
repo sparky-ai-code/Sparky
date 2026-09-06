@@ -170,6 +170,7 @@ import { buildDraftThreadRouteParams } from "../threadRoutes";
 import {
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
+  shouldAdoptServerModelSelection,
   useComposerDraftStore,
   type DraftId,
 } from "../composerDraftStore";
@@ -1280,6 +1281,8 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
+  const locallyChangedModelThreadKeyRef = useRef<string | null>(null);
+  const lastServerModelSelectionRef = useRef<{ threadKey: string; value: string } | null>(null);
 
   useLayoutEffect(() => {
     if (!composerOverlayElement) return;
@@ -1440,6 +1443,47 @@ function ChatViewContent(props: ChatViewProps) {
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
   const canCheckoutPullRequestIntoThread = isLocalDraftThread && !isUnscopedChatThread;
   const activeThreadId = activeThread?.id ?? null;
+
+  useEffect(() => {
+    if (routeKind !== "server" || serverThread === null) {
+      lastServerModelSelectionRef.current = null;
+      locallyChangedModelThreadKeyRef.current = null;
+      return;
+    }
+
+    const threadKey = routeThreadKey;
+    const value = JSON.stringify(serverThread.modelSelection);
+    const previous = lastServerModelSelectionRef.current;
+    const localDraft = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)
+      ?.modelSelectionByProvider[serverThread.modelSelection.instanceId];
+    const locallyChanged = locallyChangedModelThreadKeyRef.current === threadKey;
+    const serverSelectionChanged = previous?.threadKey === threadKey && previous.value !== value;
+
+    // The persisted server thread is authoritative for tool-driven changes.
+    // A local picker change remains visible until it is persisted by the next
+    // turn; once that event arrives, clear the local-dirty marker.
+    if (
+      shouldAdoptServerModelSelection({
+        serverSelection: serverThread.modelSelection,
+        draftSelection: localDraft,
+        locallyChanged,
+        serverSelectionChanged,
+      })
+    ) {
+      setComposerDraftModelSelection(composerDraftTarget, serverThread.modelSelection);
+      locallyChangedModelThreadKeyRef.current = null;
+    } else if (localDraft !== undefined && JSON.stringify(localDraft) === value) {
+      locallyChangedModelThreadKeyRef.current = null;
+    }
+    lastServerModelSelectionRef.current = { threadKey, value };
+  }, [
+    composerDraftTarget,
+    routeKind,
+    routeThreadKey,
+    serverThread?.modelSelection,
+    setComposerDraftModelSelection,
+  ]);
+
   const workspaceContextEnabled = !isUnscopedChatThread;
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: workspaceContextEnabled ? (activeThread?.environmentId ?? null) : null,
@@ -5293,6 +5337,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
       setComposerDraftModelSelection(composerDraftTarget, nextModelSelection);
       setStickyComposerModelSelection(nextModelSelection);
+      locallyChangedModelThreadKeyRef.current = routeThreadKey;
       scheduleComposerFocus();
     },
     [
@@ -5303,6 +5348,7 @@ function ChatViewContent(props: ChatViewProps) {
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
       providerStatuses,
+      routeThreadKey,
       settings,
     ],
   );

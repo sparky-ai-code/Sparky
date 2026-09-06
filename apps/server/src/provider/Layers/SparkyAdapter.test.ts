@@ -339,6 +339,12 @@ describe("sparkyToolPresentation", () => {
     expect(sparkyToolPresentation("sparky_list_threads", {})).toMatchObject({
       title: "List threads",
     });
+    expect(sparkyToolPresentation("sparky_list_models", {})).toMatchObject({
+      title: "List models",
+    });
+    expect(sparkyToolPresentation("sparky_set_model", {})).toMatchObject({
+      title: "Set model",
+    });
     expect(sparkyToolPresentation("sparky_create_thread", {})).toMatchObject({
       title: "Create thread",
     });
@@ -419,6 +425,17 @@ describe("Sparky session continuity", () => {
 
     expect(args.at(args.indexOf("--provider") + 1)).toBe("opencode");
     expect(args.at(args.indexOf("--base-url") + 1)).toBe("https://opencode.ai/zen/v1");
+  });
+
+  it("routes OAuth Codex models through Codex instead of the API-key OpenAI path", () => {
+    const args = makeSparkyProcessArgs({
+      cwd: "C:\\workspace",
+      prompt: "Use the connected OAuth account",
+      model: "openai-codex/gpt-5.6-sol",
+    });
+
+    expect(args.at(args.indexOf("--provider") + 1)).toBe("openai-codex");
+    expect(args.at(args.indexOf("--provider") + 1)).not.toBe("openai");
   });
 
   it("explains when a project-free turn is using an outdated Sparky binary", () => {

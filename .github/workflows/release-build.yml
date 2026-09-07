@@ -28,6 +28,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -47,6 +48,19 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - id: matrix
+        name: Resolve build matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          windows='{"include":[{"label":"Windows x64","runner":"windows-2025","platform":"win","arch":"x64","rust_target":"x86_64-pc-windows-msvc","update_url":"https://sparky.llc/get/updates/windows","package_command":"dist:desktop:win:x64"}]}'
+          all='{"include":[{"label":"Windows x64","runner":"windows-2025","platform":"win","arch":"x64","rust_target":"x86_64-pc-windows-msvc","update_url":"https://sparky.llc/get/updates/windows","package_command":"dist:desktop:win:x64"},{"label":"macOS x64","runner":"macos-13","platform":"mac","arch":"x64","rust_target":"x86_64-apple-darwin","update_url":"https://sparky.llc/get/updates/macos/x64","package_command":"dist:desktop:dmg:x64"},{"label":"macOS arm64","runner":"macos-14","platform":"mac","arch":"arm64","rust_target":"aarch64-apple-darwin","update_url":"https://sparky.llc/get/updates/macos/arm64","package_command":"dist:desktop:dmg:arm64"},{"label":"Linux x64","runner":"ubuntu-24.04","platform":"linux","arch":"x64","rust_target":"x86_64-unknown-linux-gnu","update_url":"https://sparky.llc/get/updates/linux","package_command":"dist:desktop:linux"}]}'
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.platform }}" == "windows" ]]; then
+            echo "matrix=$windows" >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix=$all" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Verify release parity
         shell: pwsh
@@ -97,41 +111,12 @@ jobs:
   build:
     name: Build ${{ matrix.label }}
     needs: [preflight, build-wsl-node-pty]
-    if: ${{ !cancelled() && needs.preflight.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || matrix.platform == 'win') }}
+    if: ${{ !cancelled() && needs.preflight.result == 'success' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - label: Windows x64
-            runner: windows-2025
-            platform: win
-            arch: x64
-            rust_target: x86_64-pc-windows-msvc
-            update_url: https://sparky.llc/get/updates/windows
-            package_command: dist:desktop:win:x64
-          - label: macOS x64
-            runner: macos-13
-            platform: mac
-            arch: x64
-            rust_target: x86_64-apple-darwin
-            update_url: https://sparky.llc/get/updates/macos/x64
-            package_command: dist:desktop:dmg:x64
-          - label: macOS arm64
-            runner: macos-14
-            platform: mac
-            arch: arm64
-            rust_target: aarch64-apple-darwin
-            update_url: https://sparky.llc/get/updates/macos/arm64
-            package_command: dist:desktop:dmg:arm64
-          - label: Linux x64
-            runner: ubuntu-24.04
-            platform: linux
-            arch: x64
-            rust_target: x86_64-unknown-linux-gnu
-            update_url: https://sparky.llc/get/updates/linux
-            package_command: dist:desktop:linux
+      matrix: ${{ fromJSON(needs.preflight.outputs.matrix) }}
     env:
       SPARKY_UPDATE_URL: ${{ matrix.update_url }}
 

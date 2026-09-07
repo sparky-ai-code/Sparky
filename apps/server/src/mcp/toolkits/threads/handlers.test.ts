@@ -29,6 +29,7 @@ const provider = (input: {
   readonly auth: "authenticated" | "unauthenticated";
   readonly models: ReadonlyArray<{
     readonly slug: string;
+    readonly name?: string;
     readonly contextWindowSource?: "oauth" | "provider";
     readonly isDefault?: boolean;
     readonly capabilities?: ServerProvider["models"][number]["capabilities"];
@@ -49,7 +50,7 @@ const provider = (input: {
   availability: "available",
   models: input.models.map((model) => ({
     slug: model.slug,
-    name: model.slug,
+    name: model.name ?? model.slug,
     isCustom: false,
     capabilities: model.capabilities ?? null,
     ...(model.contextWindowSource ? { contextWindowSource: model.contextWindowSource } : {}),
@@ -135,6 +136,45 @@ describe("cross-project model routing", () => {
     });
   });
 
+  it("canonicalizes an exact display name without changing providers", () => {
+    const resolved = resolveModelSelectionForProviders(
+      [
+        provider({
+          instanceId: "sparky",
+          auth: "authenticated",
+          models: [
+            {
+              slug: "openai-codex/gpt-5.6-ask",
+              name: "GPT Ask",
+              isDefault: true,
+            },
+          ],
+        }),
+      ],
+      {
+        providerInstanceId: "sparky",
+        model: "gpt ask",
+      },
+    );
+
+    expect(resolved).toMatchObject({
+      selection: {
+        instanceId: ProviderInstanceId.make("sparky"),
+        model: "openai-codex/gpt-5.6-ask",
+      },
+    });
+  });
+
+  it("does not select a provider implicitly", () => {
+    const resolved = resolveModelSelectionForProviders([oauthProvider, apiKeyProvider], {
+      model: "openai-codex/gpt-5.6-sol",
+    });
+
+    expect(resolved).toMatchObject({
+      error: { data: { code: "provider_instance_required" } },
+    });
+  });
+
   it("requires the persisted selection to match provider, model, context, and options", () => {
     const expected = {
       instanceId: ProviderInstanceId.make("sparky"),
@@ -147,12 +187,10 @@ describe("cross-project model routing", () => {
     expect(
       modelSelectionsMatch(expected, {
         ...expected,
-        instanceId: ProviderInstanceId.make("opencode"),
+        instanceId: ProviderInstanceId.make("grok"),
       }),
     ).toBe(false);
-    expect(
-      modelSelectionsMatch(expected, { ...expected, model: "opencode/deepseek-v4-flash-free" }),
-    ).toBe(false);
+    expect(modelSelectionsMatch(expected, { ...expected, model: "grok-build" })).toBe(false);
     expect(modelSelectionsMatch(expected, { ...expected, contextWindowSource: "provider" })).toBe(
       false,
     );

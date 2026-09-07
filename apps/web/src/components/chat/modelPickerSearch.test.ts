@@ -6,12 +6,12 @@ describe("buildModelPickerSearchText", () => {
   it("builds provider-agnostic search text from generic fields", () => {
     expect(
       buildModelPickerSearchText({
-        driverKind: "opencode",
-        providerDisplayName: "opencode",
+        driverKind: "grok",
+        providerDisplayName: "grok",
         name: "Claude Opus 4.7",
         subProvider: "GitHub Copilot",
       }),
-    ).toBe("claude opus 4.7 github copilot opencode opencode");
+    ).toBe("claude opus 4.7 github copilot grok grok");
   });
 });
 
@@ -20,8 +20,8 @@ describe("scoreModelPickerSearch", () => {
     expect(
       scoreModelPickerSearch(
         {
-          driverKind: "opencode",
-          providerDisplayName: "opencode",
+          driverKind: "grok",
+          providerDisplayName: "grok",
           name: "Claude Opus 4.7",
           subProvider: "GitHub Copilot",
         },
@@ -46,8 +46,8 @@ describe("scoreModelPickerSearch", () => {
   it("ranks exact token matches ahead of fuzzier matches", () => {
     const exactScore = scoreModelPickerSearch(
       {
-        driverKind: "opencode",
-        providerDisplayName: "opencode",
+        driverKind: "grok",
+        providerDisplayName: "grok",
         name: "Claude Opus 4.7",
         subProvider: "GitHub Copilot",
       },
@@ -55,8 +55,8 @@ describe("scoreModelPickerSearch", () => {
     );
     const fuzzyScore = scoreModelPickerSearch(
       {
-        driverKind: "opencode",
-        providerDisplayName: "opencode",
+        driverKind: "grok",
+        providerDisplayName: "grok",
         name: "Claude Opus 4.7",
         subProvider: "GitHub Copilot",
       },

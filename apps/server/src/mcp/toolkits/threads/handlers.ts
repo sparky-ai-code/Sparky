@@ -147,6 +147,10 @@ const threadSummary = (thread: OrchestrationThreadShell, projectTitle: string) =
   projectId: thread.projectId,
   projectTitle,
   status: thread.latestTurn?.state ?? "idle",
+  // The persisted selection is the authority used by the next turn. Expose
+  // it here so an agent can verify a set_model result without relying on UI
+  // state or guessing from a model display name.
+  modelSelection: thread.modelSelection,
   updatedAt: thread.updatedAt,
   archived: thread.archivedAt !== null,
 });
@@ -254,6 +258,7 @@ function availableModelSummary(provider: ServerProvider) {
     models: provider.models.map((model) => ({
       slug: model.slug,
       name: model.name,
+      providerInstanceId: provider.instanceId,
       subProvider: model.subProvider,
       isDefault: model.isDefault,
       contextWindowSource: model.contextWindowSource,
@@ -340,10 +345,19 @@ export function resolveModelSelectionForProviders(
   const inherited = input.inherited ?? null;
   const inheritedInstanceId = inherited ? String(inherited.instanceId) : undefined;
   const instanceId = requestedInstanceId ?? inheritedInstanceId;
-  const requestedProvider = instanceId
-    ? providers.find((candidate) => String(candidate.instanceId) === instanceId)
-    : undefined;
-  if (instanceId && !requestedProvider) {
+  if (!instanceId) {
+    return {
+      error: errorResult(
+        "provider_instance_required",
+        "No provider instance was selected. Pass the exact providerInstanceId from sparky_list_models; the server will not choose or fall back to another provider.",
+        { providers: providers.map(availableModelSummary) },
+      ),
+    };
+  }
+  const requestedProvider = providers.find(
+    (candidate) => String(candidate.instanceId) === instanceId,
+  );
+  if (!requestedProvider) {
     return {
       error: errorResult(
         "provider_not_found",
@@ -352,27 +366,7 @@ export function resolveModelSelectionForProviders(
       ),
     };
   }
-  const provider =
-    requestedProvider ??
-    providers
-      .filter(providerIsSelectable)
-      .toSorted((left, right) => {
-        const authDelta =
-          Number(right.auth.status === "authenticated") -
-          Number(left.auth.status === "authenticated");
-        return authDelta || Number(right.models.length > 0) - Number(left.models.length > 0);
-      })
-      .find((candidate) => candidate.models.length > 0);
-
-  if (!provider) {
-    return {
-      error: errorResult(
-        "provider_unavailable",
-        "No configured authenticated provider instance with selectable models is available.",
-        { providers: providers.map(availableModelSummary) },
-      ),
-    };
-  }
+  const provider = requestedProvider;
   if (!providerIsSelectable(provider)) {
     return {
       error: errorResult(
@@ -388,12 +382,12 @@ export function resolveModelSelectionForProviders(
     inherited && String(inherited.instanceId) === String(provider.instanceId)
       ? inherited.model
       : undefined;
-  const model =
+  const modelHint =
     requestedModel ??
     inheritedModel ??
     provider.models.find((candidate) => candidate.isDefault)?.slug ??
     provider.models[0]?.slug;
-  if (!model) {
+  if (!modelHint) {
     return {
       error: errorResult(
         "model_unavailable",
@@ -402,16 +396,39 @@ export function resolveModelSelectionForProviders(
       ),
     };
   }
-  const modelEntry = provider.models.find((candidate) => candidate.slug === model);
+  let modelEntry = provider.models.find((candidate) => candidate.slug === modelHint);
+  if (!modelEntry && requestedModel !== undefined) {
+    const displayNameMatches = provider.models.filter(
+      (candidate) => candidate.name.toLocaleLowerCase() === requestedModel.toLocaleLowerCase(),
+    );
+    if (displayNameMatches.length > 1) {
+      return {
+        error: errorResult(
+          "model_ambiguous",
+          `Model name '${requestedModel}' matches multiple models on provider instance '${provider.instanceId}'. Pass the exact slug from sparky_list_models.`,
+          {
+            providerInstanceId: provider.instanceId,
+            matches: displayNameMatches.map((candidate) => ({
+              slug: candidate.slug,
+              name: candidate.name,
+              subProvider: candidate.subProvider,
+            })),
+          },
+        ),
+      };
+    }
+    modelEntry = displayNameMatches[0];
+  }
   if (!modelEntry) {
     return {
       error: errorResult(
         "model_unavailable",
-        `Model '${model}' is not available on provider instance '${provider.instanceId}'. Use sparky_list_models and choose an exact model slug.`,
+        `Model '${modelHint}' is not available on provider instance '${provider.instanceId}'. Use sparky_list_models and choose an exact model slug or exact display name.`,
         { provider: availableModelSummary(provider) },
       ),
     };
   }
+  const model = modelEntry.slug;
 
   const sameSelection = inherited?.instanceId === provider.instanceId && inherited.model === model;
   const options = input.options ?? (sameSelection ? inherited?.options : undefined);
@@ -522,6 +539,7 @@ const handlers = {
             .map((model) => ({
               slug: model.slug,
               name: model.name,
+              providerInstanceId: provider.instanceId,
               subProvider: model.subProvider,
               isDefault: model.isDefault,
               contextWindowSource: model.contextWindowSource,
@@ -756,7 +774,6 @@ const handlers = {
         commandId,
         threadId: targetThread.id,
         message: { messageId, role: "user", text: message, attachments: [] },
-        modelSelection: targetThread.modelSelection,
         workspaceContext: "project",
         runtimeMode: targetThread.runtimeMode,
         interactionMode: targetThread.interactionMode,

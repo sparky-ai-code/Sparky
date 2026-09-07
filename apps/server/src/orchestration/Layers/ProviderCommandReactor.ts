@@ -241,8 +241,6 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const threadModelSelections = new Map<string, ModelSelection>();
-
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
     readonly kind:
@@ -744,7 +742,7 @@ const make = Effect.gen(function* () {
         requestedModelSelection !== undefined &&
         activeSession?.providerInstanceId !== requestedModelSelection.instanceId;
       const shouldRestartForModelChange = modelChanged && sessionModelSwitch === "unsupported";
-      const previousModelSelection = threadModelSelections.get(threadId) ?? thread.modelSelection;
+      const previousModelSelection = thread.modelSelection;
       const shouldRestartForModelSelectionChange =
         preferredProvider === "claudeAgent" &&
         requestedModelSelection !== undefined &&
@@ -836,20 +834,10 @@ const make = Effect.gen(function* () {
         : undefined;
     const normalizedInput = toNonEmptyProviderInput(input.messageText);
     const normalizedAttachments = input.attachments ?? [];
-    const requestedModelSelection =
-      effectiveInputModelSelection ??
-      threadModelSelections.get(input.threadId) ??
-      thread.modelSelection;
-    yield* ensureSessionForThread(
-      input.threadId,
-      input.createdAt,
-      effectiveInputModelSelection !== undefined
-        ? { modelSelection: effectiveInputModelSelection }
-        : {},
-    );
-    if (effectiveInputModelSelection !== undefined) {
-      threadModelSelections.set(input.threadId, effectiveInputModelSelection);
-    }
+    const requestedModelSelection = effectiveInputModelSelection ?? thread.modelSelection;
+    yield* ensureSessionForThread(input.threadId, input.createdAt, {
+      modelSelection: requestedModelSelection,
+    });
     const activeSession = yield* providerService
       .listSessions()
       .pipe(
@@ -874,7 +862,7 @@ const make = Effect.gen(function* () {
               model: activeSession.model,
             }
           : requestedModelSelection
-        : effectiveInputModelSelection;
+        : requestedModelSelection;
 
     return {
       threadId: input.threadId,
@@ -1406,12 +1394,9 @@ const make = Effect.gen(function* () {
         if (!thread?.session || thread.session.status === "stopped") {
           return;
         }
-        const cachedModelSelection = threadModelSelections.get(event.payload.threadId);
-        yield* ensureSessionForThread(
-          event.payload.threadId,
-          event.occurredAt,
-          cachedModelSelection !== undefined ? { modelSelection: cachedModelSelection } : {},
-        );
+        yield* ensureSessionForThread(event.payload.threadId, event.occurredAt, {
+          modelSelection: thread.modelSelection,
+        });
         return;
       }
       case "thread.turn-start-requested":

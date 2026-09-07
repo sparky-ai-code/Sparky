@@ -31,10 +31,10 @@ const isServerProviderUpdateError = Schema.is(ServerProviderUpdateError);
 
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
-const OPENCODE_DRIVER = ProviderDriverKind.make("opencode");
+const GROK_DRIVER = ProviderDriverKind.make("grok");
 const CODEX_INSTANCE_ID = ProviderInstanceId.make("codex");
 const CURSOR_INSTANCE_ID = ProviderInstanceId.make("cursor");
-const OPENCODE_INSTANCE_ID = ProviderInstanceId.make("opencode");
+const GROK_INSTANCE_ID = ProviderInstanceId.make("grok");
 const encoder = new TextEncoder();
 
 // Pin a non-win32 platform so `resolveSpawnCommand` is a no-op and the raw
@@ -55,11 +55,11 @@ function lifecycleFor(provider: ProviderDriverKind): ProviderMaintenanceCapabili
   }
   return makeProviderMaintenanceCapabilities({
     provider,
-    packageName: provider === OPENCODE_DRIVER ? "opencode-ai" : "@openai/codex",
+    packageName: provider === GROK_DRIVER ? "grok-cli" : "@openai/codex",
     updateExecutable: "npm",
     updateArgs:
-      provider === OPENCODE_DRIVER
-        ? ["install", "-g", "opencode-ai@latest"]
+      provider === GROK_DRIVER
+        ? ["install", "-g", "grok-cli@latest"]
         : ["install", "-g", "@openai/codex@latest"],
     updateLockKey: "npm-global",
   });
@@ -85,10 +85,10 @@ const baseCursorProvider: ServerProvider = {
   driver: CURSOR_DRIVER,
 };
 
-const baseOpenCodeProvider: ServerProvider = {
+const baseGrokProvider: ServerProvider = {
   ...baseProvider,
-  instanceId: OPENCODE_INSTANCE_ID,
-  driver: OPENCODE_DRIVER,
+  instanceId: GROK_INSTANCE_ID,
+  driver: GROK_DRIVER,
 };
 
 const latestVersionHttpClient = (version: string) =>
@@ -509,18 +509,18 @@ describe("providerMaintenanceRunner", () => {
     });
     const calls: Array<string> = [];
     return Effect.gen(function* () {
-      const { registry } = yield* makeRegistry([baseProvider, baseOpenCodeProvider]);
+      const { registry } = yield* makeRegistry([baseProvider, baseGrokProvider]);
       const updater = yield* makeTestRunner({
         ...registry,
         getProviderMaintenanceCapabilitiesForInstance: (_instanceId, provider) =>
           Effect.succeed(
             makeProviderMaintenanceCapabilities({
               provider,
-              packageName: provider === OPENCODE_DRIVER ? "opencode-ai" : "@openai/codex",
+              packageName: provider === GROK_DRIVER ? "grok-cli" : "@openai/codex",
               updateExecutable: "npm",
               updateArgs:
-                provider === OPENCODE_DRIVER
-                  ? ["install", "-g", "opencode-ai@latest"]
+                provider === GROK_DRIVER
+                  ? ["install", "-g", "grok-cli@latest"]
                   : ["install", "-g", "@openai/codex@latest"],
               updateLockKey: "npm-global",
             }),
@@ -530,12 +530,12 @@ describe("providerMaintenanceRunner", () => {
       const first = yield* updater.updateProvider(CODEX_DRIVER).pipe(Effect.forkScoped);
       yield* Effect.promise(() => firstStarted);
 
-      const second = yield* updater.updateProvider(OPENCODE_DRIVER).pipe(Effect.forkScoped);
+      const second = yield* updater.updateProvider(GROK_DRIVER).pipe(Effect.forkScoped);
       let providersWhileQueued: ReadonlyArray<ServerProvider> = [];
       for (let attempt = 0; attempt < 20; attempt += 1) {
         providersWhileQueued = yield* registry.getProviders;
         const queuedStatus = providersWhileQueued.find(
-          (provider) => provider.instanceId === OPENCODE_INSTANCE_ID,
+          (provider) => provider.instanceId === GROK_INSTANCE_ID,
         )?.updateState?.status;
         if (queuedStatus === "queued") {
           break;
@@ -544,7 +544,7 @@ describe("providerMaintenanceRunner", () => {
       }
       assert.deepStrictEqual(calls, ["install -g @openai/codex@latest"]);
       assert.strictEqual(
-        providersWhileQueued.find((provider) => provider.instanceId === OPENCODE_INSTANCE_ID)
+        providersWhileQueued.find((provider) => provider.instanceId === GROK_INSTANCE_ID)
           ?.updateState?.status,
         "queued",
       );
@@ -554,7 +554,7 @@ describe("providerMaintenanceRunner", () => {
       yield* Fiber.join(second);
       assert.deepStrictEqual(calls, [
         "install -g @openai/codex@latest",
-        "install -g opencode-ai@latest",
+        "install -g grok-cli@latest",
       ]);
     }).pipe(
       Effect.provide(

@@ -178,9 +178,6 @@ export function formatSparkyProcessError(
 ): string {
   const detail = cause instanceof Error ? cause.message : String(cause);
   if (/freeusagelimit|free usage limit/iu.test(detail)) {
-    if (/opencode api error/iu.test(detail)) {
-      return "OpenCode Zen reported that this model's free usage limit was reached. Select another model or try again later.";
-    }
     return "The selected provider model has reached its free usage limit. Select another model or try again later.";
   }
   if (
@@ -551,13 +548,6 @@ export function parseSparkyModelSelection(model: string | undefined): {
   const modelId = selected.slice(slash + 1);
   if (provider === "google") {
     return { provider: "gemini", model: modelId };
-  }
-  if (provider === "opencode") {
-    return {
-      provider: "opencode",
-      model: modelId,
-      baseUrl: "https://opencode.ai/zen/v1",
-    };
   }
   return { provider, model: modelId };
 }

@@ -35,11 +35,8 @@ import {
 import { usePrimaryEnvironment } from "../../state/environments";
 import { primaryServerProvidersAtom, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { ClaudeAI, Gemini, OpenAI, OpenCodeIcon, SparkyIcon } from "../Icons";
-import {
-  getDisplayModelName,
-  getModelProviderPresentation,
-} from "../chat/providerIconUtils";
+import { ClaudeAI, Gemini, OpenAI, SparkyIcon } from "../Icons";
+import { getDisplayModelName, getModelProviderPresentation } from "../chat/providerIconUtils";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
@@ -120,14 +117,6 @@ const MODEL_APIS: ReadonlyArray<{
     placeholder: "AIza...",
     description: "Gemini models through Google AI Studio.",
     Logo: Gemini,
-  },
-  {
-    id: "opencode",
-    name: "OpenCode Zen",
-    envName: "OPENCODE_API_KEY",
-    placeholder: "OpenCode Zen API key",
-    description: "OpenCode Zen gateway models through T3 Code.",
-    Logo: OpenCodeIcon,
   },
 ];
 
@@ -214,7 +203,9 @@ export function ModelsSettingsPanel() {
 
   const refreshSparkyProvider = async () => {
     if (!primaryEnvironment) {
-      throw new Error("T3 Code's local provider is not connected yet. Restart T3 Code and try again.");
+      throw new Error(
+        "T3 Code's local provider is not connected yet. Restart T3 Code and try again.",
+      );
     }
     const result = await refreshServerProviders({
       environmentId: primaryEnvironment.environmentId,

@@ -13,11 +13,11 @@ describe("providerUpdateDismissal", () => {
   });
 
   it("persists provider update dismissals by notification key", () => {
-    expect(isProviderUpdateNotificationDismissed("opencode:1.14.33")).toBe(false);
+    expect(isProviderUpdateNotificationDismissed("grok:1.14.33")).toBe(false);
 
-    dismissProviderUpdateNotification("opencode:1.14.33");
+    dismissProviderUpdateNotification("grok:1.14.33");
 
-    expect(isProviderUpdateNotificationDismissed("opencode:1.14.33")).toBe(true);
-    expect(isProviderUpdateNotificationDismissed("opencode:1.14.34")).toBe(false);
+    expect(isProviderUpdateNotificationDismissed("grok:1.14.33")).toBe(true);
+    expect(isProviderUpdateNotificationDismissed("grok:1.14.34")).toBe(false);
   });
 });

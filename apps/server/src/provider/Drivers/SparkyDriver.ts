@@ -60,7 +60,7 @@ function makeSnapshot(input: {
   const message = !input.binaryInstalled
     ? `Sparky runtime was not found at ${input.binaryPath}.`
     : discovery.configuredProviderCount === 0
-      ? "Add an OpenAI, Anthropic, Google, or OpenCode Zen API key in Models."
+      ? "Add an OpenAI, Anthropic, or Google API key in Models."
       : hasDiscoveryErrors
         ? `Model refresh failed for ${discovery.errors.join("; ")}. Check the API key and your connection.`
         : !hasModels

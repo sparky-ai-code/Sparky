@@ -4,7 +4,6 @@ const SUB_PROVIDERS_BY_CATALOG: Readonly<Record<string, ReadonlyArray<string>>> 
   "catalog:Claude": ["Claude"],
   "catalog:OpenAI": ["OpenAI", "OpenAI Codex"],
   "catalog:Google": ["Google"],
-  "catalog:OpenCode Zen": ["OpenCode Zen"],
 };
 
 export function isModelInSparkyCatalog(

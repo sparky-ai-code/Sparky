@@ -535,10 +535,17 @@ export function parseSparkyModelSelection(model: string | undefined): {
   readonly model: string;
   readonly baseUrl?: string | undefined;
 } {
-  const selected = model?.trim() || "GPT-5.6 Sol";
+  const selected = model?.trim();
+  if (!selected) {
+    throw new Error(
+      "Sparky model selection is missing an explicit provider/model slug; refusing to choose a provider implicitly.",
+    );
+  }
   const slash = selected.indexOf("/");
   if (slash <= 0 || slash === selected.length - 1) {
-    return { provider: "openai", model: selected };
+    throw new Error(
+      `Sparky model selection '${selected}' must use an explicit provider/model slug; refusing to route it implicitly.`,
+    );
   }
   const provider = selected.slice(0, slash);
   const modelId = selected.slice(slash + 1);

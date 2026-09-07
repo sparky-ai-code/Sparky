@@ -238,6 +238,7 @@ import {
 } from "./chat/draftHeroTransition";
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
+  areModelSelectionsEqual,
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
   buildThreadTurnInterruptInput,
@@ -259,6 +260,7 @@ import {
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
+  shouldPersistServerThreadModelSelection,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
@@ -1283,6 +1285,11 @@ function ChatViewContent(props: ChatViewProps) {
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
   const locallyChangedModelThreadKeyRef = useRef<string | null>(null);
   const lastServerModelSelectionRef = useRef<{ threadKey: string; value: string } | null>(null);
+  const pendingModelSelectionWriteRef = useRef<{
+    threadKey: string;
+    requested: ModelSelection;
+    confirmed: ModelSelection;
+  } | null>(null);
 
   useLayoutEffect(() => {
     if (!composerOverlayElement) return;
@@ -1458,10 +1465,25 @@ function ChatViewContent(props: ChatViewProps) {
       ?.modelSelectionByProvider[serverThread.modelSelection.instanceId];
     const locallyChanged = locallyChangedModelThreadKeyRef.current === threadKey;
     const serverSelectionChanged = previous?.threadKey === threadKey && previous.value !== value;
+    const pendingWrite = pendingModelSelectionWriteRef.current;
+
+    // A thread command may project an intermediate selection while several
+    // picker writes are queued for the same thread. Keep the latest local
+    // choice visible until that exact choice is authoritative; otherwise an
+    // older response can overwrite the user's newer selection in the UI.
+    if (pendingWrite?.threadKey === threadKey) {
+      if (areModelSelectionsEqual(serverThread.modelSelection, pendingWrite.requested)) {
+        pendingModelSelectionWriteRef.current = null;
+        locallyChangedModelThreadKeyRef.current = null;
+      } else {
+        lastServerModelSelectionRef.current = { threadKey, value };
+        return;
+      }
+    }
 
     // The persisted server thread is authoritative for tool-driven changes.
-    // A local picker change remains visible until it is persisted by the next
-    // turn; once that event arrives, clear the local-dirty marker.
+    // Picker changes are persisted immediately; once that event arrives, clear
+    // the local-dirty marker.
     if (
       shouldAdoptServerModelSelection({
         serverSelection: serverThread.modelSelection,
@@ -3519,10 +3541,11 @@ function ChatViewContent(props: ChatViewProps) {
       let result: AtomCommandResult<void, unknown> = AsyncResult.success(undefined);
       if (
         input.modelSelection !== undefined &&
-        (input.modelSelection.model !== serverThread.modelSelection.model ||
-          input.modelSelection.instanceId !== serverThread.modelSelection.instanceId ||
-          JSON.stringify(input.modelSelection.options ?? null) !==
-            JSON.stringify(serverThread.modelSelection.options ?? null))
+        shouldPersistServerThreadModelSelection({
+          isServerThread: true,
+          currentModelSelection: serverThread.modelSelection,
+          nextModelSelection: input.modelSelection,
+        })
       ) {
         result = mapAtomCommandResult(
           await updateThreadMetadata({
@@ -5338,18 +5361,88 @@ function ChatViewContent(props: ChatViewProps) {
       setComposerDraftModelSelection(composerDraftTarget, nextModelSelection);
       setStickyComposerModelSelection(nextModelSelection);
       locallyChangedModelThreadKeyRef.current = routeThreadKey;
+
+      // The composer draft is intentionally local, but thread tools read the
+      // authoritative server thread. Persist a picker change immediately on a
+      // server route so sparky_create_thread cannot inherit an older
+      // opencode/... selection while the UI displays an OpenAI selection.
+      const pendingWrite = pendingModelSelectionWriteRef.current;
+      const hasQueuedDifferentSelection =
+        pendingWrite?.threadKey === routeThreadKey &&
+        !areModelSelectionsEqual(pendingWrite.requested, nextModelSelection);
+      if (
+        routeKind === "server" &&
+        serverThread !== null &&
+        (shouldPersistServerThreadModelSelection({
+          isServerThread: true,
+          currentModelSelection: serverThread.modelSelection,
+          nextModelSelection,
+        }) ||
+          hasQueuedDifferentSelection)
+      ) {
+        pendingModelSelectionWriteRef.current = {
+          threadKey: routeThreadKey,
+          requested: nextModelSelection,
+          confirmed:
+            pendingWrite?.threadKey === routeThreadKey
+              ? pendingWrite.confirmed
+              : serverThread.modelSelection,
+        };
+        void updateThreadMetadata({
+          environmentId,
+          input: {
+            threadId: serverThread.id,
+            modelSelection: nextModelSelection,
+          },
+        }).then((result) => {
+          const currentWrite = pendingModelSelectionWriteRef.current;
+          if (currentWrite?.threadKey !== routeThreadKey) {
+            return;
+          }
+          if (result._tag === "Success") {
+            // Keep the write pending until the subscribed server snapshot
+            // confirms this exact selection. This also protects newer picker
+            // changes from an intermediate projection response.
+            currentWrite.confirmed = nextModelSelection;
+            return;
+          }
+          if (!areModelSelectionsEqual(currentWrite.requested, nextModelSelection)) {
+            return;
+          }
+
+          pendingModelSelectionWriteRef.current = null;
+          setComposerDraftModelSelection(composerDraftTarget, currentWrite.confirmed);
+          setStickyComposerModelSelection(currentWrite.confirmed);
+          locallyChangedModelThreadKeyRef.current = null;
+          if (!isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Failed to save model selection",
+                description:
+                  error instanceof Error ? error.message : "The model selection was not saved.",
+              }),
+            );
+          }
+        });
+      }
       scheduleComposerFocus();
     },
     [
       activeThread,
       composerDraftTarget,
+      environmentId,
       lockedProvider,
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
       providerStatuses,
+      routeKind,
       routeThreadKey,
+      serverThread,
       settings,
+      updateThreadMetadata,
     ],
   );
   const onEnvModeChange = useCallback(

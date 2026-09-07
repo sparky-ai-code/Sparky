@@ -90,6 +90,33 @@ export function resolveLocalDraftModelSelection(input: {
   return input.projectModelSelection ?? input.fallbackModelSelection;
 }
 
+/**
+ * Compare only the fields that control provider routing. Context-window
+ * provenance is descriptive metadata and must not cause a second persistence
+ * write for the same provider/model/options selection.
+ */
+export function areModelSelectionsEqual(
+  left: ModelSelection | null | undefined,
+  right: ModelSelection | null | undefined,
+): boolean {
+  return (
+    left?.instanceId === right?.instanceId &&
+    left?.model === right?.model &&
+    JSON.stringify(left?.options ?? null) === JSON.stringify(right?.options ?? null)
+  );
+}
+
+export function shouldPersistServerThreadModelSelection(input: {
+  isServerThread: boolean;
+  currentModelSelection: ModelSelection;
+  nextModelSelection: ModelSelection;
+}): boolean {
+  return (
+    input.isServerThread &&
+    !areModelSelectionsEqual(input.currentModelSelection, input.nextModelSelection)
+  );
+}
+
 export function shouldWriteThreadErrorToCurrentServerThread(input: {
   serverThread:
     | {

@@ -478,10 +478,14 @@ async fn main() -> anyhow::Result<()> {
                 "OpenCode",
             ))
         }
-        "openai" | _ => {
+        "openai" => {
             let key = required_api_key("OPENAI_API_KEY")?;
             Arc::new(OpenAiProvider::new(key, cli.base_url.clone()))
         }
+        unsupported => anyhow::bail!(
+            "ERROR: unsupported provider '{}'. Select an explicit supported provider instead of relying on fallback routing.",
+            unsupported
+        ),
     };
 
     if cli.text_only {

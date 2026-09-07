@@ -438,6 +438,15 @@ describe("Sparky session continuity", () => {
     expect(args.at(args.indexOf("--provider") + 1)).not.toBe("openai");
   });
 
+  it("refuses to infer a provider for an unqualified model selection", () => {
+    expect(() => parseSparkyModelSelection("GPT-6 Astra")).toThrow(
+      "must use an explicit provider/model slug",
+    );
+    expect(() => parseSparkyModelSelection(undefined)).toThrow(
+      "missing an explicit provider/model slug",
+    );
+  });
+
   it("explains when a project-free turn is using an outdated Sparky binary", () => {
     expect(
       formatSparkyProcessError("error: unexpected argument '--no-workspace-context' found", "none"),

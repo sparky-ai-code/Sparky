@@ -493,6 +493,18 @@ export interface EffectiveComposerModelState {
   modelOptions: ProviderOptionSelectionsByProvider | null;
 }
 
+export function shouldAdoptServerModelSelection(input: {
+  serverSelection: ModelSelection;
+  draftSelection: ModelSelection | undefined;
+  locallyChanged: boolean;
+  serverSelectionChanged: boolean;
+}): boolean {
+  const draftMatchesServer =
+    input.draftSelection !== undefined &&
+    JSON.stringify(input.draftSelection) === JSON.stringify(input.serverSelection);
+  return !draftMatchesServer && (!input.locallyChanged || input.serverSelectionChanged);
+}
+
 interface ComposerDraftModelState {
   activeProvider: ProviderInstanceId | null;
   modelSelectionByProvider: Partial<Record<ProviderInstanceId, ModelSelection>>;

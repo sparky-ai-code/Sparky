@@ -2169,6 +2169,10 @@ export function resolveWorkEntryToolIconName(
     case "image_view":
     case "t3-code_image_view":
       return "eye";
+    case "sparky_list_projects":
+      return "folder";
+    case "sparky_list_models":
+      return "list-checks";
     case "automation_list":
       return "calendar-clock";
     case "automation_create":
@@ -2184,6 +2188,18 @@ export function resolveWorkEntryToolIconName(
   }
 }
 
+export function isThreadRelatedSparkyTool(toolName: string | undefined): boolean {
+  switch (toolName?.trim().toLowerCase()) {
+    case "sparky_create_thread":
+    case "sparky_list_threads":
+    case "sparky_set_model":
+    case "sparky_send_message":
+      return true;
+    default:
+      return false;
+  }
+}
+
 function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   if (
     workEntry.sourceActivityKind === "user-input.requested" ||
@@ -2191,6 +2207,9 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
+  const toolIconName = resolveWorkEntryToolIconName(workEntry.toolName);
+  if (toolIconName) return toolIconName;
+  if (isThreadRelatedSparkyTool(workEntry.toolName)) return "sparky";
   if (
     workLogEntryIsToolLike(workEntry) &&
     (workEntry.tone === "tool" ||
@@ -2203,8 +2222,6 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "sparky";
   }
-  const toolIconName = resolveWorkEntryToolIconName(workEntry.toolName);
-  if (toolIconName) return toolIconName;
   if (workEntry.requestKind === "command") return "terminal";
   if (workEntry.requestKind === "file-read") return "eye";
   if (workEntry.requestKind === "file-change") return "square-pen";

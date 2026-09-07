@@ -512,6 +512,8 @@ export function sparkyToolPresentation(
     preview_recording_stop: "Stop browser recording",
     sparky_list_projects: "List projects",
     sparky_list_threads: "List threads",
+    sparky_list_models: "List models",
+    sparky_set_model: "Set model",
     sparky_create_thread: "Create thread",
     sparky_send_message: "Send thread message",
   };

@@ -5,6 +5,9 @@ import {
   MessageId,
   ProjectId,
   ThreadId,
+  ProviderInstanceId,
+  type ProviderOptionSelection,
+  type ServerProvider,
   type ModelSelection,
   type OrchestrationProjectShell,
   type OrchestrationThreadShell,
@@ -16,6 +19,7 @@ import * as Option from "effect/Option";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProviderRegistry } from "../../../provider/Services/ProviderRegistry.ts";
 import { ThreadToolkit } from "./tools.ts";
 
 type ToolResult = {
@@ -151,6 +155,294 @@ function deepLink(environmentId: string, threadId: ThreadId): string {
   return `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(threadId)}`;
 }
 
+type ModelSelectionRequest = {
+  readonly inherited?: ModelSelection | null;
+  readonly providerInstanceId?: string | undefined;
+  readonly model?: string | undefined;
+  readonly options?: ReadonlyArray<ProviderOptionSelection> | undefined;
+  readonly validateOptions?: boolean | undefined;
+};
+
+type ModelSelectionResolution =
+  | { readonly selection: ModelSelection; readonly provider: ServerProvider }
+  | { readonly error: ToolResult };
+
+export function modelSelectionsMatch(left: ModelSelection, right: ModelSelection): boolean {
+  return (
+    left.instanceId === right.instanceId &&
+    left.model === right.model &&
+    left.contextWindowSource === right.contextWindowSource &&
+    JSON.stringify(left.options ?? null) === JSON.stringify(right.options ?? null)
+  );
+}
+
+const waitForPersistedModelSelection = Effect.fnUntraced(function* (
+  query: ProjectionSnapshotQuery["Service"],
+  threadId: ThreadId,
+  expected: ModelSelection,
+) {
+  const maxAttempts = 80;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const thread = Option.getOrUndefined(yield* query.getThreadShellById(threadId));
+    if (thread && modelSelectionsMatch(thread.modelSelection, expected)) return thread;
+    if (attempt + 1 < maxAttempts) yield* Effect.sleep("25 millis");
+  }
+  return undefined;
+});
+
+const waitForThreadRuntimeAcceptance = Effect.fnUntraced(function* (
+  query: ProjectionSnapshotQuery["Service"],
+  threadId: ThreadId,
+  expected: ModelSelection,
+  previousTurnId: string | undefined,
+  failureCode: string,
+) {
+  const maxAttempts = 120;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const thread = Option.getOrUndefined(yield* query.getThreadShellById(threadId));
+    const hasNewTurn =
+      thread?.latestTurn !== null &&
+      thread?.latestTurn !== undefined &&
+      (previousTurnId === undefined || thread.latestTurn.turnId !== previousTurnId);
+    const selectionApplied =
+      thread !== undefined && modelSelectionsMatch(thread.modelSelection, expected);
+    const runtimeBound = thread?.session?.providerInstanceId === expected.instanceId;
+    if (thread && selectionApplied && hasNewTurn && runtimeBound) {
+      if (thread.latestTurn?.state === "error") {
+        return {
+          error: errorResult(
+            failureCode,
+            `The thread accepted the requested model selection, but its turn failed before it could run. Inspect the thread for the provider error and retry with a supported model or option.`,
+            {
+              threadId,
+              turnId: thread.latestTurn.turnId,
+              selection: expected,
+              state: thread.latestTurn.state,
+            },
+          ),
+        } as const;
+      }
+      return { thread } as const;
+    }
+    if (attempt + 1 < maxAttempts) yield* Effect.sleep("25 millis");
+  }
+  return {
+    error: errorResult(
+      failureCode,
+      `The requested model selection was not observed on the authoritative thread runtime after dispatch. The operation was not reported as started; retry after the projection catches up.`,
+      { threadId, selection: expected },
+    ),
+  } as const;
+});
+
+function providerIsSelectable(provider: ServerProvider): boolean {
+  return (
+    provider.enabled &&
+    provider.installed &&
+    provider.status !== "disabled" &&
+    provider.availability !== "unavailable" &&
+    provider.auth.status !== "unauthenticated"
+  );
+}
+
+function availableModelSummary(provider: ServerProvider) {
+  return {
+    instanceId: provider.instanceId,
+    driver: provider.driver,
+    displayName: provider.displayName,
+    auth: provider.auth,
+    models: provider.models.map((model) => ({
+      slug: model.slug,
+      name: model.name,
+      subProvider: model.subProvider,
+      isDefault: model.isDefault,
+      contextWindowSource: model.contextWindowSource,
+      supportedOptions: modelSupportedOptions(model),
+    })),
+  };
+}
+
+function modelSupportedOptions(model: ServerProvider["models"][number]) {
+  return (model.capabilities?.optionDescriptors ?? []).map((descriptor) => ({
+    id: descriptor.id,
+    label: descriptor.label,
+    type: descriptor.type,
+    ...(descriptor.type === "select"
+      ? {
+          choices: descriptor.options.map((choice) => ({
+            id: choice.id,
+            label: choice.label,
+            isDefault: choice.isDefault,
+          })),
+        }
+      : {}),
+    ...(descriptor.currentValue === undefined ? {} : { currentValue: descriptor.currentValue }),
+  }));
+}
+
+export function mergeModelSelectionOptions(
+  options: ReadonlyArray<ProviderOptionSelection> | undefined,
+  overrides: {
+    readonly reasoningEffort?: string | undefined;
+    readonly fastMode?: boolean | undefined;
+  },
+): {
+  readonly options: ReadonlyArray<ProviderOptionSelection> | undefined;
+  readonly explicit: boolean;
+} {
+  const values = new Map((options ?? []).map((option) => [option.id, option.value] as const));
+  let explicit = options !== undefined;
+  const reasoningEffort = normalizeOptional(overrides.reasoningEffort);
+  if (reasoningEffort !== undefined) {
+    values.set("reasoningEffort", reasoningEffort);
+    explicit = true;
+  }
+  if (overrides.fastMode !== undefined) {
+    values.set("fastMode", overrides.fastMode);
+    explicit = true;
+  }
+  return {
+    options: explicit ? [...values].map(([id, value]) => ({ id, value })) : undefined,
+    explicit,
+  };
+}
+
+function validateModelSelectionOptions(
+  model: ServerProvider["models"][number],
+  options: ReadonlyArray<ProviderOptionSelection>,
+): ToolResult | undefined {
+  const descriptors = model.capabilities?.optionDescriptors ?? [];
+  const invalid = options.filter((selection) => {
+    const descriptor = descriptors.find((candidate) => candidate.id === selection.id);
+    if (!descriptor) return true;
+    if (descriptor.type === "boolean") return typeof selection.value !== "boolean";
+    return (
+      typeof selection.value !== "string" ||
+      !descriptor.options.some((choice) => choice.id === selection.value)
+    );
+  });
+  if (invalid.length === 0) return undefined;
+  return errorResult(
+    "unsupported_model_option",
+    `Model '${model.slug}' does not support the requested model option value(s). Use sparky_list_models and pass an exact supported option.`,
+    {
+      requested: invalid,
+      supportedOptions: modelSupportedOptions(model),
+    },
+  );
+}
+
+export function resolveModelSelectionForProviders(
+  providers: ReadonlyArray<ServerProvider>,
+  input: ModelSelectionRequest,
+): ModelSelectionResolution {
+  const requestedInstanceId = normalizeOptional(input.providerInstanceId);
+  const inherited = input.inherited ?? null;
+  const inheritedInstanceId = inherited ? String(inherited.instanceId) : undefined;
+  const instanceId = requestedInstanceId ?? inheritedInstanceId;
+  const requestedProvider = instanceId
+    ? providers.find((candidate) => String(candidate.instanceId) === instanceId)
+    : undefined;
+  if (instanceId && !requestedProvider) {
+    return {
+      error: errorResult(
+        "provider_not_found",
+        `Provider instance '${instanceId}' is not configured. Use sparky_list_models to choose an exact provider instance id.`,
+        { providerInstanceId: instanceId },
+      ),
+    };
+  }
+  const provider =
+    requestedProvider ??
+    providers
+      .filter(providerIsSelectable)
+      .toSorted((left, right) => {
+        const authDelta =
+          Number(right.auth.status === "authenticated") -
+          Number(left.auth.status === "authenticated");
+        return authDelta || Number(right.models.length > 0) - Number(left.models.length > 0);
+      })
+      .find((candidate) => candidate.models.length > 0);
+
+  if (!provider) {
+    return {
+      error: errorResult(
+        "provider_unavailable",
+        "No configured authenticated provider instance with selectable models is available.",
+        { providers: providers.map(availableModelSummary) },
+      ),
+    };
+  }
+  if (!providerIsSelectable(provider)) {
+    return {
+      error: errorResult(
+        "provider_not_authenticated",
+        `Provider instance '${provider.instanceId}' is not available with its configured authentication.`,
+        { provider: availableModelSummary(provider) },
+      ),
+    };
+  }
+
+  const requestedModel = normalizeOptional(input.model);
+  const inheritedModel =
+    inherited && String(inherited.instanceId) === String(provider.instanceId)
+      ? inherited.model
+      : undefined;
+  const model =
+    requestedModel ??
+    inheritedModel ??
+    provider.models.find((candidate) => candidate.isDefault)?.slug ??
+    provider.models[0]?.slug;
+  if (!model) {
+    return {
+      error: errorResult(
+        "model_unavailable",
+        `Provider instance '${provider.instanceId}' has no selectable models.`,
+        { provider: availableModelSummary(provider) },
+      ),
+    };
+  }
+  const modelEntry = provider.models.find((candidate) => candidate.slug === model);
+  if (!modelEntry) {
+    return {
+      error: errorResult(
+        "model_unavailable",
+        `Model '${model}' is not available on provider instance '${provider.instanceId}'. Use sparky_list_models and choose an exact model slug.`,
+        { provider: availableModelSummary(provider) },
+      ),
+    };
+  }
+
+  const sameSelection = inherited?.instanceId === provider.instanceId && inherited.model === model;
+  const options = input.options ?? (sameSelection ? inherited?.options : undefined);
+  if (input.validateOptions && options !== undefined) {
+    const invalidOptions = validateModelSelectionOptions(modelEntry, options);
+    if (invalidOptions) return { error: invalidOptions };
+  }
+  return {
+    provider,
+    selection: {
+      instanceId: ProviderInstanceId.make(provider.instanceId),
+      model,
+      ...(options ? { options } : {}),
+      ...(modelEntry.contextWindowSource
+        ? { contextWindowSource: modelEntry.contextWindowSource }
+        : {}),
+    },
+  };
+}
+
+function modelSelectionResult(selection: ModelSelection, provider: ServerProvider) {
+  return {
+    instanceId: selection.instanceId,
+    driver: provider.driver,
+    model: selection.model,
+    options: selection.options ?? [],
+    auth: provider.auth,
+    contextWindowSource: selection.contextWindowSource,
+  };
+}
+
 const handlers = {
   sparky_list_projects: (input) =>
     Effect.gen(function* () {
@@ -207,11 +499,114 @@ const handlers = {
       ),
     ),
 
+  sparky_list_models: (input) =>
+    Effect.gen(function* () {
+      const registry = yield* ProviderRegistry;
+      const providers = yield* registry.getProviders;
+      const query = normalizeOptional(input.query)?.toLocaleLowerCase();
+      const visibleProviders = providers
+        .map((provider) => ({
+          ...availableModelSummary(provider),
+          status: provider.status,
+          enabled: provider.enabled,
+          installed: provider.installed,
+          availability: provider.availability ?? "available",
+          models: provider.models
+            .filter(
+              (model) =>
+                query === undefined ||
+                model.slug.toLocaleLowerCase().includes(query) ||
+                model.name.toLocaleLowerCase().includes(query) ||
+                model.subProvider?.toLocaleLowerCase().includes(query),
+            )
+            .map((model) => ({
+              slug: model.slug,
+              name: model.name,
+              subProvider: model.subProvider,
+              isDefault: model.isDefault,
+              contextWindowSource: model.contextWindowSource,
+              capabilities: model.capabilities,
+              supportedOptions: modelSupportedOptions(model),
+            })),
+        }))
+        .filter((provider) => query === undefined || provider.models.length > 0);
+      return ok("Configured provider instances and models are ready to select.", {
+        providers: visibleProviders,
+      });
+    }),
+
+  sparky_set_model: (input) =>
+    Effect.gen(function* () {
+      const invocation = yield* McpInvocationContext.McpInvocationContext;
+      const query = yield* ProjectionSnapshotQuery;
+      const engine = yield* OrchestrationEngineService;
+      const registry = yield* ProviderRegistry;
+      const threadId = ThreadId.make(
+        normalizeOptional(input.threadId) ?? String(invocation.threadId),
+      );
+      const threadOption = yield* query.getThreadShellById(threadId);
+      const thread = Option.getOrUndefined(threadOption);
+      if (!thread)
+        return errorResult("thread_not_found", `No active thread exists with id '${threadId}'.`);
+      if (
+        thread.latestTurn?.state === "running" ||
+        (thread.session !== null && thread.session.activeTurnId !== null)
+      ) {
+        return errorResult(
+          "thread_busy",
+          `Thread '${threadId}' is currently running a turn. Set the model after it completes, then send the next turn.`,
+        );
+      }
+      const providers = yield* registry.getProviders;
+      const optionInput = mergeModelSelectionOptions(input.options, {
+        reasoningEffort: input.reasoningEffort,
+        fastMode: input.fastMode,
+      });
+      const resolved = resolveModelSelectionForProviders(providers, {
+        inherited: thread.modelSelection,
+        providerInstanceId: input.providerInstanceId,
+        model: input.model,
+        options: optionInput.options,
+        validateOptions: optionInput.explicit,
+      });
+      if ("error" in resolved) return resolved.error;
+      const createdAt = DateTime.formatIso(yield* DateTime.now);
+      yield* engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make(
+          stableIdentifier("command", `set-model:${threadId}:${createdAt}`),
+        ),
+        threadId,
+        modelSelection: resolved.selection,
+      });
+      const persistedThread = yield* waitForPersistedModelSelection(
+        query,
+        threadId,
+        resolved.selection,
+      );
+      if (!persistedThread) {
+        return errorResult(
+          "model_set_not_persisted",
+          `The requested model selection was not visible in the authoritative thread state after dispatch. The selection was not reported as applied; retry after the thread projection catches up.`,
+          { threadId, selection: modelSelectionResult(resolved.selection, resolved.provider) },
+        );
+      }
+      return ok(`Selected ${resolved.selection.model} for ${thread.title}.`, {
+        threadId,
+        title: thread.title,
+        deepLink: deepLink(invocation.environmentId, threadId),
+        selection: modelSelectionResult(persistedThread.modelSelection, resolved.provider),
+      });
+    }).pipe(
+      Effect.catch((error) => Effect.succeed(errorResult("model_set_failed", errorMessage(error)))),
+    ),
+
   sparky_create_thread: (input) =>
     Effect.gen(function* () {
       const invocation = yield* McpInvocationContext.McpInvocationContext;
       const query = yield* ProjectionSnapshotQuery;
       const engine = yield* OrchestrationEngineService;
+      const registry = yield* ProviderRegistry;
       const initialPrompt = input.initialPrompt.trim();
       if (initialPrompt.length === 0)
         return errorResult("initial_prompt_required", "Initial prompt cannot be empty.");
@@ -220,14 +615,23 @@ const handlers = {
       if ("error" in target) return target.error;
       const sourceThreadOption = yield* query.getThreadShellById(invocation.threadId);
       const sourceThread = Option.getOrUndefined(sourceThreadOption);
-      const modelSelection: ModelSelection | null =
-        target.project.defaultModelSelection ?? sourceThread?.modelSelection ?? null;
-      if (modelSelection === null) {
-        return errorResult(
-          "model_required",
-          "The target project has no default model and the current thread has no model to inherit.",
-        );
-      }
+      const providers = yield* registry.getProviders;
+      const optionInput = mergeModelSelectionOptions(input.options, {
+        reasoningEffort: input.reasoningEffort,
+        fastMode: input.fastMode,
+      });
+      const resolved = resolveModelSelectionForProviders(providers, {
+        // The source thread is the authority for cross-project inheritance.
+        // A target project's default may be an API-key model even when the
+        // current agent is running on an authenticated OAuth connection.
+        inherited: sourceThread?.modelSelection ?? target.project.defaultModelSelection,
+        providerInstanceId: input.providerInstanceId,
+        model: input.model,
+        options: optionInput.options,
+        validateOptions: optionInput.explicit,
+      });
+      if ("error" in resolved) return resolved.error;
+      const modelSelection = resolved.selection;
 
       const title =
         normalizeOptional(input.title) ??
@@ -284,11 +688,21 @@ const handlers = {
           ),
         );
 
+      const accepted = yield* waitForThreadRuntimeAcceptance(
+        query,
+        threadId,
+        modelSelection,
+        undefined,
+        "thread_initial_turn_failed",
+      );
+      if ("error" in accepted) return accepted.error;
+
       return ok(`Created a thread in ${target.project.title} and sent its initial prompt.`, {
         projectId: target.project.id,
         projectTitle: target.project.title,
         threadId,
         title,
+        selection: modelSelectionResult(modelSelection, resolved.provider),
         deepLink: deepLink(invocation.environmentId, threadId),
       });
     }).pipe(
@@ -336,6 +750,7 @@ const handlers = {
       const createdAt = DateTime.formatIso(yield* DateTime.now);
       const commandId = CommandId.make(stableIdentifier("command", operationKey));
       const messageId = MessageId.make(stableIdentifier("message", operationKey));
+      const previousTurnId = targetThread.latestTurn?.turnId;
       yield* engine.dispatch({
         type: "thread.turn.start",
         commandId,
@@ -347,6 +762,14 @@ const handlers = {
         interactionMode: targetThread.interactionMode,
         createdAt,
       });
+      const accepted = yield* waitForThreadRuntimeAcceptance(
+        query,
+        targetThread.id,
+        targetThread.modelSelection,
+        previousTurnId,
+        "thread_message_failed",
+      );
+      if ("error" in accepted) return accepted.error;
       return ok(`Sent a follow-up message to ${targetThread.title}.`, {
         projectId: targetProject.id,
         projectTitle: targetProject.title,

@@ -13,6 +13,7 @@ import type { Thread } from "../types";
 import {
   MAX_HIDDEN_MOUNTED_PREVIEW_THREADS,
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
+  areModelSelectionsEqual,
   buildExpiredTerminalContextToastCopy,
   buildThreadTurnInterruptInput,
   createLocalDispatchSnapshot,
@@ -24,6 +25,7 @@ import {
   resolveChatServerConfig,
   resolveLocalDraftModelSelection,
   resolveSendEnvMode,
+  shouldPersistServerThreadModelSelection,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
 
@@ -311,6 +313,46 @@ describe("getStartedThreadModelChangeBlockReason", () => {
       description:
         "This provider does not allow switching models after a conversation has started.",
     });
+  });
+});
+
+describe("server thread model selection persistence", () => {
+  const persistedOpenCodeSelection = {
+    instanceId: ProviderInstanceId.make("sparky"),
+    model: "opencode/ling-3.0-flash-fin-free",
+  };
+  const selectedCodexOAuthModel = {
+    instanceId: ProviderInstanceId.make("sparky"),
+    model: "openai-codex/gpt-6-astra",
+  };
+
+  it("requires an immediate write when the picker changes the routing selection", () => {
+    expect(
+      shouldPersistServerThreadModelSelection({
+        isServerThread: true,
+        currentModelSelection: persistedOpenCodeSelection,
+        nextModelSelection: selectedCodexOAuthModel,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not write a draft-only selection", () => {
+    expect(
+      shouldPersistServerThreadModelSelection({
+        isServerThread: false,
+        currentModelSelection: persistedOpenCodeSelection,
+        nextModelSelection: selectedCodexOAuthModel,
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores descriptive context-window metadata when comparing routing", () => {
+    expect(
+      areModelSelectionsEqual(selectedCodexOAuthModel, {
+        ...selectedCodexOAuthModel,
+        contextWindowSource: "oauth",
+      }),
+    ).toBe(true);
   });
 });
 

@@ -44,7 +44,10 @@ import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityRes
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
-import { ProviderRuntimeIngestionLive } from "./ProviderRuntimeIngestion.ts";
+import {
+  mergeObservedContextWindowSelection,
+  ProviderRuntimeIngestionLive,
+} from "./ProviderRuntimeIngestion.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -1576,8 +1579,8 @@ describe("ProviderRuntimeIngestion", () => {
 
   it("accepts a conflicting turn.started for a pending turn start when the provider expects that turn", async () => {
     // Steering a running turn: the server requests a new turn while the old
-    // one is still active, and providers like opencode open the new turn
-    // without ever completing the superseded one. The new turn.started must
+    // one is still active, and the provider opens the new turn without ever
+    // completing the superseded one. The new turn.started must
     // replace the active turn instead of being rejected as stale.
     const harness = await createHarness();
     const threadId = asThreadId("thread-1");
@@ -3085,6 +3088,21 @@ describe("ProviderRuntimeIngestion", () => {
       (option) => option.id === "contextWindow",
     );
     expect(contextOptions).toEqual([{ id: "contextWindow", value: "258400" }]);
+  });
+
+  it("does not merge an old context observation into a newly selected model", () => {
+    const observed = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
+      options: [{ id: "contextWindow", value: "258400" }],
+      contextWindowSource: "provider" as const,
+    } satisfies ModelSelection;
+    const current = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-full",
+    } satisfies ModelSelection;
+
+    expect(mergeObservedContextWindowSelection(current, observed)).toBeUndefined();
   });
 
   it("caps an overreported OAuth Codex usage window in both UI surfaces", async () => {

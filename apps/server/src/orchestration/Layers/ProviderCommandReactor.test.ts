@@ -1049,6 +1049,74 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  it("uses the latest persisted model when a later turn omits its model selection", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const nextModelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-full",
+    } satisfies ModelSelection;
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-model-authority-1"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-model-authority-1"),
+          role: "user",
+          text: "first",
+          attachments: [],
+        },
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-thread-model-authority-update"),
+        threadId: ThreadId.make("thread-1"),
+        modelSelection: nextModelSelection,
+      }),
+    );
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      return readModel.threads[0]?.modelSelection.model === nextModelSelection.model;
+    });
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-model-authority-2"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-model-authority-2"),
+          role: "user",
+          text: "second",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+
+    expect(harness.startSession.mock.calls.length).toBe(1);
+    expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
+      threadId: ThreadId.make("thread-1"),
+      modelSelection: nextModelSelection,
+    });
+  });
+
   effectIt.effect(
     "rejects changing models after start when the provider requires a new thread",
     () =>

@@ -13,9 +13,9 @@ import {
 type FetchImplementation = typeof globalThis.fetch;
 
 type ProviderDefinition = {
-  readonly env?: "OPENAI_API_KEY" | "ANTHROPIC_API_KEY" | "GEMINI_API_KEY" | "OPENCODE_API_KEY";
-  readonly prefix: "openai-codex" | "openai" | "anthropic" | "google" | "opencode";
-  readonly label: "OpenAI Codex" | "OpenAI" | "Claude" | "Google" | "OpenCode Zen";
+  readonly env?: "OPENAI_API_KEY" | "ANTHROPIC_API_KEY" | "GEMINI_API_KEY";
+  readonly prefix: "openai-codex" | "openai" | "anthropic" | "google";
+  readonly label: "OpenAI Codex" | "OpenAI" | "Claude" | "Google";
   readonly load: (
     apiKey: string,
     fetchImplementation: FetchImplementation,
@@ -474,7 +474,9 @@ function applyCodexOAuthContextPolicy(
     );
   if (
     effectiveDefaultContextWindowTokens !== undefined &&
-    !contextWindows.some((contextWindow) => contextWindow.tokens === effectiveDefaultContextWindowTokens)
+    !contextWindows.some(
+      (contextWindow) => contextWindow.tokens === effectiveDefaultContextWindowTokens,
+    )
   ) {
     contextWindows.push({
       id: canonicalContextWindowId(effectiveDefaultContextWindowTokens),
@@ -507,14 +509,9 @@ function applyCodexOAuthContextPolicy(
   };
 }
 
-function addKnownCodexOAuthModels(
-  models: ReadonlyArray<RemoteModel>,
-): ReadonlyArray<RemoteModel> {
+function addKnownCodexOAuthModels(models: ReadonlyArray<RemoteModel>): ReadonlyArray<RemoteModel> {
   const knownIds = new Set(models.map((model) => model.id.trim()));
-  return [
-    ...models,
-    ...CODEX_OAUTH_KNOWN_MODELS.filter((model) => !knownIds.has(model.id)),
-  ];
+  return [...models, ...CODEX_OAUTH_KNOWN_MODELS.filter((model) => !knownIds.has(model.id))];
 }
 
 async function fetchJson(
@@ -694,22 +691,6 @@ async function loadGoogleModels(
   );
 }
 
-async function loadOpenCodeModels(
-  apiKey: string,
-  fetchImplementation: FetchImplementation,
-  _environment: NodeJS.ProcessEnv,
-  modelsDev?: ModelsDevCatalog,
-): Promise<ReadonlyArray<RemoteModel>> {
-  const models = parseOpenAICompatibleModels(
-    await fetchJson(fetchImplementation, "https://opencode.ai/zen/v1/models", {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    }),
-  );
-  return models.map((model) =>
-    mergeRemoteModelMetadata(model, modelsDevModel(modelsDev, "opencode", model.id)),
-  );
-}
-
 async function loadCodexModels(
   _apiKey: string,
   _fetchImplementation: FetchImplementation,
@@ -841,12 +822,6 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
     prefix: "google",
     label: "Google",
     load: loadGoogleModels,
-  },
-  {
-    env: "OPENCODE_API_KEY",
-    prefix: "opencode",
-    label: "OpenCode Zen",
-    load: loadOpenCodeModels,
   },
 ];
 

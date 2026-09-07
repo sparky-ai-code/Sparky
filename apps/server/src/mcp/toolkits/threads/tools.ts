@@ -104,7 +104,7 @@ export const CreateThreadTool = Tool.make("sparky_create_thread", {
 
 export const ListModelsTool = Tool.make("sparky_list_models", {
   description:
-    "List the live configured provider instances, their authentication status, selectable model slugs, and exact supported model option choices. Use this before explicit model selection. OAuth-backed Codex models are labeled with the openai-codex/ prefix; do not substitute openai/ models because those require OPENAI_API_KEY.",
+    "List the live configured provider instances, their authentication status, selectable model slugs, display names, and exact supported model option choices. Use this before explicit model selection. Pass the returned providerInstanceId and exact slug to sparky_set_model or sparky_create_thread. A model's subProvider is catalog metadata, not a second provider instance; do not infer a provider or fall back to another one. OAuth-backed Codex models are labeled with the openai-codex/ prefix; do not substitute openai/ models because those require OPENAI_API_KEY.",
   parameters: ListModelsInput,
   success: ToolResult,
   failure: Schema.Never,
@@ -116,7 +116,7 @@ export const ListModelsTool = Tool.make("sparky_list_models", {
 
 export const SetModelTool = Tool.make("sparky_set_model", {
   description:
-    "Set the model for the current thread or an exact target thread. Pass the providerInstanceId and model returned by sparky_list_models when switching providers, plus exact reasoningEffort or fastMode values supported by that model. The server validates the configured connection, model availability, option values, and auth state, persists the selection, and the next turn uses it; it preserves the existing session when the provider supports in-session switching and restarts only when the runtime requires it.",
+    "Set the model for the current thread or an exact target thread. Pass the providerInstanceId returned by sparky_list_models and either its exact slug or an exact display name such as the listed GPT model name; the server canonicalizes display names and rejects ambiguous matches. Pass exact reasoningEffort or fastMode values supported by that model. The server validates the configured connection, model availability, option values, and auth state, persists the selection, and the next turn uses that persisted selection; it never falls back to another provider or model.",
   parameters: SetModelInput,
   success: ToolResult,
   failure: Schema.Never,

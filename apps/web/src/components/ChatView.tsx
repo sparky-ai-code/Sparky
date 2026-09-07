@@ -5365,7 +5365,7 @@ function ChatViewContent(props: ChatViewProps) {
       // The composer draft is intentionally local, but thread tools read the
       // authoritative server thread. Persist a picker change immediately on a
       // server route so sparky_create_thread cannot inherit an older
-      // opencode/... selection while the UI displays an OpenAI selection.
+      // stale selection while the UI displays a newer model.
       const pendingWrite = pendingModelSelectionWriteRef.current;
       const hasQueuedDifferentSelection =
         pendingWrite?.threadKey === routeThreadKey &&

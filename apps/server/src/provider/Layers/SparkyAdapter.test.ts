@@ -73,7 +73,7 @@ describe("Sparky reconnect classification", () => {
     expect(
       isRetryableSparkyProcessError(
         processError(
-          'OpenCode API error (HTTP 429 Too Many Requests): {"type":"FreeUsageLimitError","message":"Rate limit exceeded."}',
+          'Provider API error (HTTP 429 Too Many Requests): {"type":"FreeUsageLimitError","message":"Rate limit exceeded."}',
         ),
       ),
     ).toBe(false);
@@ -408,25 +408,6 @@ describe("makeSparkyAssistantSegmenter", () => {
 });
 
 describe("Sparky session continuity", () => {
-  it("routes the OpenCode Zen model slug to its provider and base URL", () => {
-    expect(parseSparkyModelSelection("opencode/deepseek-v4-flash-free")).toEqual({
-      provider: "opencode",
-      model: "deepseek-v4-flash-free",
-      baseUrl: "https://opencode.ai/zen/v1",
-    });
-  });
-
-  it("passes OpenCode through the OpenCode provider path", () => {
-    const args = makeSparkyProcessArgs({
-      cwd: "C:\\workspace",
-      prompt: "Use OpenCode",
-      model: "opencode/deepseek-v4-flash-free",
-    });
-
-    expect(args.at(args.indexOf("--provider") + 1)).toBe("opencode");
-    expect(args.at(args.indexOf("--base-url") + 1)).toBe("https://opencode.ai/zen/v1");
-  });
-
   it("routes OAuth Codex models through Codex instead of the API-key OpenAI path", () => {
     const args = makeSparkyProcessArgs({
       cwd: "C:\\workspace",
@@ -459,17 +440,6 @@ describe("Sparky session continuity", () => {
         "project",
       ),
     ).toContain("unexpected argument");
-  });
-
-  it("explains when a provider free-tier quota is exhausted", () => {
-    expect(
-      formatSparkyProcessError(
-        'OpenCode API error (HTTP 429): {"type":"FreeUsageLimitError","message":"Rate limit exceeded."}',
-        "none",
-      ),
-    ).toBe(
-      "OpenCode Zen reported that this model's free usage limit was reached. Select another model or try again later.",
-    );
   });
 
   it("uses the provider-native text-only path for metadata generation", () => {
@@ -515,7 +485,7 @@ describe("Sparky session continuity", () => {
     const args = makeSparkyProcessArgs({
       cwd: "C:\\workspace",
       prompt: "Test the page",
-      model: "opencode/deepseek-v4-flash-free",
+      model: "openai/gpt-4o",
       mcpUrl: "http://127.0.0.1:43123/mcp",
       mcpBearerTokenEnvVar: "T3_MCP_BEARER_TOKEN",
     });
@@ -558,7 +528,7 @@ describe("Sparky session continuity", () => {
     const args = makeSparkyProcessArgs({
       cwd: "C:\\workspace",
       prompt: "Plan the migration",
-      model: "opencode/zen-test",
+      model: "openai/gpt-4o",
       contextWindow: "200k",
       interactionMode: "plan",
     });
@@ -608,7 +578,7 @@ describe("Sparky session continuity", () => {
     const args = makeSparkyProcessArgs({
       cwd: "C:\\workspace",
       prompt: "Add the feature",
-      model: "opencode/zen-test",
+      model: "openai/gpt-4o",
       interactionMode: "default",
     });
 

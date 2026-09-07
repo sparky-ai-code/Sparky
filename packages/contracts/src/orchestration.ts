@@ -576,6 +576,11 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   threadId: ThreadId,
   title: Schema.optional(TrimmedNonEmptyString),
   modelSelection: Schema.optional(ModelSelection),
+  /**
+   * Internal compare-and-set guard for asynchronous runtime observations.
+   * A stale observation must not overwrite a newer user-selected model.
+   */
+  expectedModelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   expectedBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),

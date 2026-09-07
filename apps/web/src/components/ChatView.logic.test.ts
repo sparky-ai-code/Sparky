@@ -317,9 +317,9 @@ describe("getStartedThreadModelChangeBlockReason", () => {
 });
 
 describe("server thread model selection persistence", () => {
-  const persistedOpenCodeSelection = {
+  const persistedOpenAISelection = {
     instanceId: ProviderInstanceId.make("sparky"),
-    model: "opencode/ling-3.0-flash-fin-free",
+    model: "openai/gpt-5.6-full",
   };
   const selectedCodexOAuthModel = {
     instanceId: ProviderInstanceId.make("sparky"),
@@ -330,7 +330,7 @@ describe("server thread model selection persistence", () => {
     expect(
       shouldPersistServerThreadModelSelection({
         isServerThread: true,
-        currentModelSelection: persistedOpenCodeSelection,
+        currentModelSelection: persistedOpenAISelection,
         nextModelSelection: selectedCodexOAuthModel,
       }),
     ).toBe(true);
@@ -340,7 +340,7 @@ describe("server thread model selection persistence", () => {
     expect(
       shouldPersistServerThreadModelSelection({
         isServerThread: false,
-        currentModelSelection: persistedOpenCodeSelection,
+        currentModelSelection: persistedOpenAISelection,
         nextModelSelection: selectedCodexOAuthModel,
       }),
     ).toBe(false);

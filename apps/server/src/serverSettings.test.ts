@@ -413,11 +413,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           claudeAgent: {
             binaryPath: "  /opt/homebrew/bin/claude  ",
           },
-          opencode: {
-            binaryPath: "  /opt/homebrew/bin/opencode  ",
-            serverUrl: "  http://127.0.0.1:4096  ",
-            serverPassword: "  secret-password  ",
-          },
         },
       });
 
@@ -435,13 +430,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         homePath: "",
         customModels: [],
         launchArgs: "",
-      });
-      assert.deepEqual(next.providers.opencode, {
-        enabled: true,
-        binaryPath: "/opt/homebrew/bin/opencode",
-        serverUrl: "http://127.0.0.1:4096",
-        serverPassword: "secret-password",
-        customModels: [],
       });
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
@@ -501,10 +489,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           codex: {
             binaryPath: "/opt/homebrew/bin/codex",
           },
-          opencode: {
-            serverUrl: "http://127.0.0.1:4096",
-            serverPassword: "secret-password",
-          },
         },
         automaticGitFetchInterval: Duration.seconds(10),
       });
@@ -523,10 +507,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           codex: {
             binaryPath: "/opt/homebrew/bin/codex",
           },
-          opencode: {
-            serverUrl: "http://127.0.0.1:4096",
-            serverPassword: "secret-password",
-          },
         },
         automaticGitFetchInterval: 10_000,
       });
@@ -537,20 +517,20 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const changes = yield* serverSettings.subscribeChanges!;
-      const instanceId = ProviderInstanceId.make("opencode_web");
+      const instanceId = ProviderInstanceId.make("grok_web");
 
       yield* serverSettings.updateSettings({
         providerInstances: {
           [instanceId]: {
-            driver: ProviderDriverKind.make("opencode"),
-            environment: [{ name: "OPENCODE_API_KEY", value: "zen-secret", sensitive: true }],
+            driver: ProviderDriverKind.make("grok"),
+            environment: [{ name: "GROK_API_KEY", value: "grok-secret", sensitive: true }],
             config: {},
           },
         },
       });
 
       const published = yield* PubSub.take(changes);
-      assert.equal(published.providerInstances[instanceId]?.environment?.[0]?.value, "zen-secret");
+      assert.equal(published.providerInstances[instanceId]?.environment?.[0]?.value, "grok-secret");
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
   it.effect("stores sensitive provider instance environment values outside settings.json", () =>

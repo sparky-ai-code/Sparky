@@ -9,7 +9,7 @@
  * `buildUnavailableProviderSnapshot`).
  *
  * The aggregated Sparky driver owns the OpenAI/Codex, Claude/Anthropic,
- * Google/Gemini, and OpenCode Zen catalogs. Standalone native CLI drivers are
+ * Google/Gemini catalogs. Standalone native CLI drivers are
  * intentionally not registered here, so they cannot create duplicate
  * provider instances in the backend or picker.
  *
@@ -36,12 +36,7 @@ import type { ProviderEventLoggers } from "./Layers/ProviderEventLoggers.ts";
  * driver. The registry layer declares `R = BuiltInDriversEnv`; the runtime
  * layer must provide every service in this union.
  */
-export type BuiltInDriversEnv =
-  | ServerSettingsService
-  | ServerConfig
-  | ProviderEventLoggers;
+export type BuiltInDriversEnv = ServerSettingsService | ServerConfig | ProviderEventLoggers;
 
 /** Only the aggregated Sparky runtime is exposed as a built-in provider. */
-export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
-  SparkyDriver,
-];
+export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [SparkyDriver];

@@ -27,16 +27,6 @@ impl OpenAiProvider {
         base_url: Option<String>,
         api_key_env: impl Into<String>,
     ) -> Self {
-        Self::new_with_api_key_env_and_provider(api_key, base_url, api_key_env, "openai", "OpenAI")
-    }
-
-    pub fn new_with_api_key_env_and_provider(
-        api_key: impl Into<String>,
-        base_url: Option<String>,
-        api_key_env: impl Into<String>,
-        provider_name: &'static str,
-        provider_label: &'static str,
-    ) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://api.openai.com/v1".to_string());
         let is_local = base_url.contains("localhost")
             || base_url.contains("127.0.0.1")
@@ -45,8 +35,8 @@ impl OpenAiProvider {
             api_key: api_key.into().trim().to_string(),
             api_key_env: (!is_local).then(|| api_key_env.into()),
             base_url,
-            provider_name,
-            provider_label,
+            provider_name: "openai",
+            provider_label: "OpenAI",
             client: Client::new(),
         }
     }

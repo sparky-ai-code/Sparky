@@ -1,8 +1,4 @@
-import {
-  DEFAULT_SERVER_SETTINGS,
-  ProviderDriverKind,
-  ProviderInstanceId,
-} from "@sparky/contracts";
+import { DEFAULT_SERVER_SETTINGS, ProviderDriverKind, ProviderInstanceId } from "@sparky/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { createModelSelection } from "./model.ts";
 import {
@@ -129,12 +125,12 @@ describe("serverSettings helpers", () => {
     expect(
       applyServerSettingsPatch(current, {
         textGenerationModelSelection: {
-          instanceId: ProviderInstanceId.make("opencode"),
+          instanceId: ProviderInstanceId.make("grok"),
           model: "openai/gpt-5",
         },
       }).textGenerationModelSelection,
     ).toEqual({
-      instanceId: "opencode",
+      instanceId: "grok",
       model: "openai/gpt-5",
     });
   });
@@ -143,7 +139,7 @@ describe("serverSettings helpers", () => {
     expect(
       applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
         textGenerationModelSelection: {
-          instanceId: ProviderInstanceId.make("opencode"),
+          instanceId: ProviderInstanceId.make("grok"),
           model: "openai/gpt-5",
           options: [
             { id: "variant", value: "prod" },
@@ -152,7 +148,7 @@ describe("serverSettings helpers", () => {
         },
       }).textGenerationModelSelection,
     ).toEqual({
-      instanceId: "opencode",
+      instanceId: "grok",
       model: "openai/gpt-5",
       options: [
         { id: "variant", value: "prod" },

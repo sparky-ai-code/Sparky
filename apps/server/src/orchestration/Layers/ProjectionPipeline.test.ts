@@ -1393,8 +1393,8 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           projectId: ProjectId.make("project-turn-supersede"),
           title: "Turn supersede",
           modelSelection: {
-            instanceId: ProviderInstanceId.make("opencode"),
-            model: "big-pickle",
+            instanceId: ProviderInstanceId.make("grok"),
+            model: "grok-build",
           },
           runtimeMode: "full-access",
           branch: null,
@@ -1420,7 +1420,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
             session: {
               threadId,
               status: "running",
-              providerName: "opencode",
+              providerName: "grok",
               runtimeMode: "full-access",
               activeTurnId: turnId,
               lastError: null,

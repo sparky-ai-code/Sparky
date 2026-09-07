@@ -3,6 +3,7 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
+  type ModelSelection,
   UNSCOPED_CHAT_PROJECT_ID,
 } from "@sparky/contracts";
 import * as DateTime from "effect/DateTime";
@@ -24,6 +25,15 @@ import {
 import { projectEvent } from "./projector.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+
+function modelSelectionsMatch(left: ModelSelection, right: ModelSelection): boolean {
+  return (
+    left.instanceId === right.instanceId &&
+    left.model === right.model &&
+    left.contextWindowSource === right.contextWindowSource &&
+    JSON.stringify(left.options ?? null) === JSON.stringify(right.options ?? null)
+  );
+}
 
 function withEventBase(
   input: Pick<OrchestrationCommand, "commandId"> & {
@@ -342,6 +352,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         thread.branch !== command.expectedBranch
           ? thread.branch
           : command.branch;
+      const modelSelection =
+        command.modelSelection !== undefined &&
+        (command.expectedModelSelection === undefined ||
+          modelSelectionsMatch(command.expectedModelSelection, thread.modelSelection))
+          ? command.modelSelection
+          : undefined;
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -354,9 +370,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           ...(command.title !== undefined ? { title: command.title } : {}),
-          ...(command.modelSelection !== undefined
-            ? { modelSelection: command.modelSelection }
-            : {}),
+          ...(modelSelection !== undefined ? { modelSelection } : {}),
           ...(branch !== undefined ? { branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
           updatedAt: occurredAt,

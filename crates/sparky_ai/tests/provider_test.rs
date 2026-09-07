@@ -50,19 +50,6 @@ fn formats_gemini_tool_conversation() {
     );
 }
 
-#[test]
-fn openai_compatible_provider_preserves_opencode_identity() {
-    let opencode = OpenAiProvider::new_with_api_key_env_and_provider(
-        "zen-test-key",
-        Some("https://opencode.ai/zen/v1".to_string()),
-        "OPENCODE_API_KEY",
-        "opencode",
-        "OpenCode",
-    );
-
-    assert_eq!(opencode.provider_name(), "opencode");
-}
-
 #[tokio::test]
 async fn hosted_providers_reject_empty_api_keys_before_network_access() {
     let messages = vec![Message::user("hello")];

@@ -306,6 +306,36 @@ function modelSelectionForObservedContextWindow(
   return withModelSelectionContextWindow(selection, effectiveMaxTokens, source);
 }
 
+function sameModelRouting(left: ModelSelection, right: ModelSelection): boolean {
+  return (
+    left.instanceId === right.instanceId &&
+    left.model === right.model &&
+    JSON.stringify(left.options?.filter((option) => option.id !== "contextWindow") ?? []) ===
+      JSON.stringify(right.options?.filter((option) => option.id !== "contextWindow") ?? [])
+  );
+}
+
+/**
+ * Merge an asynchronous context-window observation into the latest persisted
+ * selection without allowing an older model turn to replace a newer route.
+ */
+export function mergeObservedContextWindowSelection(
+  current: ModelSelection,
+  observed: ModelSelection,
+): ModelSelection | undefined {
+  if (!sameModelRouting(current, observed)) return undefined;
+  const tokens = getModelSelectionContextWindowTokens(observed);
+  const source = observed.contextWindowSource;
+  if (tokens === undefined || source === undefined) return undefined;
+  if (
+    getModelSelectionContextWindowTokens(current) === tokens &&
+    current.contextWindowSource === source
+  ) {
+    return undefined;
+  }
+  return withModelSelectionContextWindow(current, tokens, source);
+}
+
 function normalizeRuntimeTurnState(
   value: string | undefined,
 ): "completed" | "failed" | "interrupted" | "cancelled" {
@@ -1374,12 +1404,24 @@ const make = Effect.gen(function* () {
 
       const observedModelSelection = modelSelectionForObservedContextWindow(thread, event);
       if (observedModelSelection !== undefined) {
-        yield* orchestrationEngine.dispatch({
-          type: "thread.meta.update",
-          commandId: yield* providerCommandId(event, "thread-model-context-update"),
-          threadId: thread.id,
-          modelSelection: observedModelSelection,
-        });
+        // Runtime events can arrive after an agent has changed the thread
+        // model. Re-read the shell, merge only the capacity metadata into the
+        // current route, and make the write compare-and-set so a model update
+        // that races this dispatch remains authoritative.
+        const latestThread = (yield* resolveThreadShell(thread.id)) ?? thread;
+        const mergedModelSelection = mergeObservedContextWindowSelection(
+          latestThread.modelSelection,
+          observedModelSelection,
+        );
+        if (mergedModelSelection !== undefined) {
+          yield* orchestrationEngine.dispatch({
+            type: "thread.meta.update",
+            commandId: yield* providerCommandId(event, "thread-model-context-update"),
+            threadId: thread.id,
+            modelSelection: mergedModelSelection,
+            expectedModelSelection: latestThread.modelSelection,
+          });
+        }
       }
 
       const conflictsWithActiveTurn =
@@ -1435,8 +1477,8 @@ const make = Effect.gen(function* () {
       // A turn.started that conflicts with the active turn is legitimate when
       // the server itself has a turn start pending for this thread AND the
       // provider session already tracks the event's turn as its active turn:
-      // steering a running turn makes some providers (e.g. opencode) open a
-      // new turn without ever completing the superseded one. A stale
+      // steering a running turn can open a new turn without ever completing
+      // the superseded one. A stale
       // turn.started for some other turn id still gets rejected.
       const conflictingTurnStartIsPendingTurnStart =
         event.type === "turn.started" && conflictsWithActiveTurn

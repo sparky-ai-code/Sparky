@@ -48,14 +48,14 @@ pub fn openai_messages(messages: &[Message]) -> Vec<Value> {
 
                 // Skip assistant messages with no text and no tool calls — they'd
                 // produce an empty "content" field that strict OpenAI-compatible
-                // endpoints (e.g. OpenCode Zen) reject with HTTP 400.
+                // Some OpenAI-compatible endpoints reject this shape with HTTP 400.
                 if text.is_empty() && !has_tool_calls {
                     return None;
                 }
 
                 // The OpenAI API spec says content should be `null` when there are
                 // tool calls and no text, NOT an empty string. Some strict-compatible
-                // endpoints (OpenCode Zen, etc.) reject `"content": ""`.
+                // Some OpenAI-compatible endpoints reject `"content": ""`.
                 let mut value = if text.is_empty() {
                     json!({ "role": "assistant", "content": null })
                 } else {

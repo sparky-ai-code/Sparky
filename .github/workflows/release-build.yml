@@ -190,7 +190,9 @@ jobs:
               cp release-appimage/latest-linux.yml release/latest-linux.yml
             fi
           elif [[ "${{ matrix.platform }}" == "win" ]]; then
-            pnpm dist:desktop:win:x64 -- --wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
+            wsl_prebuild="$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
+            test -s "$wsl_prebuild"
+            T3CODE_DESKTOP_WSL_PREBUILD="$wsl_prebuild" pnpm dist:desktop:win:x64
           else
             pnpm "${{ matrix.package_command }}"
           fi

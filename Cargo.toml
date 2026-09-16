@@ -1,16 +1,16 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/sparky_config",
-  "crates/sparky_ai",
-  "crates/sparky_tools",
-  "crates/sparky_session",
-  "crates/sparky_memory",
-  "crates/sparky_compaction",
-  "crates/sparky_prompt",
-  "crates/sparky_extensions",
-  "crates/sparky_agent",
-  "crates/sparky_cli",
+    "crates/sparky_config",
+    "crates/sparky_ai",
+    "crates/sparky_tools",
+    "crates/sparky_session",
+    "crates/sparky_memory",
+    "crates/sparky_compaction",
+    "crates/sparky_prompt",
+    "crates/sparky_extensions",
+    "crates/sparky_agent",
+    "crates/sparky_cli",
 ]
 
 [workspace.package]

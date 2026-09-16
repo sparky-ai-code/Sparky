@@ -1,0 +1,60 @@
+name: GitHub Auth Security
+
+on:
+  pull_request:
+    paths:
+      - 'sparky-auth-worker/**'
+      - 'sparky-desktop/source/apps/desktop/**'
+      - 'sparky-desktop/source/apps/web/src/components/pullRequests/**'
+      - '.github/workflows/github-auth-security.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'sparky-auth-worker/**'
+      - 'sparky-desktop/source/apps/desktop/**'
+      - 'sparky-desktop/source/apps/web/src/components/pullRequests/**'
+      - '.github/workflows/github-auth-security.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  auth-broker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-auth-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --ignore-scripts
+      - run: npm test
+
+  desktop-typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Typecheck desktop
+        run: pnpm --filter @sparky/desktop typecheck
+      - name: Typecheck web
+        run: pnpm --filter @sparky/web typecheck

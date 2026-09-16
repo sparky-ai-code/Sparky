@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sparky Founder Update Portal</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background:#0b0c0f; color:#f6f4ee }
+      * { box-sizing:border-box } body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px; background:radial-gradient(circle at 50% 0,#29220e 0,transparent 34%),#0b0c0f }
+      main { width:min(560px,100%); border:1px solid #2b2c31; border-radius:22px; background:#141519; padding:28px; box-shadow:0 24px 80px #0009 }
+      .brand { display:flex; gap:12px; align-items:center; margin-bottom:22px }.mark { display:grid; place-items:center; width:42px; height:42px; border-radius:13px; background:#ffd36a; color:#17130a; font-size:24px; font-weight:900 }
+      h1 { margin:0; font-size:20px } p { color:#aaa9a4; line-height:1.55; font-size:14px } label { display:block; margin:16px 0 7px; color:#d8d5cc; font-size:12px; font-weight:700 }
+      input { width:100%; height:42px; border:1px solid #35363c; border-radius:10px; background:#0d0e11; color:#fff; padding:0 12px; outline:none } input:focus { border-color:#ffd36a; box-shadow:0 0 0 3px #ffd36a22 }
+      button { height:42px; border:0; border-radius:10px; padding:0 16px; font-weight:800; cursor:pointer; background:#ffd36a; color:#17130a } button.secondary { background:#24252a; color:#eee } button:disabled { opacity:.45; cursor:not-allowed }
+      .actions { display:flex; gap:10px; margin-top:18px }.status { min-height:24px; margin-top:16px; color:#d9b955; font-size:13px }.hidden { display:none }
+      code { color:#ffd36a }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand"><div class="mark">ϟ</div><div><h1>Sparky Founder Update Portal</h1><p style="margin:3px 0 0">Private release publishing</p></div></div>
+      <section id="login">
+        <p>Enter the founder token configured on this server. The token is exchanged for an eight-hour, HttpOnly local session.</p>
+        <label for="token">Founder token</label><input id="token" type="password" autocomplete="current-password" />
+        <div class="actions"><button id="loginButton">Unlock portal</button></div>
+      </section>
+      <section id="release" class="hidden">
+        <p>Upload a built Sparky NSIS installer. The portal computes its SHA-512 checksum and atomically publishes <code>latest.yml</code>.</p>
+        <label for="version">Release version</label><input id="version" placeholder="0.1.1" />
+        <label for="installer">Windows installer</label><input id="installer" type="file" accept=".exe" />
+        <div class="actions"><button id="publishButton">Publish update</button><button id="logoutButton" class="secondary">Lock</button></div>
+      </section>
+      <div id="status" class="status" role="status"></div>
+    </main>
+    <script type="module">
+      const login = document.querySelector('#login'); const release = document.querySelector('#release'); const status = document.querySelector('#status');
+      const show = (authenticated) => { login.classList.toggle('hidden', authenticated); release.classList.toggle('hidden', !authenticated); };
+      const request = async (url, options) => { const response = await fetch(url, options); const body = await response.json(); if (!response.ok) throw new Error(body.error || 'Request failed'); return body; };
+      show((await request('/api/session')).authenticated);
+      document.querySelector('#loginButton').onclick = async () => { try { await request('/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:document.querySelector('#token').value})}); show(true); status.textContent='Portal unlocked.'; } catch(error) { status.textContent=error.message; } };
+      document.querySelector('#logoutButton').onclick = async () => { await request('/api/logout',{method:'POST'}); show(false); status.textContent='Portal locked.'; };
+      document.querySelector('#publishButton').onclick = async (event) => { const button=event.currentTarget; const file=document.querySelector('#installer').files[0]; const version=document.querySelector('#version').value.trim(); if(!file||!version){status.textContent='Choose an installer and enter its version.';return;} button.disabled=true; status.textContent='Publishing update…'; try { const body=await request('/api/releases',{method:'POST',headers:{'x-sparky-version':version,'x-sparky-filename':file.name},body:file}); status.textContent=`Published ${body.name} (${body.size.toLocaleString()} bytes).`; } catch(error) { status.textContent=error.message; } finally { button.disabled=false; } };
+    </script>
+  </body>
+</html>

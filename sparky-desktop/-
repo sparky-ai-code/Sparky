@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "id": "k17062e3zxdwntwv9gsft4kmm98bg2ps",
+  "version": "0.0.28",
+  "name": "Sparky 1",
+  "channel": "release",
+  "changelog": "Initial release of Sparky",
+  "publishedAt": "2026-07-30T13:07:14.646Z",
+  "files": [
+    {
+      "name": "Sparky-x64.exe",
+      "platform": "windows-x64",
+      "size": 342368467,
+      "contentType": "application/x-msdownload",
+      "sha256": null,
+      "key": "releases/0.0.28/windows/Sparky-x64.exe",
+      "url": "https://sparky-downloads-494452560242.s3.us-east-1.amazonaws.com/releases/0.0.28/windows/Sparky-x64.exe"
+    },
+    {
+      "name": "latest.yml",
+      "platform": "windows-x64",
+      "size": 325,
+      "contentType": "application/yaml",
+      "sha256": null,
+      "key": "releases/0.0.28/windows/latest.yml",
+      "url": "https://sparky-downloads-494452560242.s3.us-east-1.amazonaws.com/releases/0.0.28/windows/latest.yml"
+    },
+    {
+      "name": "Sparky.dmg",
+      "platform": "macos-arm64",
+      "size": 236736046,
+      "contentType": "binary/octet-stream",
+      "sha256": null,
+      "key": "releases/0.0.28/macos/arm64/Sparky.dmg",
+      "url": "https://sparky-downloads-494452560242.s3.us-east-1.amazonaws.com/releases/0.0.28/macos/arm64/Sparky.dmg"
+    },
+    {
+      "name": "latest-mac.yml",
+      "platform": "macos-arm64",
+      "size": 470,
+      "contentType": "application/yaml",
+      "sha256": null,
+      "key": "releases/0.0.28/macos/arm64/latest-mac.yml",
+      "url": "https://sparky-downloads-494452560242.s3.us-east-1.amazonaws.com/releases/0.0.28/macos/arm64/latest-mac.yml"
+    },
+    {
+      "name": "Sparky.dmg",
+      "platform": "macos-x64",
+      "size": 248181745,
+      "contentType": "binary/octet-stream",
+      "sha256": null,
+      "key": "releases/0.0.28/macos/x64/Sparky.dmg",
+      "url": "https://sparky-downloads-494452560242.s3.us-east-1.amazonaws.com/releases/0.0.28/macos/x64/Sparky.dmg"
+    },
+    {
+      "name": "latest-mac.yml",
+      "platform": "macos-x64",
+      "size": 470,
+      "contentType": "application/yaml",
+      "sha256": null,
+      "key": "releases/0.0.28/macos/x64/latest-mac.yml",
+      "url": "https://sparky-downloads-494452560242.s3.us-east-1.amazonaws.com/releases/0.0.28/macos/x64/latest-mac.yml"
+    }
+  ]
+}

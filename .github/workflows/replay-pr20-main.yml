@@ -1,0 +1,50 @@
+name: One-time replay PR 20
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  replay:
+    if: contains(github.event.head_commit.message, '[run-pr20-replay]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Replay merged PR 20 on current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_BRANCH="reapply/pr-20-model-provider-selector"
+          PR20_MERGE="0a2a7aefe87e49999f1408c7f5ded38d77c21f7f"
+
+          git checkout -B "$TARGET_BRANCH" "$GITHUB_SHA"
+
+          if ! git cherry-pick -m 1 "$PR20_MERGE"; then
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            for path in "${conflicts[@]}"; do
+              if git ls-files -u -- "$path" | awk '$3 == 3 { found=1 } END { exit(found ? 0 : 1) }'; then
+                git checkout --theirs -- "$path"
+                git add -- "$path"
+              else
+                git rm -f -- "$path"
+              fi
+            done
+            git add -A
+            GIT_EDITOR=true git cherry-pick --continue
+          fi
+
+          git rm .github/workflows/replay-pr20-main.yml
+          git commit --amend --no-edit
+          git push --force origin "$TARGET_BRANCH"

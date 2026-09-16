@@ -1,0 +1,62 @@
+format_version: "26"
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+project_type: other
+
+workflows:
+  primary:
+    title: Build Sparky for macOS
+    meta:
+      bitrise.io:
+        stack: osx-xcode-26.6.x
+        machine_type_id: g2.mac.large
+    steps:
+      - git-clone@8: {}
+      - script@1:
+          title: Build Apple Silicon and Intel installers
+          inputs:
+            - content: |-
+                #!/bin/bash
+                set -euo pipefail
+
+                export PATH="$HOME/.cargo/bin:$PATH"
+                export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+                export PUPPETEER_SKIP_DOWNLOAD=true
+                export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+                export CSC_IDENTITY_AUTO_DISCOVERY=false
+                export NODE_ENV=production
+
+                if ! command -v rustup >/dev/null 2>&1; then
+                  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+                fi
+                rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+                corepack enable
+                corepack prepare pnpm@11.10.0 --activate
+
+                cargo build --release -p sparky_cli
+
+                cd sparky-desktop/source
+                pnpm install --frozen-lockfile
+                pnpm build
+
+                pnpm dist:desktop:dmg:arm64
+                mkdir -p "$BITRISE_DEPLOY_DIR/macos/arm64"
+                cp release/Sparky-arm64.dmg "$BITRISE_DEPLOY_DIR/macos/arm64/Sparky.dmg"
+
+                cd ../..
+                cargo build --release -p sparky_cli --target x86_64-apple-darwin
+
+                cd sparky-desktop/source
+                pnpm dist:desktop:dmg:x64
+                mkdir -p "$BITRISE_DEPLOY_DIR/macos/x64"
+                cp release/Sparky-x64.dmg "$BITRISE_DEPLOY_DIR/macos/x64/Sparky.dmg"
+
+                test -s "$BITRISE_DEPLOY_DIR/macos/arm64/Sparky.dmg"
+                test -s "$BITRISE_DEPLOY_DIR/macos/x64/Sparky.dmg"
+                ditto -c -k --sequesterRsrc "$BITRISE_DEPLOY_DIR/macos" "$BITRISE_DEPLOY_DIR/Sparky.zip"
+                test -s "$BITRISE_DEPLOY_DIR/Sparky.zip"
+      - deploy-to-bitrise-io@2: {}
+
+trigger_map:
+  - push_branch: main
+    workflow: primary

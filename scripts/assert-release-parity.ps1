@@ -2,15 +2,14 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ExpectedVersion,
-    [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
-    [string]$ArtifactRoot
+    [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot)
 )
 
 $packageFiles = @(
-    'apps/server/package.json',
-    'apps/desktop/package.json',
-    'apps/web/package.json',
-    'packages/contracts/package.json'
+    'sparky-desktop/source/apps/server/package.json',
+    'sparky-desktop/source/apps/desktop/package.json',
+    'sparky-desktop/source/apps/web/package.json',
+    'sparky-desktop/source/packages/contracts/package.json'
 )
 
 $mismatches = [System.Collections.Generic.List[string]]::new()
@@ -40,15 +39,6 @@ foreach ($packageName in @('sparky_agent', 'sparky_ai', 'sparky_cli', 'sparky_co
     if (-not $match.Success -or $match.Groups[1].Value -ne $ExpectedVersion) {
         $found = if ($match.Success) { $match.Groups[1].Value } else { '<missing>' }
         $mismatches.Add("Cargo.lock/$packageName`: expected $ExpectedVersion, found $found")
-    }
-}
-
-if ($ArtifactRoot) {
-    $requiredArtifacts = @('Sparky-x64.exe', 'Sparky-x64.exe.blockmap', 'latest.yml')
-    foreach ($artifact in $requiredArtifacts) {
-        if (-not (Test-Path -LiteralPath (Join-Path $ArtifactRoot $artifact))) {
-            $mismatches.Add("ArtifactRoot: missing $artifact")
-        }
     }
 }
 

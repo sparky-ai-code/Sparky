@@ -1,0 +1,14 @@
+
+# Temp render/generation scripts
+render-*.html
+render-*.py
+icon-gen*.py
+gen-icons.py
+assets/prod/logo-*.png
+assets/prod/sphere-*.png
+
+# Temp render artifacts
+source/assets/prod/logo-1024.png
+source/assets/prod/logo-rendered.png
+source/assets/prod/sphere-1024.png
+source/assets/prod/sphere-rendered.png

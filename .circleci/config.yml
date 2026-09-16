@@ -1,0 +1,134 @@
+version: 2.1
+
+executors:
+  macos-arm64:
+    macos:
+      xcode: "16.0.0"
+    resource_class: macos.m1.medium.gen1
+    environment:
+      SPARKY_WORKDIR: sparky-desktop/source
+
+  macos-x64:
+    macos:
+      xcode: "16.0.0"
+    resource_class: macos.x86.medium.gen1
+    environment:
+      SPARKY_WORKDIR: sparky-desktop/source
+
+commands:
+  install-deps:
+    steps:
+      - run:
+          name: Install pnpm
+          command: |
+            npm install -g pnpm@11.10.0
+      - run:
+          name: Install dependencies
+          command: |
+            cd "$SPARKY_WORKDIR"
+            pnpm install --frozen-lockfile
+          environment:
+            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+            PUPPETEER_SKIP_DOWNLOAD: "true"
+            ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+  build-app:
+    steps:
+      - run:
+          name: Build
+          command: |
+            cd "$SPARKY_WORKDIR"
+            pnpm build
+          environment:
+            NODE_ENV: production
+
+jobs:
+  build-macos-arm64:
+    executor: macos-arm64
+    steps:
+      - checkout
+      - install-deps
+      - build-app
+      - run:
+          name: Build DMG (arm64)
+          command: |
+            cd "$SPARKY_WORKDIR"
+            pnpm dist:desktop:dmg:arm64
+          environment:
+            NODE_ENV: production
+            # Optional: set signing secrets if available
+            # CSC_LINK: $CSC_LINK
+            # CSC_KEY_PASSWORD: $CSC_KEY_PASSWORD
+      - run:
+          name: Collect artifacts
+          command: |
+            mkdir -p release-publish
+            cd "$SPARKY_WORKDIR"
+            cp release/*.dmg release/*.blockmap release/*.yml ../release-publish/ 2>/dev/null || true
+            ls -la release/
+      - store_artifacts:
+          path: release-publish
+          destination: artifacts
+
+  build-macos-x64:
+    executor: macos-x64
+    steps:
+      - checkout
+      - install-deps
+      - build-app
+      - run:
+          name: Build DMG (x64)
+          command: |
+            cd "$SPARKY_WORKDIR"
+            pnpm dist:desktop:dmg:x64
+          environment:
+            NODE_ENV: production
+      - run:
+          name: Collect artifacts
+          command: |
+            mkdir -p release-publish
+            cd "$SPARKY_WORKDIR"
+            cp release/*.dmg release/*.blockmap release/*.yml ../release-publish/ 2>/dev/null || true
+            ls -la release/
+      - store_artifacts:
+          path: release-publish
+          destination: artifacts
+
+  build-windows:
+    machine:
+      image: windows-server-2025-gui:2025-04-01
+    resource_class: windows.xlarge
+    steps:
+      - checkout
+      - install-deps
+      - build-app
+      - run:
+          name: Build EXE
+          command: |
+            cd "$SPARKY_WORKDIR"
+            pnpm dist:desktop:win:x64
+          environment:
+            NODE_ENV: production
+      - run:
+          name: Collect artifacts
+          command: |
+            mkdir -p release-publish
+            cd "$SPARKY_WORKDIR"
+            cp release/*.exe release/*.blockmap release/*.yml ../release-publish/ 2>/dev/null || true
+      - store_artifacts:
+          path: release-publish
+          destination: artifacts
+
+workflows:
+  build-all:
+    jobs:
+      - build-macos-arm64
+      - build-macos-x64
+      - build-windows
+
+  build-macos:
+    when:
+      equal: [ "macos", << pipeline.parameters.build_type >> ]
+    jobs:
+      - build-macos-arm64
+      - build-macos-x64

@@ -118,7 +118,7 @@ impl ToolRegistry {
 
     pub fn get_schemas_for_mode(&self, plan_mode: bool) -> Vec<ToolParamSchema> {
         if plan_mode {
-            return self.schemas_for_names(Self::PLAN_TOOL_NAMES.iter().copied(), &self.plan_tools);
+            return self.schemas_for_names(Self::PLAN_TOOL_NAMES, &self.plan_tools);
         }
         self.schemas_for_names(
             self.tools

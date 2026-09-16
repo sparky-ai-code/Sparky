@@ -1,0 +1,11 @@
+{
+  "tag": "0.0.29",
+  "name": "Sparky 1.1",
+  "channel": "release",
+  "changelog": "Removed unused settings (provider checks, auto-open task panel, new threads, archive/delete confirm). Fixed keybindings. Updated context compaction defaults.",
+  "files": [
+    { "name": "Sparky-x64.exe", "size": 342365148, "contentType": "application/octet-stream", "platform": "windows-x64", "sha256": null },
+    { "name": "latest.yml", "size": 325, "contentType": "text/yaml", "platform": "windows-x64", "sha256": null },
+    { "name": "Sparky-x64.exe.blockmap", "size": 355708, "contentType": "application/octet-stream", "platform": "windows-x64", "sha256": null }
+  ]
+}

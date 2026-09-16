@@ -1,0 +1,64 @@
+name: Plugin Auth PR
+
+on:
+  pull_request:
+    paths:
+      - 'sparky-auth-worker/**'
+      - 'sparky-desktop/source/apps/account-api/**'
+      - 'sparky-desktop/source/apps/desktop/**'
+      - 'sparky-desktop/source/apps/server/**'
+      - 'sparky-desktop/source/apps/web/**'
+      - 'sparky-desktop/source/packages/contracts/**'
+      - 'sparky-desktop/source/pnpm-lock.yaml'
+      - '.github/workflows/plugin-auth-pr.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+
+      - name: Test Cloudflare plugin worker
+        run: npm test
+        working-directory: sparky-auth-worker
+
+      - name: Install desktop workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Typecheck web
+        run: pnpm --filter @sparky/web typecheck
+
+      - name: Typecheck server
+        run: pnpm --filter t3 typecheck
+
+      - name: Typecheck account API
+        run: pnpm --filter @sparky/account-api typecheck
+
+      - name: Test account API Clerk configuration
+        run: pnpm --filter @sparky/account-api exec vp test run src/config.test.ts
+
+      - name: Test web plugin and composer behavior
+        run: pnpm --filter @sparky/web exec vp test run --passWithNoTests --project unit src/components/plugins/pluginCatalog.test.ts src/composer-editor-mentions.test.ts src/composer-logic.test.ts src/AppRoot.test.tsx
+
+      - name: Test server plugin session behavior
+        run: pnpm --filter t3 exec vp test run src/plugins/workerSession.test.ts

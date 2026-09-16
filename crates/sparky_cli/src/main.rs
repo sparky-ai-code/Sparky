@@ -72,7 +72,7 @@ struct Cli {
         short = 'r',
         long,
         default_value = "openai",
-        help = "Model API: openai, anthropic, gemini, ollama"
+        help = "Model API: openai, anthropic, gemini, opencode, ollama"
     )]
     provider: String,
 
@@ -96,7 +96,7 @@ struct Cli {
 
     #[arg(
         long,
-        help = "Custom Base URL for OpenAI/Ollama-compatible provider"
+        help = "Custom Base URL for OpenAI/OpenCode/Ollama-compatible provider"
     )]
     base_url: Option<String>,
 
@@ -463,14 +463,25 @@ async fn main() -> anyhow::Result<()> {
                 .unwrap_or_else(|| "http://localhost:11434/v1".to_string());
             Arc::new(OpenAiProvider::new("", Some(base_url)))
         }
-        "openai" => {
+        "opencode" | "opencode-zen" | "zen" => {
+            let key = required_api_key("OPENCODE_API_KEY")?;
+            let base_url = cli
+                .base_url
+                .clone()
+                .or_else(|| env::var("OPENCODE_BASE_URL").ok())
+                .unwrap_or_else(|| "https://opencode.ai/zen/v1".to_string());
+            Arc::new(OpenAiProvider::new_with_api_key_env_and_provider(
+                key,
+                Some(base_url),
+                "OPENCODE_API_KEY",
+                "opencode",
+                "OpenCode",
+            ))
+        }
+        "openai" | _ => {
             let key = required_api_key("OPENAI_API_KEY")?;
             Arc::new(OpenAiProvider::new(key, cli.base_url.clone()))
         }
-        unsupported => anyhow::bail!(
-            "ERROR: unsupported provider '{}'. Select an explicit supported provider instead of relying on fallback routing.",
-            unsupported
-        ),
     };
 
     if cli.text_only {

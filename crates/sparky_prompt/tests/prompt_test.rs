@@ -63,5 +63,8 @@ async fn plan_mode_uses_read_only_prompt_and_still_loads_context() {
         .await;
     assert!(build_prompt.contains("You are Sparky, an expert AI coding assistant"));
     assert!(build_prompt.contains("end_task"));
+    assert!(build_prompt.contains("The in-app browser is an interaction and verification tool"));
+    assert!(build_prompt.contains("Never invent, call, or suggest a fallback search engine"));
+    assert!(build_prompt.contains("Do not mention search providers, indexing, ranking"));
     assert!(!build_prompt.contains("You are Sparky in Plan mode"));
 }

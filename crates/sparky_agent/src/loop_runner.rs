@@ -65,6 +65,14 @@ mod tests {
 
     struct IncompleteStreamProvider;
 
+    struct BrowserToolProvider {
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    struct BrowserStatusTool {
+        executed: Arc<std::sync::atomic::AtomicBool>,
+    }
+
     struct BarrierTool {
         name: &'static str,
         barrier: Arc<tokio::sync::Barrier>,
@@ -103,6 +111,35 @@ mod tests {
     }
 
     #[async_trait]
+    impl Tool for BrowserStatusTool {
+        fn name(&self) -> &str {
+            "preview_status"
+        }
+
+        fn label(&self) -> &str {
+            "Get preview status"
+        }
+
+        fn description(&self) -> &str {
+            "Report the collaborative browser status"
+        }
+
+        fn parameters(&self) -> serde_json::Value {
+            serde_json::json!({ "type": "object" })
+        }
+
+        async fn execute(
+            &self,
+            _args: serde_json::Value,
+            _cwd: &str,
+        ) -> anyhow::Result<ToolExecutionResult> {
+            self.executed
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(ToolExecutionResult::success("Browser is available."))
+        }
+    }
+
+    #[async_trait]
     impl LlmProvider for StreamingProvider {
         fn provider_name(&self) -> &str {
             "test"
@@ -131,6 +168,58 @@ mod tests {
                         total_tokens: 12,
                     }),
                 },
+            ])))
+        }
+    }
+
+    #[async_trait]
+    impl LlmProvider for BrowserToolProvider {
+        fn provider_name(&self) -> &str {
+            "test"
+        }
+
+        async fn complete(
+            &self,
+            _messages: &[Message],
+            _options: &CompletionOptions,
+        ) -> anyhow::Result<Message> {
+            anyhow::bail!("the streaming agent loop must not call complete")
+        }
+
+        async fn stream(
+            &self,
+            messages: &[Message],
+            options: &CompletionOptions,
+        ) -> anyhow::Result<EventStream> {
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if call == 0 {
+                assert!(
+                    options
+                        .tools
+                        .iter()
+                        .any(|tool| tool.name == "preview_status"),
+                    "browser tools must be available for ordinary implementation requests"
+                );
+                return Ok(Box::pin(stream::iter(vec![
+                    AssistantMessageEvent::ToolCallDelta {
+                        id: "browser-status".to_string(),
+                        name: "preview_status".to_string(),
+                        arguments_delta: "{}".to_string(),
+                    },
+                    AssistantMessageEvent::Done { usage: None },
+                ])));
+            }
+
+            let result = messages
+                .iter()
+                .filter_map(|message| message.tool_result.as_ref())
+                .find(|result| result.tool_call_id == "browser-status")
+                .expect("browser tool result should be returned to the model");
+            assert!(!result.is_error);
+            assert_eq!(result.output, "Browser is available.");
+            Ok(Box::pin(stream::iter(vec![
+                AssistantMessageEvent::TextDelta("Browser verified.".to_string()),
+                AssistantMessageEvent::Done { usage: None },
             ])))
         }
     }
@@ -801,6 +890,44 @@ mod tests {
 
         assert_eq!(response, "Both tools completed.");
         drop(agent);
+        drop(session);
+        remove_temporary_workspace(workspace).await;
+    }
+
+    #[tokio::test]
+    async fn browser_tools_are_available_for_ordinary_implementation_requests() {
+        let workspace = temporary_workspace();
+        tokio::fs::create_dir_all(&workspace).await.unwrap();
+        let cwd = workspace.to_string_lossy().to_string();
+        let mut session = SessionManager::create_new(&cwd, None).await.unwrap();
+        let executed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(BrowserStatusTool {
+            executed: executed.clone(),
+        }));
+        let provider = Arc::new(BrowserToolProvider {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let agent = AgentLoop::new(
+            provider.clone(),
+            registry,
+            EventBus::new(),
+            AgentLoopOptions {
+                cwd,
+                ..AgentLoopOptions::default()
+            },
+        );
+
+        let response = agent
+            .run_turn("Implement the requested layout fix.", &mut session)
+            .await
+            .unwrap();
+
+        assert_eq!(response, "Browser verified.");
+        assert!(executed.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(provider.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        drop(agent);
+        drop(provider);
         drop(session);
         remove_temporary_workspace(workspace).await;
     }

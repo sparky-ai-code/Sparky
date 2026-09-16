@@ -1,0 +1,16 @@
+# Sparky
+
+> Sparky is a focused desktop coding agent for planning, editing, running, and reviewing real work across local projects.
+
+Sparky runs locally on Windows, macOS, and Linux and works with the AI provider you choose. The public website contains product information, downloads, documentation, and release notes.
+
+## Public pages
+
+- [Product](https://sparky.llc/): product overview and workflows.
+- [Downloads](https://sparky.llc/download.html): Windows, macOS, and Linux installers.
+- [Documentation](https://sparky.llc/docs/overview.html): setup, tools, models, sessions, and troubleshooting.
+- [Changelog](https://sparky.llc/changelog.html): published product updates.
+
+## Content guidance
+
+Use the linked pages as the canonical source for current product behavior, supported platforms, and release details. The interactive demo is a no-index preview and is not a substitute for the desktop application or documentation.

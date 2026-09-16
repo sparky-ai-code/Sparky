@@ -1,0 +1,428 @@
+name: Build Sparky Desktop
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SPARKY_GITHUB_CLIENT_ID: ${{ vars.SPARKY_GITHUB_CLIENT_ID }}
+  SPARKY_GITHUB_AUTH_BROKER_URL: ${{ vars.SPARKY_GITHUB_AUTH_BROKER_URL }}
+  SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
+  VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.SPARKY_CLERK_PUBLISHABLE_KEY }}
+  VITE_SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
+
+jobs:
+  build-macos-x64:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-apple-darwin
+
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+
+      - run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        working-directory: sparky-desktop/source
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Align release package versions
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/update-release-package-versions.ts "${GITHUB_REF_NAME#v}"
+
+      - run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        working-directory: sparky-desktop/source
+        env:
+          NODE_ENV: production
+
+      - name: Verify GitHub OAuth bundle
+        run: node scripts/verify-github-oauth-build.mjs
+        working-directory: sparky-desktop/source
+
+      - run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:x64
+        working-directory: sparky-desktop/source
+        env:
+          NODE_ENV: production
+          SPARKY_UPDATE_URL: https://sparky.llc/get/updates/macos/x64
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+
+      - name: Upload DMG to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" release/Sparky-x64.dmg --clobber
+          gh release upload "${GITHUB_REF_NAME}" release/Sparky-x64.dmg.blockmap --clobber
+          gh release upload "${GITHUB_REF_NAME}" release/Sparky-x64.zip --clobber
+          mv release/latest-mac.yml release/latest-mac-x64.yml
+          gh release upload "${GITHUB_REF_NAME}" release/latest-mac-x64.yml --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload DMG to temp release (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
+        run: |
+          RELEASE_TAG="preview-${GITHUB_RUN_ID}-x64"
+          gh release create "$RELEASE_TAG" release/Sparky-x64.dmg --title "Sparky macOS x64 (preview)" --notes "Preview build from workflow #${GITHUB_RUN_ID}" --prerelease || true
+          gh release upload "$RELEASE_TAG" release/Sparky-x64.dmg --clobber || true
+          gh release upload "$RELEASE_TAG" release/Sparky-x64.dmg.blockmap --clobber || true
+          gh release upload "$RELEASE_TAG" release/Sparky-x64.zip --clobber || true
+          mv release/latest-mac.yml release/latest-mac-x64.yml
+          gh release upload "$RELEASE_TAG" release/latest-mac-x64.yml --clobber || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  build-macos-arm64:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-apple-darwin
+
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+
+      - run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        working-directory: sparky-desktop/source
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Align release package versions
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/update-release-package-versions.ts "${GITHUB_REF_NAME#v}"
+
+      - run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        working-directory: sparky-desktop/source
+        env:
+          NODE_ENV: production
+
+      - name: Verify GitHub OAuth bundle
+        run: node scripts/verify-github-oauth-build.mjs
+        working-directory: sparky-desktop/source
+
+      - run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:arm64
+        working-directory: sparky-desktop/source
+        env:
+          NODE_ENV: production
+          SPARKY_UPDATE_URL: https://sparky.llc/get/updates/macos/arm64
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+
+      - name: Upload DMG to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" release/Sparky-arm64.dmg --clobber
+          gh release upload "${GITHUB_REF_NAME}" release/Sparky-arm64.dmg.blockmap --clobber
+          gh release upload "${GITHUB_REF_NAME}" release/Sparky-arm64.zip --clobber
+          mv release/latest-mac.yml release/latest-mac-arm64.yml
+          gh release upload "${GITHUB_REF_NAME}" release/latest-mac-arm64.yml --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload DMG to temp release (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
+        run: |
+          RELEASE_TAG="preview-${GITHUB_RUN_ID}-arm64"
+          gh release create "$RELEASE_TAG" release/Sparky-arm64.dmg --title "Sparky macOS arm64 (preview)" --notes "Preview build from workflow #${GITHUB_RUN_ID}" --prerelease || true
+          gh release upload "$RELEASE_TAG" release/Sparky-arm64.dmg --clobber || true
+          gh release upload "$RELEASE_TAG" release/Sparky-arm64.dmg.blockmap --clobber || true
+          gh release upload "$RELEASE_TAG" release/Sparky-arm64.zip --clobber || true
+          mv release/latest-mac.yml release/latest-mac-arm64.yml
+          gh release upload "$RELEASE_TAG" release/latest-mac-arm64.yml --clobber || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  build-linux-x64:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-unknown-linux-gnu
+
+      - name: Install Linux packaging tools
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+
+      - run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        working-directory: sparky-desktop/source
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Align release package versions
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/update-release-package-versions.ts "${GITHUB_REF_NAME#v}"
+
+      - run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        working-directory: sparky-desktop/source
+        env:
+          NODE_ENV: production
+
+      - name: Prepare Linux release directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf release release-appimage release-deb
+          mkdir -p release release-appimage release-deb
+
+      - run: pnpm --config.verify-deps-before-run=false dist:desktop:linux
+        working-directory: sparky-desktop/source
+        env:
+          NODE_ENV: production
+          SPARKY_UPDATE_URL: https://sparky.llc/get/updates/linux
+          T3CODE_DESKTOP_OUTPUT_DIR: release-appimage
+
+      - run: pnpm --config.verify-deps-before-run=false dist:desktop:linux:deb
+        working-directory: sparky-desktop/source
+        env:
+          NODE_ENV: production
+          T3CODE_DESKTOP_OUTPUT_DIR: release-deb
+
+      - name: Assemble Linux release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          appimage="$(find release-appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          deb="$(find release-deb -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$appimage"
+          test -n "$deb"
+          cp "$appimage" release/Sparky-x64.AppImage
+          cp "$deb" release/Sparky-amd64.deb
+          if [[ -f release-appimage/latest-linux.yml ]]; then
+            cp release-appimage/latest-linux.yml release/latest-linux.yml
+            sed -i 's/Sparky-x86_64\.AppImage/Sparky-x64.AppImage/g' release/latest-linux.yml
+          fi
+          if [[ -f release-appimage/Sparky-x64.AppImage.zsync ]]; then
+            cp release-appimage/Sparky-x64.AppImage.zsync release/Sparky-x64.AppImage.zsync
+          elif [[ -f release-appimage/Sparky-x86_64.AppImage.zsync ]]; then
+            cp release-appimage/Sparky-x86_64.AppImage.zsync release/Sparky-x64.AppImage.zsync
+          fi
+
+      - name: Verify GitHub OAuth bundle
+        run: node scripts/verify-github-oauth-build.mjs
+        working-directory: sparky-desktop/source
+
+      - name: Verify Linux artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -s release/Sparky-x86_64.AppImage && ! -e release/Sparky-x64.AppImage ]]; then
+            cp release/Sparky-x86_64.AppImage release/Sparky-x64.AppImage
+          fi
+          test -s release/Sparky-x64.AppImage
+          test -s release/Sparky-amd64.deb
+          find release -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Sign Linux AppImage
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          SPARKY_LINUX_GPG_PRIVATE_KEY: ${{ secrets.SPARKY_LINUX_GPG_PRIVATE_KEY }}
+          SPARKY_LINUX_GPG_KEY_ID: ${{ secrets.SPARKY_LINUX_GPG_KEY_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SPARKY_LINUX_GPG_PRIVATE_KEY" || -z "$SPARKY_LINUX_GPG_KEY_ID" ]]; then
+            echo "Linux signing requires SPARKY_LINUX_GPG_PRIVATE_KEY and SPARKY_LINUX_GPG_KEY_ID repository secrets." >&2
+            exit 1
+          fi
+          key_path="$RUNNER_TEMP/sparky-linux-signing-key.asc"
+          if [[ "$SPARKY_LINUX_GPG_PRIVATE_KEY" == "-----BEGIN"* ]]; then
+            printf '%s' "$SPARKY_LINUX_GPG_PRIVATE_KEY" > "$key_path"
+          else
+            printf '%s' "$SPARKY_LINUX_GPG_PRIVATE_KEY" | base64 --decode > "$key_path"
+          fi
+          GNUPGHOME="$RUNNER_TEMP/gnupg"
+          export GNUPGHOME
+          mkdir -m 700 "$GNUPGHOME"
+          gpg --batch --import "$key_path"
+          gpg --batch --yes --local-user "$SPARKY_LINUX_GPG_KEY_ID" --armor --detach-sign \
+            --output release/Sparky-x64.AppImage.asc release/Sparky-x64.AppImage
+          gpg --batch --verify release/Sparky-x64.AppImage.asc release/Sparky-x64.AppImage
+          rm -f "$key_path"
+
+      - name: Upload Linux artifacts to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          for artifact in release/Sparky-x86_64.AppImage release/Sparky-x64.AppImage release/Sparky-x86_64.AppImage.zsync release/Sparky-x64.AppImage.zsync release/Sparky-x64.AppImage.asc release/Sparky-amd64.deb release/latest-linux.yml; do
+            if [[ -f "$artifact" ]]; then
+              gh release upload "${GITHUB_REF_NAME}" "$artifact" --clobber
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload Linux artifacts to temp release (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_TAG="preview-${GITHUB_RUN_ID}-linux"
+          gh release create "$RELEASE_TAG" release/Sparky-x64.AppImage --title "Sparky Linux x64 (preview)" --notes "Preview build from workflow #${GITHUB_RUN_ID}" --prerelease || true
+          for artifact in release/Sparky-x86_64.AppImage release/Sparky-x64.AppImage release/Sparky-x86_64.AppImage.zsync release/Sparky-x64.AppImage.zsync release/Sparky-amd64.deb release/latest-linux.yml; do
+            if [[ -f "$artifact" ]]; then
+              gh release upload "$RELEASE_TAG" "$artifact" --clobber || true
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+
+      - run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        working-directory: sparky-desktop/source
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Align release package versions
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: node scripts/update-release-package-versions.ts ($env:GITHUB_REF_NAME -replace '^v', '')
+
+      - run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        working-directory: sparky-desktop/source
+        env:
+          NODE_ENV: production
+
+      - name: Verify GitHub OAuth bundle
+        run: node scripts/verify-github-oauth-build.mjs
+        working-directory: sparky-desktop/source
+
+      - run: pnpm --config.verify-deps-before-run=false dist:desktop:win:x64
+        working-directory: sparky-desktop/source
+        env:
+          NODE_ENV: production
+          SPARKY_UPDATE_URL: https://sparky.llc/get/updates/windows
+
+      - name: Upload EXE to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          gh release upload "$env:GITHUB_REF_NAME" release/Sparky-x64.exe --clobber
+          gh release upload "$env:GITHUB_REF_NAME" release/Sparky-x64.exe.blockmap --clobber
+          gh release upload "$env:GITHUB_REF_NAME" release/latest.yml --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload EXE to temp release (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $RELEASE_TAG = "preview-${env:GITHUB_RUN_ID}-win"
+          gh release create "$RELEASE_TAG" release/Sparky-x64.exe --title "Sparky Windows (preview)" --notes "Preview build from workflow #${env:GITHUB_RUN_ID}" --prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  release:
+    needs: [build-macos-x64, build-macos-arm64, build-linux-x64, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Finalize release
+        run: |
+          gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,28 @@
+name = "sparky-auth"
+main = "src/final.js"
+compatibility_date = "2026-08-31"
+workers_dev = true
+
+# Public OAuth client IDs are injected into the Worker at build/deploy time.
+# All *_CLIENT_SECRET values, PLUGIN_TOKEN_ENCRYPTION_KEY, and
+# ANALYTICS_ADMIN_TOKEN must be installed with `wrangler secret put`.
+# Never commit provider client secrets here.
+[vars]
+GITHUB_CLIENT_ID = "Ov23liBxKhYYRLs19Fs9"
+GMAIL_CLIENT_ID = "885688340167-tig39cne089ljsddr470atomkskk8cv3.apps.googleusercontent.com"
+OUTLOOK_CLIENT_ID = "587ce709-1988-4cef-bbbb-17fc7a857e22"
+SLACK_CLIENT_ID = "11931438217766.11937099402708"
+JIRA_CLIENT_ID = "Va6qzTPCDPB7goX3RJTcMx7ga9HGogaW"
+NOTION_CLIENT_ID = "3d1d872b-594c-8150-a625-0037f4db0c15"
+SENTRY_CLIENT_ID = "50d29c8af4de9b2f8e0f5b3cb7198f0caf0edbacfbc9ea5cb484f273f713c9d6"
+FIGMA_CLIENT_ID = "q7CWPrlGOJPrdzXPQKJObT"
+# Clerk publishable keys are public. The Worker derives the Clerk issuer and hosts
+# the isolated desktop sign-in frame from this value.
+CLERK_PUBLISHABLE_KEY = "pk_live_Y2xlcmsuYXV0aC5zcGFya3kubGxjJA"
+# Set to the deployed Worker origin, e.g. https://auth.sparky.llc.
+PUBLIC_BASE_URL = "https://auth.sparky.llc"
+
+[[kv_namespaces]]
+binding = "PLUGIN_STORE"
+id = "df075aa7ae94404793168002a9c0225a"
+preview_id = "9450a264797e437c90c2bd5452bf8907"

@@ -5,8 +5,7 @@ export type PluginId =
   | "gmail"
   | "outlook"
   | "slack"
-  | "sentry"
-  | "figma";
+  | "sentry";
 
 export interface PluginDefinition {
   readonly id: PluginId;
@@ -58,12 +57,8 @@ export const PLUGINS: readonly PluginDefinition[] = [
     description: "Inspect and update application issues",
     keywords: ["errors", "issues", "monitoring", "observability"],
   },
-  {
-    id: "figma",
-    name: "Figma",
-    description: "Read files and work with design comments",
-    keywords: ["design", "component", "prototype", "ui"],
-  },
+  // Figma is intentionally retired from the desktop catalog. Re-enable it here
+  // with its PluginId member when the OAuth integration is ready again.
 ] as const;
 
 export const PLUGIN_TOKEN_PREFIX = "@plugin:";

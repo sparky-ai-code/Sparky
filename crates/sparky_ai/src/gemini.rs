@@ -9,13 +9,20 @@ use serde_json::{json, Value};
 
 pub struct GeminiProvider {
     api_key: String,
+    base_url: String,
     client: Client,
 }
 
 impl GeminiProvider {
     pub fn new(api_key: impl Into<String>) -> Self {
+        Self::new_with_base_url(api_key, None)
+    }
+
+    pub fn new_with_base_url(api_key: impl Into<String>, base_url: Option<String>) -> Self {
         Self {
             api_key: api_key.into(),
+            base_url: base_url
+                .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string()),
             client: Client::new(),
         }
     }
@@ -75,8 +82,10 @@ impl LlmProvider for GeminiProvider {
         }
 
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            options.model, self.api_key
+            "{}/models/{}:generateContent?key={}",
+            self.base_url.trim_end_matches('/'),
+            options.model,
+            self.api_key
         );
 
         let resp = send_with_retry("gemini", || async {
@@ -158,8 +167,10 @@ impl LlmProvider for GeminiProvider {
         }
 
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
-            options.model, self.api_key
+            "{}/models/{}:streamGenerateContent?alt=sse&key={}",
+            self.base_url.trim_end_matches('/'),
+            options.model,
+            self.api_key
         );
         let resp = send_with_retry("gemini", || async {
             self.client.post(&url).json(&body).send().await

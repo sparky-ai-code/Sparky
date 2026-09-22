@@ -104,9 +104,28 @@ export const ModelSelectorTraitsBridge = memo(function ModelSelectorTraitsBridge
     [instanceId, model, provider, setProviderModelOptions, target],
   );
 
+  const selectionIdentityRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!target) return;
+    const identity = `${instanceId}:${model ?? ""}`;
+    if (selectionIdentityRef.current === identity) return;
+    selectionIdentityRef.current = identity;
+    setProviderModelOptions(
+      target,
+      provider,
+      buildProviderOptionSelectionsFromDescriptors(descriptors),
+      {
+        instanceId,
+        model,
+        persistSticky: false,
+      },
+    );
+  }, [descriptors, instanceId, model, provider, setProviderModelOptions, target]);
   const ultrathinkPromptControlled =
     (primarySelectDescriptor?.promptInjectedValues?.length ?? 0) > 0 &&
     isClaudeUltrathinkPrompt(prompt);
+
   const ultrathinkInBodyText =
     ultrathinkPromptControlled && isClaudeUltrathinkPrompt(prompt.replace(/^Ultrathink:\s*/i, ""));
   const primaryValue = getProviderOptionCurrentValue(primarySelectDescriptor ?? null);

@@ -13,11 +13,11 @@ describe("Plugins page catalog layout", () => {
   });
 
   it("moves connected plugins out of Explore more", () => {
-    const connectedIds = new Set(["gmail", "figma"]);
+    const connectedIds = new Set(["gmail", "sentry"]);
     const installed = PLUGINS.filter((plugin) => connectedIds.has(plugin.id));
     const explore = PLUGINS.filter((plugin) => !connectedIds.has(plugin.id));
 
-    expect(installed.map((plugin) => plugin.id)).toEqual(["gmail", "figma"]);
+    expect(installed.map((plugin) => plugin.id)).toEqual(["gmail", "sentry"]);
     expect(explore.some((plugin) => connectedIds.has(plugin.id))).toBe(false);
   });
 });

@@ -13,9 +13,14 @@ import {
 type FetchImplementation = typeof globalThis.fetch;
 
 type ProviderDefinition = {
-  readonly env?: "OPENAI_API_KEY" | "ANTHROPIC_API_KEY" | "GEMINI_API_KEY" | "OPENCODE_API_KEY";
-  readonly prefix: "openai-codex" | "openai" | "anthropic" | "google" | "opencode";
-  readonly label: "OpenAI Codex" | "OpenAI" | "Claude" | "Google" | "OpenCode Zen";
+  readonly env?:
+    | "OPENAI_API_KEY"
+    | "ANTHROPIC_API_KEY"
+    | "GEMINI_API_KEY"
+    | "FIREWORKS_API_KEY"
+    | "OLLAMA_API_KEY";
+  readonly prefix: "openai-codex" | "openai" | "anthropic" | "google" | "fireworks" | "ollama-cloud";
+  readonly label: "OpenAI Codex" | "OpenAI" | "Claude" | "Google" | "Fireworks" | "Ollama Cloud";
   readonly load: (
     apiKey: string,
     fetchImplementation: FetchImplementation,
@@ -568,32 +573,53 @@ async function loadModelsDevCatalog(
   }
 }
 
-async function loadOpenAIModels(
+function providerBaseUrl(fallback: string): string {
+  return fallback;
+}
+
+async function loadOpenAICompatibleModels(
   apiKey: string,
   fetchImplementation: FetchImplementation,
-  _environment: NodeJS.ProcessEnv,
-  modelsDev?: ModelsDevCatalog,
+  baseUrl: string,
+  modelsDev: ModelsDevCatalog | undefined,
+  modelsDevProvider: string,
 ): Promise<ReadonlyArray<RemoteModel>> {
   const models = parseOpenAICompatibleModels(
-    await fetchJson(fetchImplementation, "https://api.openai.com/v1/models", {
+    await fetchJson(fetchImplementation, `${baseUrl}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
     }),
   );
   return models.map((model) =>
-    mergeRemoteModelMetadata(model, modelsDevModel(modelsDev, "openai", model.id)),
+    mergeRemoteModelMetadata(model, modelsDevModel(modelsDev, modelsDevProvider, model.id)),
+  );
+}
+
+async function loadOpenAIModels(
+  apiKey: string,
+  fetchImplementation: FetchImplementation,
+  environment: NodeJS.ProcessEnv,
+  modelsDev?: ModelsDevCatalog,
+): Promise<ReadonlyArray<RemoteModel>> {
+  return loadOpenAICompatibleModels(
+    apiKey,
+    fetchImplementation,
+    providerBaseUrl("https://api.openai.com/v1"),
+    modelsDev,
+    "openai",
   );
 }
 
 async function loadClaudeModels(
   apiKey: string,
   fetchImplementation: FetchImplementation,
-  _environment: NodeJS.ProcessEnv,
+  environment: NodeJS.ProcessEnv,
   modelsDev?: ModelsDevCatalog,
 ): Promise<ReadonlyArray<RemoteModel>> {
+  const baseUrl = providerBaseUrl("https://api.anthropic.com/v1");
   const models: RemoteModel[] = [];
   let afterId: string | undefined;
   do {
-    const url = new URL("https://api.anthropic.com/v1/models");
+    const url = new URL(`${baseUrl}/models`);
     url.searchParams.set("limit", "1000");
     if (afterId) url.searchParams.set("after_id", afterId);
     const payload = await fetchJson(fetchImplementation, url.toString(), {
@@ -620,7 +646,7 @@ async function loadClaudeModels(
       try {
         const detail = await fetchJson(
           fetchImplementation,
-          `https://api.anthropic.com/v1/models/${encodeURIComponent(model.id)}`,
+          `${baseUrl}/models/${encodeURIComponent(model.id)}`,
           {
             headers: {
               "anthropic-version": "2023-06-01",
@@ -645,13 +671,14 @@ async function loadClaudeModels(
 async function loadGoogleModels(
   apiKey: string,
   fetchImplementation: FetchImplementation,
-  _environment: NodeJS.ProcessEnv,
+  environment: NodeJS.ProcessEnv,
   modelsDev?: ModelsDevCatalog,
 ): Promise<ReadonlyArray<RemoteModel>> {
+  const baseUrl = providerBaseUrl("https://generativelanguage.googleapis.com/v1beta");
   const models: RemoteModel[] = [];
   let pageToken: string | undefined;
   do {
-    const url = new URL("https://generativelanguage.googleapis.com/v1beta/models");
+    const url = new URL(`${baseUrl}/models`);
     url.searchParams.set("pageSize", "1000");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
     const payload = await fetchJson(fetchImplementation, url.toString(), {
@@ -679,7 +706,7 @@ async function loadGoogleModels(
       try {
         const detail = await fetchJson(
           fetchImplementation,
-          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.id)}`,
+          `${baseUrl}/models/${encodeURIComponent(model.id)}`,
           { headers: { "x-goog-api-key": apiKey } },
         );
         const enriched = remoteModelFromRecord({ ...detail, id: model.id });
@@ -691,22 +718,6 @@ async function loadGoogleModels(
         return mergeRemoteModelMetadata(model, modelsDevModel(modelsDev, "google", model.id));
       }
     }),
-  );
-}
-
-async function loadOpenCodeModels(
-  apiKey: string,
-  fetchImplementation: FetchImplementation,
-  _environment: NodeJS.ProcessEnv,
-  modelsDev?: ModelsDevCatalog,
-): Promise<ReadonlyArray<RemoteModel>> {
-  const models = parseOpenAICompatibleModels(
-    await fetchJson(fetchImplementation, "https://opencode.ai/zen/v1/models", {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    }),
-  );
-  return models.map((model) =>
-    mergeRemoteModelMetadata(model, modelsDevModel(modelsDev, "opencode", model.id)),
   );
 }
 
@@ -843,10 +854,30 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
     load: loadGoogleModels,
   },
   {
-    env: "OPENCODE_API_KEY",
-    prefix: "opencode",
-    label: "OpenCode Zen",
-    load: loadOpenCodeModels,
+    env: "FIREWORKS_API_KEY",
+    prefix: "fireworks",
+    label: "Fireworks",
+    load: (apiKey, fetchImplementation, environment, modelsDev) =>
+      loadOpenAICompatibleModels(
+        apiKey,
+        fetchImplementation,
+        providerBaseUrl("https://api.fireworks.ai/inference/v1"),
+        modelsDev,
+        "fireworks-ai",
+      ),
+  },
+  {
+    env: "OLLAMA_API_KEY",
+    prefix: "ollama-cloud",
+    label: "Ollama Cloud",
+    load: (apiKey, fetchImplementation, environment, modelsDev) =>
+      loadOpenAICompatibleModels(
+        apiKey,
+        fetchImplementation,
+        providerBaseUrl("https://ollama.com/v1"),
+        modelsDev,
+        "ollama",
+      ),
   },
 ];
 
@@ -856,6 +887,9 @@ export async function discoverSparkyModels(
   codexModelLoader: CodexModelLoader = loadCodexModelsForDiscovery,
 ): Promise<SparkyModelDiscovery> {
   const configured = PROVIDERS.flatMap((provider) => {
+    if (provider.prefix === "ollama-cloud" && environment.OLLAMA_CLOUD_CONFIGURED !== "true") {
+      return [];
+    }
     if (!provider.env) {
       return hasCodexOAuthAuthentication(environment)
         ? [{ provider, apiKey: "authenticated" }]

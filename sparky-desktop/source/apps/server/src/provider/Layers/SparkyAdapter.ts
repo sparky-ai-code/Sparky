@@ -177,9 +177,6 @@ export function formatSparkyProcessError(
 ): string {
   const detail = cause instanceof Error ? cause.message : String(cause);
   if (/freeusagelimit|free usage limit/iu.test(detail)) {
-    if (/opencode api error/iu.test(detail)) {
-      return "OpenCode Zen reported that this model's free usage limit was reached. Select another model or try again later.";
-    }
     return "The selected provider model has reached its free usage limit. Select another model or try again later.";
   }
   if (
@@ -203,6 +200,10 @@ export function sparkyChildEnvironment(environment: NodeJS.ProcessEnv): NodeJS.P
   delete next.SPARKY_SEARCH_WORKER_TOKEN;
   delete next.SEARCH_WORKER_TOKEN;
   delete next.SPARKY_SEARCH_WORKER_SESSION_TOKEN;
+  // Legacy OpenCode gateway credentials are no longer supported. Do not pass
+  // them from persisted settings into the runtime.
+  delete next.OPENCODE_API_KEY;
+  delete next.OPENCODE_BASE_URL;
   return next;
 }
 
@@ -540,13 +541,6 @@ export function parseSparkyModelSelection(model: string | undefined): {
   const modelId = selected.slice(slash + 1);
   if (provider === "google") {
     return { provider: "gemini", model: modelId };
-  }
-  if (provider === "opencode") {
-    return {
-      provider: "opencode",
-      model: modelId,
-      baseUrl: "https://opencode.ai/zen/v1",
-    };
   }
   return { provider, model: modelId };
 }

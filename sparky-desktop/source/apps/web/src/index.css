@@ -286,6 +286,13 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     -webkit-app-region: no-drag;
   }
 
+  /* The native Windows controls only occupy the far-right edge of the window.
+     In split view the left pane must not inherit that window-wide inset, or
+     its own panel controls overlap the chat actions in the pane. */
+  [data-split-chat-pane="left"] .workspace-titlebar-controls {
+    right: calc(env(safe-area-inset-right) + 0.75rem);
+  }
+
   .surface-subheader {
     @apply flex h-10 min-h-10 shrink-0 items-center border-b border-border/60 bg-background;
   }

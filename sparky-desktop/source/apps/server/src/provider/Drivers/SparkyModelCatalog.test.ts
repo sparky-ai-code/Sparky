@@ -130,25 +130,6 @@ describe("discoverSparkyModels", () => {
     }
   });
 
-  it("sends the OpenCode Zen request with the configured bearer key", async () => {
-    const requests: Array<{ readonly url: string; readonly headers: Headers }> = [];
-    const fetchImplementation = (async (input: string | URL | Request, init?: RequestInit) => {
-      requests.push({ url: String(input), headers: new Headers(init?.headers) });
-      if (String(input) === "https://models.dev/api.json") return jsonResponse({});
-      return jsonResponse({ data: [{ id: "zen-test" }] });
-    }) as typeof fetch;
-
-    const result = await discoverSparkyModels(
-      { OPENCODE_API_KEY: "zen-secret" },
-      fetchImplementation,
-    );
-
-    expect(result.errors).toEqual([]);
-    expect(result.models.map((model) => model.slug)).toEqual(["opencode/zen-test"]);
-    const request = requests.find(({ url }) => url === "https://opencode.ai/zen/v1/models");
-    expect(request?.headers.get("authorization")).toBe("Bearer zen-secret");
-  });
-
   it("fetches and namespaces every configured provider catalog", async () => {
     const requests: Array<{ readonly url: string; readonly headers: Headers }> = [];
     const fetchImplementation = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -210,16 +191,7 @@ describe("discoverSparkyModels", () => {
           },
         });
       }
-      return jsonResponse({
-        data: [
-          {
-            id: "zen-test",
-            supported_reasoning_efforts: ["low", "high"],
-            default_reasoning_effort: "high",
-            context_window: "128k",
-          },
-        ],
-      });
+      return jsonResponse({ data: [] });
     }) as typeof fetch;
 
     const result = await discoverSparkyModels(
@@ -232,14 +204,13 @@ describe("discoverSparkyModels", () => {
       fetchImplementation,
     );
 
-    expect(result.configuredProviderCount).toBe(4);
+    expect(result.configuredProviderCount).toBe(3);
     expect(result.errors).toEqual([]);
     expect(result.models.map((model) => [model.slug, model.subProvider])).toEqual([
       ["openai/gpt-test", "OpenAI"],
       ["openai/gpt-6-astra", "OpenAI"],
       ["anthropic/claude-test", "Claude"],
       ["google/gemini-test", "Google"],
-      ["opencode/zen-test", "OpenCode Zen"],
     ]);
     expect(
       requests.find((request) => request.url.includes("openai.com"))?.headers.get("authorization"),
@@ -252,11 +223,6 @@ describe("discoverSparkyModels", () => {
         .find((request) => request.url.includes("googleapis.com"))
         ?.headers.get("x-goog-api-key"),
     ).toBe("google-secret");
-    expect(
-      requests
-        .find((request) => request.url === "https://opencode.ai/zen/v1/models")
-        ?.headers.get("authorization"),
-    ).toBe("Bearer zen-secret");
 
     const openAi = result.models.find((model) => model.slug === "openai/gpt-test");
     expect(
@@ -297,7 +263,7 @@ describe("discoverSparkyModels", () => {
       currentValue: "1048576",
     });
 
-    for (const slug of ["anthropic/claude-test", "opencode/zen-test"]) {
+    for (const slug of ["anthropic/claude-test"]) {
       expect(
         result.models
           .find((model) => model.slug === slug)
@@ -315,11 +281,11 @@ describe("discoverSparkyModels", () => {
         : jsonResponse({ data: [{ id: "zen-test" }] })) as typeof fetch;
 
     const result = await discoverSparkyModels(
-      { OPENAI_API_KEY: "bad", OPENCODE_API_KEY: "valid" },
+      { OPENAI_API_KEY: "bad", ANTHROPIC_API_KEY: "valid" },
       fetchImplementation,
     );
 
-    expect(result.models.map((model) => model.slug)).toEqual(["opencode/zen-test"]);
+    expect(result.models.map((model) => model.slug)).toEqual(["anthropic/zen-test"]);
     expect(result.errors).toEqual(["OpenAI: HTTP 401"]);
   });
 
@@ -397,16 +363,6 @@ describe("discoverSparkyModels", () => {
                   { type: "effort", values: ["minimal", "low", "medium", "high"] },
                 ],
                 limit: { context: 999_999 },
-              },
-            },
-          },
-          opencode: {
-            models: {
-              "zen-no-metadata": {
-                name: "Zen No Metadata",
-                reasoning: true,
-                reasoning_options: [{ type: "effort", values: ["high", "max"] }],
-                limit: { context: 262_144 },
               },
             },
           },
@@ -488,19 +444,6 @@ describe("discoverSparkyModels", () => {
         .find((model) => model.slug === "google/gemini-no-metadata")
         ?.capabilities?.optionDescriptors?.find((descriptor) => descriptor.id === "contextWindow"),
     ).toMatchObject({ options: [{ id: "1048576" }] });
-
-    expect(
-      result.models
-        .find((model) => model.slug === "opencode/zen-no-metadata")
-        ?.capabilities?.optionDescriptors?.find(
-          (descriptor) => descriptor.id === "reasoningEffort",
-        ),
-    ).toMatchObject({ options: [{ id: "high" }, { id: "max" }] });
-    expect(
-      result.models
-        .find((model) => model.slug === "opencode/zen-no-metadata")
-        ?.capabilities?.optionDescriptors?.find((descriptor) => descriptor.id === "contextWindow"),
-    ).toMatchObject({ options: [{ id: "262144" }] });
   });
 
   it("keeps models when optional metadata fails and does not fabricate unsupported effort", async () => {
@@ -523,15 +466,12 @@ describe("discoverSparkyModels", () => {
     }) as typeof fetch;
 
     const result = await discoverSparkyModels(
-      { GEMINI_API_KEY: "google-secret", OPENCODE_API_KEY: "zen-secret" },
+      { GEMINI_API_KEY: "google-secret" },
       fetchImplementation,
     );
 
     expect(result.errors).toEqual([]);
-    expect(result.models.map((model) => model.slug)).toEqual([
-      "google/gemini-no-thinking",
-      "opencode/zen-without-metadata",
-    ]);
+    expect(result.models.map((model) => model.slug)).toEqual(["google/gemini-no-thinking"]);
     expect(
       result.models
         .find((model) => model.slug === "google/gemini-no-thinking")
@@ -539,5 +479,35 @@ describe("discoverSparkyModels", () => {
           (descriptor) => descriptor.id === "reasoningEffort",
         ),
     ).toBe(false);
+  });
+
+  it("discovers Fireworks and Ollama Cloud as separate OpenAI-compatible providers", async () => {
+    const requests: string[] = [];
+    const fetchImplementation = (async (input: string | URL | Request) => {
+      const url = String(input);
+      requests.push(url);
+      if (url === "https://api.fireworks.ai/inference/v1/models") {
+        return jsonResponse({ data: [{ id: "accounts/fireworks/models/llama-v3p1" }] });
+      }
+      if (url === "https://ollama.com/v1/models") {
+        return jsonResponse({ data: [{ id: "llama3.2" }] });
+      }
+      return jsonResponse({});
+    }) as typeof fetch;
+
+    const result = await discoverSparkyModels(
+      {
+        FIREWORKS_API_KEY: "fireworks-secret",
+        OLLAMA_API_KEY: "ollama-secret",
+      },
+      fetchImplementation,
+    );
+
+    expect(requests).toContain("https://api.fireworks.ai/inference/v1/models");
+    expect(requests).toContain("https://ollama.com/v1/models");
+    expect(result.models.map((model) => [model.slug, model.subProvider])).toEqual([
+      ["fireworks/accounts/fireworks/models/llama-v3p1", "Fireworks"],
+      ["ollama-cloud/llama3.2", "Ollama Cloud"],
+    ]);
   });
 });

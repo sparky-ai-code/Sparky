@@ -1,5 +1,5 @@
 import { ProviderDriverKind } from "@sparky/contracts";
-import { ClaudeAI, Gemini, Icon, OpenAI, OpenCodeIcon, SparkyIcon } from "../Icons";
+import { ClaudeAI, FireworksAI, Gemini, Icon, Ollama, OpenAI, SparkyIcon } from "../Icons";
 import { PROVIDER_OPTIONS } from "../../session-logic";
 
 export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
@@ -34,7 +34,8 @@ const MODEL_PROVIDER_PRESENTATION_BY_LABEL: Readonly<Record<string, ModelProvide
   Google: { label: "Google", Icon: Gemini },
   OpenAI: { label: "OpenAI", Icon: OpenAI },
   "OpenAI Codex": { label: "OpenAI Codex", Icon: OpenAI },
-  "OpenCode Zen": { label: "OpenCode Zen", Icon: OpenCodeIcon },
+  Fireworks: { label: "Fireworks", Icon: FireworksAI },
+  "Ollama Cloud": { label: "Ollama Cloud", Icon: Ollama },
 };
 
 /** Resolve the actual model vendor, rather than the Sparky runtime serving it. */
@@ -48,14 +49,17 @@ export function getModelProviderPresentation(
   }
 
   const slug = model.slug.toLowerCase();
+  if (slug.startsWith("fireworks/")) {
+    return MODEL_PROVIDER_PRESENTATION_BY_LABEL.Fireworks ?? null;
+  }
+  if (slug.startsWith("ollama-cloud/")) {
+    return MODEL_PROVIDER_PRESENTATION_BY_LABEL["Ollama Cloud"] ?? null;
+  }
   if (slug.startsWith("anthropic/") || slug.startsWith("claude")) {
     return MODEL_PROVIDER_PRESENTATION_BY_LABEL.Claude ?? null;
   }
   if (slug.startsWith("google/") || slug.startsWith("gemini")) {
     return MODEL_PROVIDER_PRESENTATION_BY_LABEL.Google ?? null;
-  }
-  if (slug.startsWith("opencode/")) {
-    return MODEL_PROVIDER_PRESENTATION_BY_LABEL["OpenCode Zen"] ?? null;
   }
   if (slug.startsWith("openai-codex/")) {
     return MODEL_PROVIDER_PRESENTATION_BY_LABEL["OpenAI Codex"] ?? null;

@@ -27,10 +27,10 @@ impl OpenAiProvider {
         base_url: Option<String>,
         api_key_env: impl Into<String>,
     ) -> Self {
-        Self::new_with_api_key_env_and_provider(api_key, base_url, api_key_env, "openai", "OpenAI")
+        Self::new_named(api_key, base_url, api_key_env, "openai", "OpenAI")
     }
 
-    pub fn new_with_api_key_env_and_provider(
+    pub fn new_named(
         api_key: impl Into<String>,
         base_url: Option<String>,
         api_key_env: impl Into<String>,

@@ -537,20 +537,20 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const changes = yield* serverSettings.subscribeChanges!;
-      const instanceId = ProviderInstanceId.make("opencode_web");
+      const instanceId = ProviderInstanceId.make("codex_web");
 
       yield* serverSettings.updateSettings({
         providerInstances: {
           [instanceId]: {
-            driver: ProviderDriverKind.make("opencode"),
-            environment: [{ name: "OPENCODE_API_KEY", value: "zen-secret", sensitive: true }],
+            driver: ProviderDriverKind.make("codex"),
+            environment: [{ name: "OPENAI_API_KEY", value: "openai-secret", sensitive: true }],
             config: {},
           },
         },
       });
 
       const published = yield* PubSub.take(changes);
-      assert.equal(published.providerInstances[instanceId]?.environment?.[0]?.value, "zen-secret");
+      assert.equal(published.providerInstances[instanceId]?.environment?.[0]?.value, "openai-secret");
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
   it.effect("stores sensitive provider instance environment values outside settings.json", () =>

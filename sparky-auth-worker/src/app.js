@@ -1,4 +1,4 @@
-import { handleRequest, PLUGIN_IDS } from "./index.js";
+import { authenticatePluginSession, handleRequest, PLUGIN_IDS } from "./index.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const ANALYTICS_PREFIX = "analytics:user:";
@@ -74,19 +74,6 @@ function requireFigmaConfig(env) {
   if (!clientId) throw new Error("FIGMA_CLIENT_ID is not configured.");
   if (!clientSecret) throw new Error("FIGMA_CLIENT_SECRET is not configured.");
   return { clientId, clientSecret };
-}
-
-async function authenticatePluginSession(request, env) {
-  const authorization = request.headers.get("authorization") || "";
-  if (!authorization.startsWith("Bearer ")) return null;
-  const token = authorization.slice(7).trim();
-  if (token.length < 20 || token.length > 4096 || /\s/u.test(token)) return null;
-  const session = await requireStore(env).get(`session:${await sha256(token)}`, "json");
-  if (!session || typeof session.userId !== "string") return null;
-  return {
-    userId: session.userId,
-    email: typeof session.email === "string" ? session.email : null,
-  };
 }
 
 async function readJson(request) {
@@ -223,16 +210,16 @@ async function startFigmaAuthorization(request, env, session) {
   return json({ pluginId: "figma", status: "pending", authorizationUrl: url.toString() });
 }
 
-function oauthCallbackHtml(pluginId, ok) {
+function oauthCallbackHtml(pluginId, ok, message) {
   const title = ok ? "Connected to Sparky" : "Sparky authorization failed";
-  const message = ok
+  const body = ok
     ? `${pluginId} is connected. You can close this window.`
-    : "Authorization did not complete. Return to Sparky and try again.";
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title></head><body style="font-family:system-ui;background:#111;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0"><main style="max-width:460px;padding:32px;text-align:center"><h1 style="font-size:20px">${title}</h1><p style="opacity:.72">${message}</p></main></body></html>`;
+    : message || "Authorization did not complete. Return to Sparky and try again.";
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title></head><body style="font-family:system-ui;background:#111;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0"><main style="max-width:460px;padding:32px;text-align:center"><h1 style="font-size:20px">${title}</h1><p style="opacity:.72">${body}</p></main></body></html>`;
 }
 
-function oauthCallbackResponse(pluginId, ok, status = ok ? 200 : 400) {
-  return new Response(oauthCallbackHtml(pluginId, ok), {
+function oauthCallbackResponse(pluginId, ok, status = ok ? 200 : 400, message) {
+  return new Response(oauthCallbackHtml(pluginId, ok, message), {
     status,
     headers: { ...securityHeaders(), "Content-Type": "text/html; charset=utf-8" },
   });
@@ -257,26 +244,50 @@ async function handleFigmaCallback(request, env) {
   }
   try {
     const config = requireFigmaConfig(env);
+    const tokenFields = {
+      redirect_uri: pending.redirectUri,
+      code,
+      grant_type: "authorization_code",
+      code_verifier: pending.verifier,
+    };
     const response = await fetch(FIGMA_TOKEN_URL, {
       method: "POST",
       headers: {
         Accept: "application/json",
-        Authorization: figmaBasicAuth(config),
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
-        redirect_uri: pending.redirectUri,
-        code,
-        grant_type: "authorization_code",
-        code_verifier: pending.verifier,
+        client_id: config.clientId,
+        client_secret: config.clientSecret,
+        ...tokenFields,
       }),
     });
     const value = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error("Figma token exchange failed.");
+    if (!response.ok) {
+      const providerCode = typeof value.error === "string" ? value.error : null;
+      const providerMessage =
+        typeof value.error_description === "string"
+          ? value.error_description
+          : typeof value.message === "string"
+            ? value.message
+            : null;
+      const detail =
+        providerCode && providerMessage
+          ? `${providerCode}: ${providerMessage}`
+          : providerMessage ||
+            providerCode ||
+            `Figma token exchange returned HTTP ${response.status}.`;
+      throw new Error(detail);
+    }
     await saveFigmaConnection(env, pending.userId, normalizeFigmaToken(value));
     return oauthCallbackResponse("figma", true);
-  } catch {
-    return oauthCallbackResponse("figma", false, 502);
+  } catch (error) {
+    return oauthCallbackResponse(
+      "figma",
+      false,
+      502,
+      error instanceof Error ? error.message : "Figma authorization failed.",
+    );
   }
 }
 

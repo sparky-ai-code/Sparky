@@ -21,14 +21,16 @@ const mergeProviderModels = (
   fallbackModels: ReadonlyArray<ServerProvider["models"][number]>,
   cachedModels: ReadonlyArray<ServerProvider["models"][number]>,
 ): ReadonlyArray<ServerProvider["models"][number]> => {
-  const cachedBySlug = new Map(cachedModels.map((model) => [model.slug, model] as const));
-  const fallbackSlugs = new Set(fallbackModels.map((model) => model.slug));
+  const retainedFallbackModels = fallbackModels.filter((model) => !model.slug.startsWith("opencode/"));
+  const retainedCachedModels = cachedModels.filter((model) => !model.slug.startsWith("opencode/"));
+  const cachedBySlug = new Map(retainedCachedModels.map((model) => [model.slug, model] as const));
+  const fallbackSlugs = new Set(retainedFallbackModels.map((model) => model.slug));
   return [
-    ...fallbackModels.map((model) => {
+    ...retainedFallbackModels.map((model) => {
       const cached = cachedBySlug.get(model.slug);
       return cached ? mergeStableModelContext(cached, model) : model;
     }),
-    ...cachedModels.filter((model) => !fallbackSlugs.has(model.slug)),
+    ...retainedCachedModels.filter((model) => !fallbackSlugs.has(model.slug)),
   ];
 };
 

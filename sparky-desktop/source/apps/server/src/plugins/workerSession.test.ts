@@ -6,7 +6,7 @@ import {
   normalizePluginSessionToken,
 } from "./workerSession.js";
 describe("plugin worker session", () => {
-  it("supports exactly the shipped plugin ids", () => {
+  it("supports exactly the active desktop plugin ids", () => {
     expect(SUPPORTED_PLUGIN_IDS).toEqual([
       "github",
       "jira",
@@ -15,7 +15,6 @@ describe("plugin worker session", () => {
       "outlook",
       "slack",
       "sentry",
-      "figma",
     ]);
     expect(isSupportedPluginId("github")).toBe(true);
     expect(isSupportedPluginId("discord")).toBe(false);

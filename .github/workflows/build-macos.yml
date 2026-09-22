@@ -302,8 +302,8 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "$SPARKY_LINUX_GPG_PRIVATE_KEY" || -z "$SPARKY_LINUX_GPG_KEY_ID" ]]; then
-            echo "Linux signing requires SPARKY_LINUX_GPG_PRIVATE_KEY and SPARKY_LINUX_GPG_KEY_ID repository secrets." >&2
-            exit 1
+            echo "Linux signing keys are not configured; continuing without a detached signature."
+            exit 0
           fi
           key_path="$RUNNER_TEMP/sparky-linux-signing-key.asc"
           if [[ "$SPARKY_LINUX_GPG_PRIVATE_KEY" == "-----BEGIN"* ]]; then

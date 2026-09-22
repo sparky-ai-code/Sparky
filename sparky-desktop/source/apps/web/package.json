@@ -1,6 +1,6 @@
 {
   "name": "@sparky/web",
-  "version": "1.1.13",
+  "version": "1.1.15",
   "private": true,
   "type": "module",
   "scripts": {

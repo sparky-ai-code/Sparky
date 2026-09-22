@@ -1,6 +1,6 @@
 {
   "name": "@sparky/contracts",
-  "version": "1.1.13",
+  "version": "1.1.15",
   "private": true,
   "files": [
     "dist"

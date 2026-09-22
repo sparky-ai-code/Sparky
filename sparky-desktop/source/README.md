@@ -1,6 +1,6 @@
 # Sparky
 
-Sparky is a local desktop coding agent with built-in file, search, editing, and terminal tools. It connects directly to models from OpenAI, Anthropic, Google, and OpenCode Zen.
+Sparky is a local desktop coding agent with built-in file, search, editing, and terminal tools. It connects directly to models from OpenAI, Anthropic, and Google.
 
 ## Installation
 

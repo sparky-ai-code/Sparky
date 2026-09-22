@@ -9,7 +9,7 @@ import {
 } from "./pluginCatalog";
 
 describe("plugin catalog", () => {
-  it("contains only the eight supported integrations", () => {
+  it("contains only the seven active integrations", () => {
     expect(PLUGINS.map((plugin) => plugin.id)).toEqual([
       "github",
       "jira",
@@ -18,7 +18,6 @@ describe("plugin catalog", () => {
       "outlook",
       "slack",
       "sentry",
-      "figma",
     ]);
   });
 

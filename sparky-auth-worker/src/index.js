@@ -293,24 +293,40 @@ async function createPluginSession(request, env) {
   return json({ sessionToken: token, user: { id: identity.userId, email: identity.email } });
 }
 
-async function authenticatePluginSession(request, env) {
+export async function authenticatePluginSession(request, env) {
   const authorization = request.headers.get("authorization") || "";
   if (!authorization.startsWith("Bearer ")) return null;
   const token = authorization.slice(7).trim();
   if (!isOpaqueToken(token)) return null;
   const value = await openStateless(token, env);
   if (
-    !value ||
-    value.type !== "plugin-session" ||
-    typeof value.userId !== "string" ||
-    typeof value.expiresAt !== "number" ||
-    value.expiresAt <= Math.floor(Date.now() / 1000)
+    value &&
+    value.type === "plugin-session" &&
+    typeof value.userId === "string" &&
+    typeof value.expiresAt === "number" &&
+    value.expiresAt > Math.floor(Date.now() / 1000)
+  ) {
+    return {
+      token,
+      userId: value.userId,
+      email: typeof value.email === "string" ? value.email : null,
+      sessionId: typeof value.sessionId === "string" ? value.sessionId : null,
+    };
+  }
+
+  // Keep sessions issued before the stateless-token migration usable while
+  // existing desktop installs rotate onto the current format.
+  const legacy = await requireStore(env).get(`session:${await sha256(token)}`, "json").catch(() => null);
+  if (
+    !legacy ||
+    typeof legacy.userId !== "string" ||
+    (typeof legacy.expiresAt === "number" && legacy.expiresAt <= Math.floor(Date.now() / 1000))
   ) return null;
   return {
     token,
-    userId: value.userId,
-    email: typeof value.email === "string" ? value.email : null,
-    sessionId: typeof value.sessionId === "string" ? value.sessionId : null,
+    userId: legacy.userId,
+    email: typeof legacy.email === "string" ? legacy.email : null,
+    sessionId: typeof legacy.sessionId === "string" ? legacy.sessionId : null,
   };
 }
 

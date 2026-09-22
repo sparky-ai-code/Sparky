@@ -35,7 +35,7 @@ import {
 import { usePrimaryEnvironment } from "../../state/environments";
 import { primaryServerProvidersAtom, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { ClaudeAI, Gemini, OpenAI, OpenCodeIcon, SparkyIcon } from "../Icons";
+import { ClaudeAI, FireworksAI, Gemini, Ollama, OpenAI, SparkyIcon } from "../Icons";
 import {
   getDisplayModelName,
   getModelProviderPresentation,
@@ -122,12 +122,20 @@ const MODEL_APIS: ReadonlyArray<{
     Logo: Gemini,
   },
   {
-    id: "opencode",
-    name: "OpenCode Zen",
-    envName: "OPENCODE_API_KEY",
-    placeholder: "OpenCode Zen API key",
-    description: "OpenCode Zen gateway models through T3 Code.",
-    Logo: OpenCodeIcon,
+    id: "fireworks",
+    name: "Fireworks",
+    envName: "FIREWORKS_API_KEY",
+    placeholder: "fw_...",
+    description: "OpenAI-compatible models through Fireworks AI.",
+    Logo: FireworksAI,
+  },
+  {
+    id: "ollama-cloud",
+    name: "Ollama Cloud",
+    envName: "OLLAMA_API_KEY",
+    placeholder: "ollama_...",
+    description: "Cloud-hosted Ollama models through ollama.com.",
+    Logo: Ollama,
   },
 ];
 
@@ -263,20 +271,27 @@ export function ModelsSettingsPanel() {
     updateSettings({ providerModelPreferences: nextPreferences });
   };
 
-  const commitKey = (envName: string, value: string) => {
-    const knownNames = new Set(MODEL_APIS.map((api) => api.envName));
-    const existingVariables = (instance?.environment ?? []).filter(
-      (variable) => !knownNames.has(variable.name) || variable.name !== envName,
-    );
-    const environment = [
-      ...existingVariables,
-      {
-        name: envName,
-        value,
-        sensitive: true,
-        ...(value.length === 0 ? {} : { valueRedacted: false }),
-      },
-    ];
+  const commitProviderKey = (api: (typeof MODEL_APIS)[number], keyValue: string) => {
+    const providerKeyNames = new Set(MODEL_APIS.map((entry) => entry.envName));
+    const legacyEndpointNames = new Set([
+      "OPENAI_BASE_URL",
+      "ANTHROPIC_BASE_URL",
+      "GEMINI_BASE_URL",
+      "FIREWORKS_BASE_URL",
+      "OLLAMA_CLOUD_BASE_URL",
+    ]);
+    const existingVariables = (instance?.environment ?? []).filter((variable) => {
+      if (variable.name === api.envName) return false;
+      if (api.id === "ollama-cloud" && variable.name === "OLLAMA_CLOUD_CONFIGURED") return false;
+      return providerKeyNames.has(variable.name) || !legacyEndpointNames.has(variable.name);
+    });
+    if (keyValue.length > 0) {
+      environment.push({ name: api.envName, value: keyValue, sensitive: true, valueRedacted: false });
+      if (api.id === "ollama-cloud") {
+        environment.push({ name: "OLLAMA_CLOUD_CONFIGURED", value: "true", sensitive: false });
+      }
+    }
+
     const nextInstance: ProviderInstanceConfig = {
       driver: SPARKY_DRIVER,
       displayName: "T3 Code",
@@ -290,7 +305,7 @@ export function ModelsSettingsPanel() {
         [SPARKY_INSTANCE_ID]: nextInstance,
       },
     });
-    setDrafts((current) => ({ ...current, [envName]: "" }));
+    setDrafts((current) => ({ ...current, [api.envName]: "" }));
   };
 
   return (
@@ -373,7 +388,8 @@ export function ModelsSettingsPanel() {
             <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
           </summary>
           <div className="border-t border-border/60">
-            {MODEL_APIS.map(({ id, name, envName, placeholder, description, Logo }) => {
+            {MODEL_APIS.map((api) => {
+              const { id, name, envName, placeholder, description, Logo } = api;
               const stored = variables.get(envName);
               const configured = stored?.valueRedacted === true || Boolean(stored?.value);
               const draft = drafts[envName] ?? "";
@@ -447,7 +463,7 @@ export function ModelsSettingsPanel() {
                           size="sm"
                           className="h-9 shrink-0 gap-1.5"
                           disabled={draft.trim().length === 0}
-                          onClick={() => commitKey(envName, draft.trim())}
+                          onClick={() => commitProviderKey(api, draft.trim())}
                         >
                           <SaveIcon className="size-3.5" /> Save key
                         </Button>
@@ -457,7 +473,7 @@ export function ModelsSettingsPanel() {
                             size="sm"
                             variant="outline"
                             className="h-9 shrink-0 gap-1.5 text-destructive hover:text-destructive"
-                            onClick={() => commitKey(envName, "")}
+                            onClick={() => commitProviderKey(api, "")}
                           >
                             <Trash2Icon className="size-3.5" /> Remove
                           </Button>

@@ -68,3 +68,43 @@ async fn plan_mode_uses_read_only_prompt_and_still_loads_context() {
     assert!(build_prompt.contains("Do not mention search providers, indexing, ranking"));
     assert!(!build_prompt.contains("You are Sparky in Plan mode"));
 }
+
+#[tokio::test]
+async fn loads_ancestor_agents_in_hierarchy_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let nested = root.join("packages/app");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::write(root.join("AGENTS.md"), "root instructions").unwrap();
+    std::fs::write(nested.join("AGENTS.md"), "nested instructions").unwrap();
+
+    let context = PromptBuilder::new(nested.to_string_lossy())
+        .load_context_files()
+        .await;
+    let contents: Vec<_> = context.iter().map(|file| file.content.as_str()).collect();
+
+    assert_eq!(contents, vec!["root instructions", "nested instructions"]);
+}
+
+#[tokio::test]
+async fn custom_prompt_still_receives_workspace_instructions_and_skill_catalog() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join(".agents/skills/example")).unwrap();
+    std::fs::write(root.join("AGENTS.md"), "workspace instructions").unwrap();
+    std::fs::write(
+        root.join(".agents/skills/example/SKILL.md"),
+        "---\nname: example\ndescription: Example skill\n---\nskill body",
+    )
+    .unwrap();
+
+    let prompt = PromptBuilder::new(root.to_string_lossy())
+        .with_custom_prompt(Some("custom system prompt".to_string()))
+        .build()
+        .await;
+
+    assert!(prompt.starts_with("custom system prompt"));
+    assert!(prompt.contains("workspace instructions"));
+    assert!(prompt.contains("path=\".agents/skills/example/SKILL.md\""));
+    assert!(!prompt.contains("skill body"));
+}

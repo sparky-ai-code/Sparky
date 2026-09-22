@@ -15,7 +15,7 @@ SLACK_CLIENT_ID = "11931438217766.11937099402708"
 JIRA_CLIENT_ID = "Va6qzTPCDPB7goX3RJTcMx7ga9HGogaW"
 NOTION_CLIENT_ID = "3d1d872b-594c-8150-a625-0037f4db0c15"
 SENTRY_CLIENT_ID = "50d29c8af4de9b2f8e0f5b3cb7198f0caf0edbacfbc9ea5cb484f273f713c9d6"
-FIGMA_CLIENT_ID = "q7CWPrlGOJPrdzXPQKJObT"
+FIGMA_CLIENT_ID = "n5YVQ37BEBKnWIXaaq24H3"
 # Clerk publishable keys are public. The Worker derives the Clerk issuer and hosts
 # the isolated desktop sign-in frame from this value.
 CLERK_PUBLISHABLE_KEY = "pk_live_Y2xlcmsuYXV0aC5zcGFya3kubGxjJA"

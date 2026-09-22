@@ -5,6 +5,7 @@ import {
   CheckIcon,
   ChevronRightIcon,
   CloudIcon,
+  Columns2Icon,
   ContainerIcon,
   EllipsisIcon,
   FolderPlusIcon,
@@ -119,6 +120,7 @@ import { readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
+import { sameSplitChatThread, useSplitChatStore } from "../splitChatStore";
 
 import { useThreadActions } from "../hooks/useThreadActions";
 import { projectEnvironment } from "../state/projects";
@@ -431,6 +433,22 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   } = props;
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
+  const routeThreadRef = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteRef(params),
+  });
+  const setSplit = useSplitChatStore((state) => state.setSplit);
+  const canSplitThread = routeThreadRef !== null && !sameSplitChatThread(routeThreadRef, threadRef);
+  const openThreadInSplit = useCallback(
+    (side: "left" | "right") => {
+      if (!routeThreadRef || sameSplitChatThread(routeThreadRef, threadRef)) return;
+      setSplit(
+        side === "left" ? threadRef : routeThreadRef,
+        side === "left" ? routeThreadRef : threadRef,
+      );
+    },
+    [routeThreadRef, setSplit, threadRef],
+  );
   const focusMode = useClientSettings((settings) => settings.focusMode);
   const isPinned = useUiStateStore((state) => state.pinnedThreadKeys.includes(threadKey));
   const toggleThreadPinned = useUiStateStore((state) => state.toggleThreadPinned);
@@ -931,6 +949,14 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                 <EllipsisIcon className="size-3.5" aria-hidden="true" />
               </MenuTrigger>
               <MenuPopup align="end" side="bottom">
+                <MenuItem disabled={!canSplitThread} onClick={() => openThreadInSplit("left")}>
+                  <Columns2Icon className="size-3.5" />
+                  Open on left in split view
+                </MenuItem>
+                <MenuItem disabled={!canSplitThread} onClick={() => openThreadInSplit("right")}>
+                  <Columns2Icon className="size-3.5" />
+                  Open on right in split view
+                </MenuItem>
                 <MenuItem
                   data-testid={`thread-pin-${thread.id}`}
                   onClick={() => toggleThreadPinned(threadKey)}

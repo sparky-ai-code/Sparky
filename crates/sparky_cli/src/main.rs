@@ -72,7 +72,7 @@ struct Cli {
         short = 'r',
         long,
         default_value = "openai",
-        help = "Model API: openai, anthropic, gemini, opencode, ollama"
+        help = "Model API: openai, anthropic, gemini, fireworks, ollama-cloud, ollama"
     )]
     provider: String,
 
@@ -94,10 +94,7 @@ struct Cli {
     )]
     no_workspace_context: bool,
 
-    #[arg(
-        long,
-        help = "Custom Base URL for OpenAI/OpenCode/Ollama-compatible provider"
-    )]
+    #[arg(long, help = "Custom Base URL for OpenAI/Ollama-compatible provider")]
     base_url: Option<String>,
 
     #[arg(short, long, help = "Optional JS/TS extension file path to load")]
@@ -163,6 +160,14 @@ fn required_api_key(variable: &str) -> anyhow::Result<String> {
         variable
     );
     Ok(value)
+}
+
+fn configured_base_url(cli_value: Option<&str>, default: &str) -> String {
+    cli_value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| default.to_string())
 }
 
 fn parse_context_window_tokens(value: Option<&str>) -> anyhow::Result<Option<usize>> {
@@ -450,37 +455,56 @@ async fn main() -> anyhow::Result<()> {
         "openai-codex" | "codex" | "chatgpt" => Arc::new(CodexProvider::new()),
         "anthropic" => {
             let key = required_api_key("ANTHROPIC_API_KEY")?;
-            Arc::new(AnthropicProvider::new(key, cli.base_url.clone()))
+            let base_url = configured_base_url(cli.base_url.as_deref(), "https://api.anthropic.com/v1");
+            Arc::new(AnthropicProvider::new(key, Some(base_url)))
         }
-        "gemini" => {
+        "gemini" | "google" => {
             let key = required_api_key("GEMINI_API_KEY")?;
-            Arc::new(GeminiProvider::new(key))
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "https://generativelanguage.googleapis.com/v1beta",
+            );
+            Arc::new(GeminiProvider::new_with_base_url(key, Some(base_url)))
         }
-        "ollama" => {
-            let base_url = cli
-                .base_url
-                .clone()
-                .unwrap_or_else(|| "http://localhost:11434/v1".to_string());
-            Arc::new(OpenAiProvider::new("", Some(base_url)))
-        }
-        "opencode" | "opencode-zen" | "zen" => {
-            let key = required_api_key("OPENCODE_API_KEY")?;
-            let base_url = cli
-                .base_url
-                .clone()
-                .or_else(|| env::var("OPENCODE_BASE_URL").ok())
-                .unwrap_or_else(|| "https://opencode.ai/zen/v1".to_string());
-            Arc::new(OpenAiProvider::new_with_api_key_env_and_provider(
+        "fireworks" => {
+            let key = required_api_key("FIREWORKS_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "https://api.fireworks.ai/inference/v1",
+            );
+            Arc::new(OpenAiProvider::new_named(
                 key,
                 Some(base_url),
-                "OPENCODE_API_KEY",
-                "opencode",
-                "OpenCode",
+                "FIREWORKS_API_KEY",
+                "fireworks",
+                "Fireworks",
+            ))
+        }
+        "ollama-cloud" | "ollama_cloud" => {
+            let key = required_api_key("OLLAMA_API_KEY")?;
+            let base_url = configured_base_url(cli.base_url.as_deref(), "https://ollama.com/v1");
+            Arc::new(OpenAiProvider::new_named(
+                key,
+                Some(base_url),
+                "OLLAMA_API_KEY",
+                "ollama-cloud",
+                "Ollama Cloud",
+            ))
+        }
+        "ollama" => {
+            let base_url = configured_base_url(cli.base_url.as_deref(), "http://localhost:11434/v1");
+            Arc::new(OpenAiProvider::new_named(
+                "",
+                Some(base_url),
+                "OLLAMA_API_KEY",
+                "ollama",
+                "Ollama",
             ))
         }
         "openai" | _ => {
             let key = required_api_key("OPENAI_API_KEY")?;
-            Arc::new(OpenAiProvider::new(key, cli.base_url.clone()))
+            let base_url = configured_base_url(cli.base_url.as_deref(), "https://api.openai.com/v1");
+            Arc::new(OpenAiProvider::new(key, Some(base_url)))
         }
     };
 

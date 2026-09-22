@@ -494,6 +494,23 @@ export const OpenAI: Icon = ({ className, ...props }) => (
   </svg>
 );
 
+export const FireworksAI: Icon = ({ className, ...props }) => (
+  <img
+    src="/fireworks-ai.ico"
+    alt=""
+    aria-hidden={props["aria-hidden"]}
+    className={cn("size-full object-contain", className)}
+  />
+);
+
+export const Ollama: Icon = ({ className, ...props }) => (
+  <img
+    src="/ollama.svg"
+    alt=""
+    aria-hidden={props["aria-hidden"]}
+    className={cn("size-full object-contain dark:invert", className)}
+  />
+);
 export const ClaudeAI: Icon = ({ className, ...props }) => (
   <svg
     {...props}
@@ -646,22 +663,6 @@ const ANTIGRAVITY_ICON_DATA_URL =
 export const AntigravityIcon: Icon = (props) => (
   <svg {...props} viewBox="0 0 128 128" fill="none">
     <image href={ANTIGRAVITY_ICON_DATA_URL} width="128" height="128" />
-  </svg>
-);
-
-export const OpenCodeIcon: Icon = (props) => (
-  <svg {...props} viewBox="0 0 32 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <g clipPath="url(#opencode__clip0_1311_94969)">
-      <path className="dark:hidden" d="M24 32H8V16H24V32Z" fill="#CFCECD" />
-      <path className="dark:hidden" d="M24 8H8V32H24V8ZM32 40H0V0H32V40Z" fill="#211E1E" />
-      <path className="hidden dark:block" d="M24 32H8V16H24V32Z" fill="#4B4646" />
-      <path className="hidden dark:block" d="M24 8H8V32H24V8ZM32 40H0V0H32V40Z" fill="#F1ECEC" />
-    </g>
-    <defs>
-      <clipPath id="opencode__clip0_1311_94969">
-        <rect width="32" height="40" fill="white" />
-      </clipPath>
-    </defs>
   </svg>
 );
 

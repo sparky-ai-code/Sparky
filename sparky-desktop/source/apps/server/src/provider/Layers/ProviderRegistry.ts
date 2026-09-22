@@ -83,11 +83,12 @@ const mergeProviderModels = (
   previousModels: ReadonlyArray<ServerProvider["models"][number]>,
   nextModels: ReadonlyArray<ServerProvider["models"][number]>,
 ): ReadonlyArray<ServerProvider["models"][number]> => {
-  if (nextModels.length === 0 && previousModels.length > 0) {
-    return previousModels;
+  const retainedPreviousModels = previousModels.filter((model) => !model.slug.startsWith("opencode/"));
+  if (nextModels.length === 0 && retainedPreviousModels.length > 0) {
+    return retainedPreviousModels;
   }
 
-  const previousBySlug = new Map(previousModels.map((model) => [model.slug, model] as const));
+  const previousBySlug = new Map(retainedPreviousModels.map((model) => [model.slug, model] as const));
   const mergedModels = nextModels.map((model) => {
     const previousModel = previousBySlug.get(model.slug);
     if (!previousModel) {
@@ -103,14 +104,14 @@ const mergeProviderModels = (
     };
   });
   const nextSlugs = new Set(nextModels.map((model) => model.slug));
-  return [...mergedModels, ...previousModels.filter((model) => !nextSlugs.has(model.slug))];
+  return [...mergedModels, ...retainedPreviousModels.filter((model) => !nextSlugs.has(model.slug))];
 };
 
 export const mergeProviderSnapshot = (
   previousProvider: ServerProvider | undefined,
   nextProvider: ServerProvider,
 ): ServerProvider =>
-  !previousProvider
+  !previousProvider || nextProvider.auth.status === "unauthenticated"
     ? nextProvider
     : {
         ...nextProvider,

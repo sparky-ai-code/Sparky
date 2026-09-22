@@ -60,7 +60,7 @@ function makeSnapshot(input: {
   const message = !input.binaryInstalled
     ? `Sparky runtime was not found at ${input.binaryPath}.`
     : discovery.configuredProviderCount === 0
-      ? "Add an OpenAI, Anthropic, Google, or OpenCode Zen API key in Models."
+      ? "Add an OpenAI, Anthropic, Google, Fireworks, or Ollama Cloud API key in Models."
       : hasDiscoveryErrors
         ? `Model refresh failed for ${discovery.errors.join("; ")}. Check the API key and your connection.`
         : !hasModels
@@ -257,7 +257,14 @@ export const SparkyDriver: ProviderDriver<
       const serverSettings = yield* ServerSettingsService;
       const serverConfig = yield* ServerConfig;
       const eventLoggers = yield* ProviderEventLoggers;
-      const processEnvironment = mergeProviderInstanceEnvironment(environment);
+      const processEnvironment = { ...mergeProviderInstanceEnvironment(environment) };
+      const hasConfiguredOllamaCloudKey = environment?.some(
+        (variable) => variable.name === "OLLAMA_API_KEY" && variable.value.trim().length > 0,
+      );
+      if (!hasConfiguredOllamaCloudKey || processEnvironment.OLLAMA_CLOUD_CONFIGURED !== "true") {
+        delete processEnvironment.OLLAMA_API_KEY;
+        delete processEnvironment.OLLAMA_CLOUD_CONFIGURED;
+      }
       const binaryPath =
         config.binaryPath.trim() || processEnvironment.SPARKY_BINARY_PATH?.trim() || "sparky";
       const continuationIdentity = defaultProviderContinuationIdentity({

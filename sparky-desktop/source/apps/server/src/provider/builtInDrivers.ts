@@ -9,7 +9,7 @@
  * `buildUnavailableProviderSnapshot`).
  *
  * The aggregated Sparky driver owns the OpenAI/Codex, Claude/Anthropic,
- * Google/Gemini, and OpenCode Zen catalogs. Standalone native CLI drivers are
+ * and Google/Gemini catalogs. Standalone native CLI drivers are
  * intentionally not registered here, so they cannot create duplicate
  * provider instances in the backend or picker.
  *

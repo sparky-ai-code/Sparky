@@ -429,7 +429,7 @@ function formatOutgoingPrompt(params: {
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
 
-type ChatViewProps =
+export type ChatViewProps =
   | {
       environmentId: EnvironmentId;
       threadId: ThreadId;

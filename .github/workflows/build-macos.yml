@@ -22,7 +22,26 @@ env:
   VITE_SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
 
 jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists."
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --draft \
+              --title "Sparky ${GITHUB_REF_NAME}" \
+              --generate-notes
+          fi
+
   build-macos-x64:
+    needs: [prepare-release]
     runs-on: macos-14
     defaults:
       run:
@@ -107,6 +126,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   build-macos-arm64:
+    needs: [prepare-release]
     runs-on: macos-latest
     defaults:
       run:
@@ -191,6 +211,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   build-linux-x64:
+    needs: [prepare-release]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -353,6 +374,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   build-windows:
+    needs: [prepare-release]
     runs-on: windows-latest
     defaults:
       run:

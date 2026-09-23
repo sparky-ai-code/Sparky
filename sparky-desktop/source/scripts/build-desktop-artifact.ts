@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 
+import * as Asar from "@electron/asar";
 import { fromYaml } from "@sparky/shared/schemaYaml";
 import { HostProcessPlatform } from "@sparky/shared/hostProcess";
 import { resolveSpawnCommand } from "@sparky/shared/shell";
+import * as NodeFileSystem from "node:fs";
+import * as NodePath from "node:path";
 import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
@@ -16,6 +19,10 @@ import {
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
+import {
+  DESKTOP_ASAR_RUNTIME_FILES,
+  findMissingDesktopAsarRuntimeFiles,
+} from "./lib/desktop-main-runtime.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -34,6 +41,32 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "com.sparky.desktop";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
+
+function findPackagedAppAsar(rootDirectory: string): string | undefined {
+  const pending = [{ directory: rootDirectory, depth: 0 }];
+  while (pending.length > 0) {
+    const current = pending.shift();
+    if (!current) break;
+    let entries: NodeFileSystem.Dirent[];
+    try {
+      entries = NodeFileSystem.readdirSync(current.directory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    if (entries.some((entry) => entry.name === "app.asar" && entry.isFile())) {
+      return NodePath.join(current.directory, "app.asar");
+    }
+    if (current.depth >= 10) continue;
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name === "Frameworks") continue;
+      pending.push({
+        directory: NodePath.join(current.directory, entry.name),
+        depth: current.depth + 1,
+      });
+    }
+  }
+  return undefined;
+}
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
 const BuildArch = Schema.Literals(["arm64", "x64", "universal"]);
@@ -335,6 +368,18 @@ export class MissingDesktopBuildInputError extends Schema.TaggedErrorClass<Missi
 ) {
   override get message(): string {
     return `Missing ${desktopBuildInputArtifactNames[this.artifact]} at ${this.artifactPath}. Run '${this.buildCommand}' first.`;
+  }
+}
+
+export class PackagedDesktopRuntimeFilesMissingError extends Schema.TaggedErrorClass<PackagedDesktopRuntimeFilesMissingError>()(
+  "PackagedDesktopRuntimeFilesMissingError",
+  {
+    archivePath: Schema.String,
+    missingFiles: Schema.Array(Schema.String),
+  },
+) {
+  override get message(): string {
+    return `Packaged desktop runtime files are missing from ${this.archivePath}: ${this.missingFiles.join(", ")}.`;
   }
 }
 
@@ -1960,6 +2005,31 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       arch: options.arch,
     });
   }
+
+  const packagedAppAsar = findPackagedAppAsar(stageDistDir);
+  if (!packagedAppAsar) {
+    return yield* new PackagedDesktopRuntimeFilesMissingError({
+      archivePath: stageDistDir,
+      missingFiles: ["app.asar"],
+    });
+  }
+  const missingRuntimeFiles = findMissingDesktopAsarRuntimeFiles((filePath) => {
+    try {
+      const entry = Asar.statFile(packagedAppAsar, filePath, true);
+      return "unpacked" in entry && entry.unpacked === true;
+    } catch {
+      return false;
+    }
+  });
+  if (missingRuntimeFiles.length > 0) {
+    return yield* new PackagedDesktopRuntimeFilesMissingError({
+      archivePath: packagedAppAsar,
+      missingFiles: missingRuntimeFiles,
+    });
+  }
+  yield* Effect.log("[desktop-artifact] Verified unpacked Effect runtime modules in app.asar.").pipe(
+    Effect.annotateLogs({ archivePath: packagedAppAsar, files: DESKTOP_ASAR_RUNTIME_FILES }),
+  );
 
   const stageEntries = yield* fs.readDirectory(stageDistDir);
   yield* fs.makeDirectory(options.outputDir, { recursive: true });

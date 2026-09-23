@@ -32,14 +32,12 @@ import {
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
+import { nextModelProviderEnvironment } from "./modelProviderEnvironment";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { primaryServerProvidersAtom, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ClaudeAI, FireworksAI, Gemini, Ollama, OpenAI, SparkyIcon } from "../Icons";
-import {
-  getDisplayModelName,
-  getModelProviderPresentation,
-} from "../chat/providerIconUtils";
+import { getDisplayModelName, getModelProviderPresentation } from "../chat/providerIconUtils";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
@@ -222,7 +220,9 @@ export function ModelsSettingsPanel() {
 
   const refreshSparkyProvider = async () => {
     if (!primaryEnvironment) {
-      throw new Error("T3 Code's local provider is not connected yet. Restart T3 Code and try again.");
+      throw new Error(
+        "T3 Code's local provider is not connected yet. Restart T3 Code and try again.",
+      );
     }
     const result = await refreshServerProviders({
       environmentId: primaryEnvironment.environmentId,
@@ -272,25 +272,12 @@ export function ModelsSettingsPanel() {
   };
 
   const commitProviderKey = (api: (typeof MODEL_APIS)[number], keyValue: string) => {
-    const providerKeyNames = new Set(MODEL_APIS.map((entry) => entry.envName));
-    const legacyEndpointNames = new Set([
-      "OPENAI_BASE_URL",
-      "ANTHROPIC_BASE_URL",
-      "GEMINI_BASE_URL",
-      "FIREWORKS_BASE_URL",
-      "OLLAMA_CLOUD_BASE_URL",
-    ]);
-    const existingVariables = (instance?.environment ?? []).filter((variable) => {
-      if (variable.name === api.envName) return false;
-      if (api.id === "ollama-cloud" && variable.name === "OLLAMA_CLOUD_CONFIGURED") return false;
-      return providerKeyNames.has(variable.name) || !legacyEndpointNames.has(variable.name);
-    });
-    if (keyValue.length > 0) {
-      environment.push({ name: api.envName, value: keyValue, sensitive: true, valueRedacted: false });
-      if (api.id === "ollama-cloud") {
-        environment.push({ name: "OLLAMA_CLOUD_CONFIGURED", value: "true", sensitive: false });
-      }
-    }
+    const environment = nextModelProviderEnvironment(
+      instance?.environment ?? [],
+      api,
+      keyValue,
+      MODEL_APIS,
+    );
 
     const nextInstance: ProviderInstanceConfig = {
       driver: SPARKY_DRIVER,

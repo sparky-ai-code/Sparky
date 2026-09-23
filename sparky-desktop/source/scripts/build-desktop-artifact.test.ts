@@ -266,7 +266,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.deepStrictEqual(resolveStageInstallArgs("linux"), ["install", "--prod"]);
     assert.deepStrictEqual(
       resolveStageInstallArgs("win"),
-      ["install", "--prod", "--node-linker=hoisted"],
+      ["install", "--prod", "--", "--node-linker=hoisted"],
     );
     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "mac", arch: "x64" }), {
       supportedArchitectures: {

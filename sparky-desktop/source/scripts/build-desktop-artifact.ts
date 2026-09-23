@@ -630,7 +630,7 @@ export function resolveStageInstallArgs(platform: typeof BuildPlatform.Type): st
   // Use a flat dependency tree for Windows so the dependencies read by WSL from
   // app.asar.unpacked are materialized instead of depending on junction resolution.
   return platform === "win"
-    ? [...STAGE_INSTALL_ARGS, "--node-linker=hoisted"]
+    ? [...STAGE_INSTALL_ARGS, "--", "--node-linker=hoisted"]
     : [...STAGE_INSTALL_ARGS];
 }
 

@@ -19,7 +19,13 @@ type ProviderDefinition = {
     | "GEMINI_API_KEY"
     | "FIREWORKS_API_KEY"
     | "OLLAMA_API_KEY";
-  readonly prefix: "openai-codex" | "openai" | "anthropic" | "google" | "fireworks" | "ollama-cloud";
+  readonly prefix:
+    | "openai-codex"
+    | "openai"
+    | "anthropic"
+    | "google"
+    | "fireworks"
+    | "ollama-cloud";
   readonly label: "OpenAI Codex" | "OpenAI" | "Claude" | "Google" | "Fireworks" | "Ollama Cloud";
   readonly load: (
     apiKey: string,
@@ -89,10 +95,37 @@ const REQUEST_TIMEOUT_MS = 12_000;
 
 // Some installed Codex app-server builds lag the current ChatGPT entitlement
 // catalog during staged model rollouts. Keep this OAuth-only fallback aligned
-// with the official model id so an eligible account can select Astra while the
-// local app-server catches up. Runtime authorization still remains provider-
-// authoritative; an ineligible account receives the provider error.
+// with the official model ids so an eligible account can select newly released
+// models while the local app-server catches up. Runtime authorization still
+// remains provider-authoritative; an ineligible account receives the provider
+// error.
 const CODEX_OAUTH_KNOWN_MODELS: ReadonlyArray<RemoteModel> = [
+  {
+    id: "gpt-6-sol",
+    name: "GPT-6 Sol",
+    reasoningSupported: true,
+    reasoningEfforts: [
+      { id: "low" },
+      { id: "medium" },
+      { id: "high" },
+      { id: "xhigh" },
+      { id: "max" },
+    ],
+    defaultReasoningEffort: "medium",
+  },
+  {
+    id: "gpt-6-luna",
+    name: "GPT-6 Luna",
+    reasoningSupported: true,
+    reasoningEfforts: [
+      { id: "low" },
+      { id: "medium" },
+      { id: "high" },
+      { id: "xhigh" },
+      { id: "max" },
+    ],
+    defaultReasoningEffort: "medium",
+  },
   {
     id: "gpt-6-astra",
     name: "GPT-6 Astra",
@@ -479,7 +512,9 @@ function applyCodexOAuthContextPolicy(
     );
   if (
     effectiveDefaultContextWindowTokens !== undefined &&
-    !contextWindows.some((contextWindow) => contextWindow.tokens === effectiveDefaultContextWindowTokens)
+    !contextWindows.some(
+      (contextWindow) => contextWindow.tokens === effectiveDefaultContextWindowTokens,
+    )
   ) {
     contextWindows.push({
       id: canonicalContextWindowId(effectiveDefaultContextWindowTokens),
@@ -512,14 +547,9 @@ function applyCodexOAuthContextPolicy(
   };
 }
 
-function addKnownCodexOAuthModels(
-  models: ReadonlyArray<RemoteModel>,
-): ReadonlyArray<RemoteModel> {
+function addKnownCodexOAuthModels(models: ReadonlyArray<RemoteModel>): ReadonlyArray<RemoteModel> {
   const knownIds = new Set(models.map((model) => model.id.trim()));
-  return [
-    ...models,
-    ...CODEX_OAUTH_KNOWN_MODELS.filter((model) => !knownIds.has(model.id)),
-  ];
+  return [...models, ...CODEX_OAUTH_KNOWN_MODELS.filter((model) => !knownIds.has(model.id))];
 }
 
 async function fetchJson(

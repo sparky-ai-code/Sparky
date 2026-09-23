@@ -192,7 +192,10 @@ async function loadManifest(env) {
   if (latestReleaseUrl) {
     try {
       const response = await fetch(requiredHttpsUrl(latestReleaseUrl, "RELEASE_GITHUB_LATEST_API_URL"), {
-        headers: { accept: "application/vnd.github+json" },
+        headers: {
+          accept: "application/vnd.github+json",
+          "user-agent": "Sparky-Download-Worker",
+        },
         cf: { cacheTtl: 300, cacheEverything: true },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);

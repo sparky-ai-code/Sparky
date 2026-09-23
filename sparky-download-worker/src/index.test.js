@@ -221,6 +221,8 @@ test("stable updater tracks follow the latest published Sparky release", async (
     assert.equal(latest.changelog, "Sparky 1.1.17 release notes");
     assert.equal(latest.files.find((file) => file.name === "Sparky-x64.exe").size, 1000);
     assert.equal(latest.files.find((file) => file.name === "Sparky-x64.exe").sha256, "a".repeat(64));
+    assert.equal(requestOptions.headers.accept, "application/vnd.github+json");
+    assert.equal(requestOptions.headers["user-agent"], "Sparky-Download-Worker");
     assert.equal(requestOptions.cf.cacheTtl, 300);
 
     for (const [path, asset] of [

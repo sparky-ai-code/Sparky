@@ -36,6 +36,7 @@ import {
   resolveMockUpdateServerUrl,
   resolvePackageManagerUserAgent,
   stageLinuxIconSize,
+  resolveStageInstallArgs,
   STAGE_INSTALL_ARGS,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
@@ -261,6 +262,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it("installs optional native dependencies for the target desktop architecture", () => {
     assert.deepStrictEqual(STAGE_INSTALL_ARGS, ["install", "--prod"]);
+    assert.deepStrictEqual(resolveStageInstallArgs("mac"), ["install", "--prod"]);
+    assert.deepStrictEqual(resolveStageInstallArgs("linux"), ["install", "--prod"]);
+    assert.deepStrictEqual(
+      resolveStageInstallArgs("win"),
+      ["install", "--prod", "--node-linker=hoisted"],
+    );
     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "mac", arch: "x64" }), {
       supportedArchitectures: {
         os: ["darwin"],

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import worker, { handleRequest, releaseConfig, requestedPlatform, updateRequest, validateManifest } from "./index.js";
+import worker, { handleRequest, loadManifest, releaseConfig, requestedPlatform, updateRequest, validateManifest } from "./index.js";
 
 const env = {
   AWS_RELEASE_BASE_URL: "https://downloads.example.test/releases/0.0.28/",
@@ -22,6 +22,37 @@ const env = {
   RELEASE_LINUX_ASC_SIZE: "1024",
   RELEASE_LINUX_ASC_SHA256: "LINUXHASH",
 };
+
+const githubLatestApiUrl = "https://api.github.com/repos/sparky-ai-code/Sparky/releases/latest";
+const githubReleaseAssetNames = [
+  "Sparky-x64.exe",
+  "Sparky-x64.exe.blockmap",
+  "latest.yml",
+  "Sparky-x64.AppImage",
+  "latest-linux.yml",
+  "Sparky-arm64.zip",
+  "Sparky-arm64.dmg",
+  "Sparky-arm64.dmg.blockmap",
+  "latest-mac-arm64.yml",
+  "Sparky-x64.zip",
+  "Sparky-x64.dmg",
+  "Sparky-x64.dmg.blockmap",
+  "latest-mac-x64.yml",
+];
+
+function githubLatestRelease(omittedAsset) {
+  return {
+    tag_name: "v1.1.17",
+    name: "Sparky v1.1.17",
+    draft: false,
+    prerelease: false,
+    published_at: "2026-10-01T12:00:00Z",
+    body: "Sparky 1.1.17 release notes",
+    assets: githubReleaseAssetNames
+      .filter((name) => name !== omittedAsset)
+      .map((name, index) => ({ name, size: 1000 + index, digest: `sha256:${"a".repeat(64)}` })),
+  };
+}
 
 test("the public Windows download redirects to the AWS installer", async () => {
   const response = await handleRequest(new Request("https://sparky.llc/get?platform=windows"), env);
@@ -129,8 +160,8 @@ test("dynamic AWS manifests require complete HTTPS file metadata", () => {
 
 test("GitHub release manifests keep Intel and Apple Silicon feeds distinct", () => {
   const manifest = releaseConfig({
-    RELEASE_PUBLIC_BASE_URL: "https://github.com/darkness22s/Sparky-primary-related/releases/download/v1.1.2",
-    RELEASE_VERSION: "1.1.2",
+    RELEASE_PUBLIC_BASE_URL: "https://github.com/sparky-ai-code/Sparky/releases/download/v1.1.16",
+    RELEASE_VERSION: "1.1.16",
     RELEASE_WINDOWS_SIZE: "10",
     RELEASE_WINDOWS_BLOCKMAP_SIZE: "11",
     RELEASE_WINDOWS_YML_SIZE: "12",
@@ -154,9 +185,9 @@ test("GitHub release manifests keep Intel and Apple Silicon feeds distinct", () 
 
 test("a versioned public release overrides stale external manifest bindings", async () => {
   const response = await handleRequest(new Request("https://sparky.llc/get/updates/macos/x64/latest-mac-x64.yml"), {
-    RELEASE_PUBLIC_BASE_URL: "https://github.com/darkness22s/Sparky-primary-related/releases/download/v1.1.2",
+    RELEASE_PUBLIC_BASE_URL: "https://github.com/sparky-ai-code/Sparky/releases/download/v1.1.16",
     RELEASE_MANIFEST_URL: "https://stale.example.test/manifest.json",
-    RELEASE_VERSION: "1.1.2",
+    RELEASE_VERSION: "1.1.16",
     RELEASE_MAC_X64_ZIP_SIZE: "10",
     RELEASE_MAC_X64_SIZE: "11",
     RELEASE_MAC_X64_BLOCKMAP_SIZE: "12",
@@ -164,7 +195,98 @@ test("a versioned public release overrides stale external manifest bindings", as
     RELEASE_MAC_X64_YML_SIZE: "13",
   });
   assert.equal(response.status, 302);
-  assert.equal(response.headers.get("location"), "https://github.com/darkness22s/Sparky-primary-related/releases/download/v1.1.2/latest-mac-x64.yml");
+  assert.equal(response.headers.get("location"), "https://github.com/sparky-ai-code/Sparky/releases/download/v1.1.16/latest-mac-x64.yml");
+});
+
+test("stable updater tracks follow the latest published Sparky release", async () => {
+  const originalFetch = globalThis.fetch;
+  const latestEnv = {
+    RELEASE_GITHUB_LATEST_API_URL: githubLatestApiUrl,
+    RELEASE_PUBLIC_BASE_URL: "https://github.com/sparky-ai-code/Sparky/releases/download/v1.1.16",
+    RELEASE_VERSION: "1.1.16",
+    RELEASE_MAC_ARM64_YML_NAME: "latest-mac-arm64.yml",
+    RELEASE_MAC_X64_YML_NAME: "latest-mac-x64.yml",
+  };
+  let requestOptions;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, githubLatestApiUrl);
+    requestOptions = options;
+    return new Response(JSON.stringify(githubLatestRelease()), { status: 200 });
+  };
+
+  try {
+    const latest = await loadManifest(latestEnv);
+    assert.equal(latest.version, "1.1.17");
+    assert.equal(latest.publishedAt, "2026-10-01T12:00:00Z");
+    assert.equal(latest.changelog, "Sparky 1.1.17 release notes");
+    assert.equal(latest.files.find((file) => file.name === "Sparky-x64.exe").size, 1000);
+    assert.equal(latest.files.find((file) => file.name === "Sparky-x64.exe").sha256, "a".repeat(64));
+    assert.equal(requestOptions.cf.cacheTtl, 300);
+
+    for (const [path, asset] of [
+      ["windows/latest.yml", "latest.yml"],
+      ["linux/latest-linux.yml", "latest-linux.yml"],
+      ["macos/arm64/latest-mac.yml", "latest-mac-arm64.yml"],
+      ["macos/x64/latest-mac.yml", "latest-mac-x64.yml"],
+    ]) {
+      const feed = await handleRequest(new Request(`https://sparky.llc/get/updates/${path}`), latestEnv);
+      assert.equal(feed.status, 302);
+      assert.equal(feed.headers.get("location"), `https://github.com/sparky-ai-code/Sparky/releases/download/v1.1.17/${asset}`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("incomplete latest releases fall back to the last known stable release", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify(githubLatestRelease("latest-linux.yml")), { status: 200 });
+  try {
+    const latest = await loadManifest({
+      RELEASE_GITHUB_LATEST_API_URL: githubLatestApiUrl,
+      RELEASE_PUBLIC_BASE_URL: "https://github.com/sparky-ai-code/Sparky/releases/download/v1.1.16",
+      RELEASE_VERSION: "1.1.16",
+    });
+    assert.equal(latest.version, "1.1.16");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("drafts and prereleases never replace the pinned stable release", async () => {
+  const originalFetch = globalThis.fetch;
+  const pinnedEnv = {
+    RELEASE_GITHUB_LATEST_API_URL: githubLatestApiUrl,
+    RELEASE_PUBLIC_BASE_URL: "https://github.com/sparky-ai-code/Sparky/releases/download/v1.1.16",
+    RELEASE_VERSION: "1.1.16",
+  };
+  try {
+    for (const release of [
+      { ...githubLatestRelease(), draft: true },
+      { ...githubLatestRelease(), prerelease: true },
+    ]) {
+      globalThis.fetch = async () => new Response(JSON.stringify(release), { status: 200 });
+      const latest = await loadManifest(pinnedEnv);
+      assert.equal(latest.version, "1.1.16");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("GitHub API failures fall back to the pinned stable release", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("unavailable", { status: 503 });
+  try {
+    const latest = await loadManifest({
+      RELEASE_GITHUB_LATEST_API_URL: githubLatestApiUrl,
+      RELEASE_PUBLIC_BASE_URL: "https://github.com/sparky-ai-code/Sparky/releases/download/v1.1.16",
+      RELEASE_VERSION: "1.1.16",
+    });
+    assert.equal(latest.version, "1.1.16");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("beta never replaces the stable launch build", async () => {

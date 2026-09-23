@@ -1,5 +1,7 @@
 import { defineConfig } from "vite-plus";
 
+import { shouldBundleDesktopMainDependency } from "../../scripts/lib/desktop-main-runtime.ts";
+
 const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";
 
 // These values are public OAuth application configuration. Keep the checked-in
@@ -54,7 +56,7 @@ export default defineConfig({
       clean: true,
       define: githubBuildDefine,
       deps: {
-        alwaysBundle: (id) => id.startsWith("@sparky/"),
+        alwaysBundle: shouldBundleDesktopMainDependency,
       },
       ...(shouldLaunchElectronAfterPack ? { onSuccess: "node scripts/dev-electron.mjs" } : {}),
     },

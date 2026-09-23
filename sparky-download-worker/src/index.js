@@ -113,6 +113,67 @@ function githubReleaseConfig(env, baseUrl) {
   return { schemaVersion: 0, id: version, version, name: `Sparky ${version}`, channel: "release", changelog: env.RELEASE_CHANGELOG?.trim() || "", publishedAt: env.RELEASE_PUBLISHED_AT?.trim() || null, files };
 }
 
+function githubLatestReleaseConfig(env, release) {
+  const tag = typeof release?.tag_name === "string" ? release.tag_name.trim() : "";
+  const version = /^v(\d+\.\d+\.\d+)$/u.exec(tag)?.[1];
+  if (!version || release.draft || release.prerelease) {
+    throw new Error("GitHub latest release is not a published stable version.");
+  }
+
+  const assets = new Map(
+    (Array.isArray(release.assets) ? release.assets : [])
+      .filter((asset) => typeof asset?.name === "string")
+      .map((asset) => [asset.name, asset]),
+  );
+  const latestEnv = {
+    ...env,
+    RELEASE_VERSION: version,
+    RELEASE_PUBLIC_BASE_URL: `https://github.com/sparky-ai-code/Sparky/releases/download/${tag}`,
+    RELEASE_PUBLISHED_AT: typeof release.published_at === "string" ? release.published_at : env.RELEASE_PUBLISHED_AT,
+    RELEASE_CHANGELOG: typeof release.body === "string" ? release.body : env.RELEASE_CHANGELOG,
+  };
+  delete latestEnv.RELEASE_LINUX_ASC_SIZE;
+  delete latestEnv.RELEASE_LINUX_ASC_SHA256;
+
+  const requiredAssets = [
+    ["Sparky-x64.exe", "RELEASE_WINDOWS_SIZE", "RELEASE_WINDOWS_SHA256"],
+    ["Sparky-x64.exe.blockmap", "RELEASE_WINDOWS_BLOCKMAP_SIZE", "RELEASE_WINDOWS_BLOCKMAP_SHA256"],
+    ["latest.yml", "RELEASE_WINDOWS_YML_SIZE", "RELEASE_WINDOWS_YML_SHA256"],
+    ["Sparky-x64.AppImage", "RELEASE_LINUX_SIZE", "RELEASE_LINUX_SHA256"],
+    ["latest-linux.yml", "RELEASE_LINUX_YML_SIZE", "RELEASE_LINUX_YML_SHA256"],
+    ["Sparky-arm64.zip", "RELEASE_MAC_ARM64_ZIP_SIZE", "RELEASE_MAC_ARM64_ZIP_SHA256"],
+    ["Sparky-arm64.dmg", "RELEASE_MAC_ARM64_SIZE", "RELEASE_MAC_ARM64_SHA256"],
+    ["Sparky-arm64.dmg.blockmap", "RELEASE_MAC_ARM64_BLOCKMAP_SIZE", "RELEASE_MAC_ARM64_BLOCKMAP_SHA256"],
+    ["latest-mac-arm64.yml", "RELEASE_MAC_ARM64_YML_SIZE", "RELEASE_MAC_ARM64_YML_SHA256"],
+    ["Sparky-x64.zip", "RELEASE_MAC_X64_ZIP_SIZE", "RELEASE_MAC_X64_ZIP_SHA256"],
+    ["Sparky-x64.dmg", "RELEASE_MAC_X64_SIZE", "RELEASE_MAC_X64_SHA256"],
+    ["Sparky-x64.dmg.blockmap", "RELEASE_MAC_X64_BLOCKMAP_SIZE", "RELEASE_MAC_X64_BLOCKMAP_SHA256"],
+    ["latest-mac-x64.yml", "RELEASE_MAC_X64_YML_SIZE", "RELEASE_MAC_X64_YML_SHA256"],
+  ];
+
+  for (const [name, sizeKey, sha256Key] of requiredAssets) {
+    const asset = assets.get(name);
+    const sha256 = typeof asset?.digest === "string" ? /^sha256:([0-9a-f]{64})$/iu.exec(asset.digest)?.[1] : null;
+    if (!Number.isSafeInteger(asset?.size) || asset.size <= 0 || !sha256) {
+      throw new Error(`Latest GitHub release is missing valid metadata for ${name}.`);
+    }
+    latestEnv[sizeKey] = String(asset.size);
+    latestEnv[sha256Key] = sha256;
+  }
+
+  const signature = assets.get("Sparky-x64.AppImage.asc");
+  if (signature) {
+    const sha256 = typeof signature.digest === "string" ? /^sha256:([0-9a-f]{64})$/iu.exec(signature.digest)?.[1] : null;
+    if (!Number.isSafeInteger(signature.size) || signature.size <= 0 || !sha256) {
+      throw new Error("Latest GitHub release has invalid metadata for Sparky-x64.AppImage.asc.");
+    }
+    latestEnv.RELEASE_LINUX_ASC_SIZE = String(signature.size);
+    latestEnv.RELEASE_LINUX_ASC_SHA256 = sha256;
+  }
+
+  return githubReleaseConfig(latestEnv, latestEnv.RELEASE_PUBLIC_BASE_URL);
+}
+
 function validateManifest(raw) {
   if (!raw || typeof raw !== "object" || typeof raw.version !== "string" || !Array.isArray(raw.files)) {
     throw new Error("Release manifest has an invalid shape.");
@@ -127,9 +188,23 @@ function validateManifest(raw) {
 }
 
 async function loadManifest(env) {
-  // A versioned public release URL is the authoritative source for the
-  // current desktop channel. Ignore stale dashboard-era manifest bindings so
-  // update routes cannot silently point at an older release.
+  const latestReleaseUrl = env.RELEASE_GITHUB_LATEST_API_URL?.trim();
+  if (latestReleaseUrl) {
+    try {
+      const response = await fetch(requiredHttpsUrl(latestReleaseUrl, "RELEASE_GITHUB_LATEST_API_URL"), {
+        headers: { accept: "application/vnd.github+json" },
+        cf: { cacheTtl: 300, cacheEverything: true },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return githubLatestReleaseConfig(env, await response.json());
+    } catch (error) {
+      console.error(JSON.stringify({ event: "github_latest_release_fetch_failed", message: error instanceof Error ? error.message : String(error) }));
+      if (env.RELEASE_PUBLIC_BASE_URL?.trim()) return releaseConfig(env);
+    }
+  }
+
+  // Keep the pinned release as a known-good fallback if GitHub's latest-release
+  // API is unavailable or its newest release is missing required platform assets.
   if (env.RELEASE_PUBLIC_BASE_URL?.trim()) return releaseConfig(env);
   const manifestUrl = (env.RELEASE_MANIFEST_URL || env.AWS_RELEASE_MANIFEST_URL)?.trim();
   if (!manifestUrl) return releaseConfig(env);

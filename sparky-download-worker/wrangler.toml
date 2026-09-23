@@ -8,6 +8,7 @@ enabled = true
 head_sampling_rate = 1
 
 [vars]
+RELEASE_GITHUB_LATEST_API_URL = "https://api.github.com/repos/sparky-ai-code/Sparky/releases/latest"
 RELEASE_PUBLIC_BASE_URL = "https://github.com/sparky-ai-code/Sparky/releases/download/v1.1.16"
 RELEASE_VERSION = "1.1.16"
 RELEASE_PUBLISHED_AT = "2026-09-23T06:03:14Z"

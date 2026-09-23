@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import * as Asar from "@electron/asar";
 import { fromYaml } from "@sparky/shared/schemaYaml";
 import { HostProcessPlatform } from "@sparky/shared/hostProcess";
 import { resolveSpawnCommand } from "@sparky/shared/shell";
@@ -2025,14 +2024,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       missingFiles: ["app.asar"],
     });
   }
-  const missingRuntimeFiles = findMissingDesktopAsarRuntimeFiles((filePath) => {
-    try {
-      const entry = Asar.statFile(packagedAppAsar, filePath, true);
-      return "unpacked" in entry && entry.unpacked === true;
-    } catch {
-      return false;
-    }
-  });
+  const unpackedAppDirectory = `${packagedAppAsar}.unpacked`;
+  const missingRuntimeFiles = findMissingDesktopAsarRuntimeFiles((filePath) =>
+    NodeFileSystem.existsSync(NodePath.join(unpackedAppDirectory, filePath)),
+  );
   if (missingRuntimeFiles.length > 0) {
     return yield* new PackagedDesktopRuntimeFilesMissingError({
       archivePath: packagedAppAsar,

@@ -2,6 +2,10 @@
 
 This guide is for people who want to use more than one Claude setup in Sparky.
 
+## Claude Opus 5.5
+
+When an Anthropic API key is configured, Sparky refreshes Anthropic's model catalog and renders the models returned for that account. Claude Opus 5.5 uses the model ID `claude-opus-5-5` and can be selected from Settings, Models. Sparky passes the selected ID through to both complete and streaming Anthropic API requests; access and capability metadata remain account-specific.
+
 Common reasons:
 
 - use separate work and personal Claude accounts

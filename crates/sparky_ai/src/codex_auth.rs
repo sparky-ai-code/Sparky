@@ -11,6 +11,7 @@ use tokio::net::TcpListener;
 
 const JWT_CLAIM_PATH: &str = "https://api.openai.com/auth";
 const OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+const OAUTH_ORIGINATOR: &str = "codex_cli_rs";
 const OAUTH_ISSUER: &str = "https://auth.openai.com";
 const OAUTH_PORTS: [u16; 2] = [1455, 1457];
 
@@ -171,7 +172,7 @@ fn build_oauth_authorize_url(redirect_uri: &str, state: &str, challenge: &str) -
     query.append_pair("id_token_add_organizations", "true");
     query.append_pair("codex_cli_simplified_flow", "true");
     query.append_pair("state", state);
-    query.append_pair("originator", "sparky");
+    query.append_pair("originator", OAUTH_ORIGINATOR);
     format!("{OAUTH_ISSUER}/oauth/authorize?{}", query.finish())
 }
 
@@ -404,5 +405,22 @@ mod tests {
         assert_eq!(credentials.account_id, "account-1");
         assert_eq!(credentials.expires, 2_000_000_000_000);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn uses_the_codex_originator_for_oauth_authorization() {
+        let url =
+            build_oauth_authorize_url("http://localhost:1455/auth/callback", "state", "challenge");
+        let parsed = url::Url::parse(&url).unwrap();
+        let params: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
+
+        assert_eq!(
+            params.get("client_id").map(String::as_str),
+            Some(OAUTH_CLIENT_ID),
+        );
+        assert_eq!(
+            params.get("originator").map(String::as_str),
+            Some(OAUTH_ORIGINATOR),
+        );
     }
 }

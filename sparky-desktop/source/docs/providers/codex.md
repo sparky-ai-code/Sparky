@@ -2,6 +2,17 @@
 
 This guide is for people who want to use more than one Codex account in Sparky.
 
+## GPT-6 Sol and GPT-6 Luna
+
+After ChatGPT OAuth is connected, Sparky asks Codex for its current model catalog and shows the models your account can use. The newly released models use these IDs:
+
+```text
+gpt-6-sol
+gpt-6-luna
+```
+
+Sparky also keeps an OAuth-only fallback for staged Codex rollouts, so an eligible account can see these models even when an installed Codex app-server has not refreshed its local catalog yet. The request is still authorized by ChatGPT; an account without access will receive the provider's normal model-availability error.
+
 Common reasons:
 
 - use a work account for work projects

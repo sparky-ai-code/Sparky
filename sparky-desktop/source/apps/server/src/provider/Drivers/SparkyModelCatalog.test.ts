@@ -58,6 +58,8 @@ describe("discoverSparkyModels", () => {
       expect(result.configuredProviderCount).toBe(1);
       expect(result.errors).toEqual([]);
       expect(result.models.map((model) => model.slug)).toContain("openai-codex/gpt-5.6-sol");
+      expect(result.models.map((model) => model.slug)).toContain("openai-codex/gpt-6-sol");
+      expect(result.models.map((model) => model.slug)).toContain("openai-codex/gpt-6-luna");
       expect(result.models.map((model) => model.slug)).toContain("openai-codex/gpt-6-astra");
       expect(result.models.every((model) => model.subProvider === "OpenAI Codex")).toBe(true);
       expect(result.models[0]?.contextWindowSource).toBe("oauth");
@@ -144,9 +146,15 @@ describe("discoverSparkyModels", () => {
               defaultReasoningEffort: "unsupported",
             },
             {
-              id: "gpt-6-astra",
-              display_name: "GPT-6 Astra",
-              supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+              id: "gpt-6-sol",
+              display_name: "GPT-6 Sol",
+              supportedReasoningEfforts: ["low", "medium", "high"],
+              defaultReasoningEffort: "medium",
+            },
+            {
+              id: "gpt-6-luna",
+              display_name: "GPT-6 Luna",
+              supportedReasoningEfforts: ["low", "medium", "high"],
               defaultReasoningEffort: "medium",
             },
           ],
@@ -160,6 +168,13 @@ describe("discoverSparkyModels", () => {
               display_name: "Claude Test",
               supported_reasoning_efforts: ["medium"],
               default_reasoning_effort: "medium",
+              context_window: "200k",
+            },
+            {
+              id: "claude-opus-5-5",
+              display_name: "Claude Opus 5.5",
+              supported_reasoning_efforts: ["low", "medium", "high"],
+              default_reasoning_effort: "high",
               context_window: "200k",
             },
           ],
@@ -208,7 +223,9 @@ describe("discoverSparkyModels", () => {
     expect(result.errors).toEqual([]);
     expect(result.models.map((model) => [model.slug, model.subProvider])).toEqual([
       ["openai/gpt-test", "OpenAI"],
-      ["openai/gpt-6-astra", "OpenAI"],
+      ["openai/gpt-6-luna", "OpenAI"],
+      ["openai/gpt-6-sol", "OpenAI"],
+      ["anthropic/claude-opus-5-5", "Claude"],
       ["anthropic/claude-test", "Claude"],
       ["google/gemini-test", "Google"],
     ]);
@@ -499,6 +516,7 @@ describe("discoverSparkyModels", () => {
       {
         FIREWORKS_API_KEY: "fireworks-secret",
         OLLAMA_API_KEY: "ollama-secret",
+        OLLAMA_CLOUD_CONFIGURED: "true",
       },
       fetchImplementation,
     );

@@ -179,9 +179,9 @@ const serverConfig: ServerConfig = {
       availability: "available",
       models: [
         {
-          slug: "gpt-5.6-sol",
-          name: "GPT-5.6 Sol",
-          shortName: "5.6 Sol",
+          slug: "gpt-6-sol",
+          name: "GPT-6 Sol",
+          shortName: "6 Sol",
           isCustom: false,
           isDefault: true,
           capabilities: null,

@@ -625,6 +625,15 @@ interface StagePackageJson {
 }
 
 export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
+
+export function resolveStageInstallArgs(platform: typeof BuildPlatform.Type): string[] {
+  // Use a flat dependency tree for Windows so the dependencies read by WSL from
+  // app.asar.unpacked are materialized instead of depending on junction resolution.
+  return platform === "win"
+    ? [...STAGE_INSTALL_ARGS, "--node-linker=hoisted"]
+    : [...STAGE_INSTALL_ARGS];
+}
+
 export const DESKTOP_ASAR_UNPACK = ["node_modules/@ff-labs/fff-bin-*/**/*"] as const;
 
 export interface MacPasskeySigningConfiguration {
@@ -1902,7 +1911,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   }
 
   yield* Effect.log("[desktop-artifact] Installing staged production dependencies...");
-  const installCommand = yield* resolveSpawnCommand("vp", [...STAGE_INSTALL_ARGS]);
+  const installCommand = yield* resolveSpawnCommand(
+    "vp",
+    resolveStageInstallArgs(options.platform),
+  );
   yield* runCommand(
     ChildProcess.make(installCommand.command, installCommand.args, {
       cwd: stageAppDir,

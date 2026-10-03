@@ -46,7 +46,7 @@ jobs:
         env:
           NODE_ENV: production
       - name: Build Windows installer
-        run: pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64 --mock-updates --output-dir release-e2e --verbose
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:win:x64 --mock-updates --output-dir release-e2e
         env:
           NODE_ENV: production
       - name: Install Windows app
@@ -128,6 +128,9 @@ jobs:
           hdiutil detach "$mount"
           echo "SPARKY_UI_TEST_APP=$app/Contents/MacOS/Sparky" >> "$GITHUB_ENV"
           echo "SPARKY_UI_TEST_ARTIFACT_DIR=$RUNNER_TEMP/sparky-ui-screenshots" >> "$GITHUB_ENV"
+      - name: Install Rosetta 2 for x64 app launch
+        if: runner.arch == 'ARM64'
+        run: sudo softwareupdate --install-rosetta --agree-to-license
       - name: Launch installed app and capture every route
         run: node apps/desktop/scripts/installed-ui-test.mjs
       - name: Upload installed macOS installer

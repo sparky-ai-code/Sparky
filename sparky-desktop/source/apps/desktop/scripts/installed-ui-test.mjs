@@ -103,26 +103,51 @@ const pageErrors = [];
 try {
   await waitForDevTools(port, child);
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  const pages = browser.contexts().flatMap((context) => context.pages());
-  const page = pages.find((candidate) => !candidate.url().startsWith("devtools://"));
-  if (!page) throw new Error("Sparky started without an inspectable application window.");
-  page.on("pageerror", (error) => pageErrors.push(error.name));
+  const contexts = browser.contexts();
+  const observedPages = new Set();
+  let page;
+  let stablePolls = 0;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const candidates = contexts.flatMap((context) => context.pages()).filter((candidate) =>
+      !candidate.isClosed() && !candidate.url().startsWith("devtools://"),
+    );
+    for (const candidate of candidates) {
+      if (!observedPages.has(candidate)) {
+        observedPages.add(candidate);
+        candidate.on("pageerror", (error) => pageErrors.push(error.name));
+      }
+    }
+    const candidate = candidates.at(-1);
+    if (
+      candidate &&
+      candidate === page &&
+      (await candidate.locator("body").innerText().catch(() => "")).trim().length >= 10
+    ) {
+      stablePolls += 1;
+      if (stablePolls >= 6) break;
+    } else {
+      stablePolls = 0;
+    }
+    page = candidate;
+    await delay(500);
+  }
+  if (!page || stablePolls < 4) {
+    throw new Error(`Sparky did not keep a renderer window open (exit code: ${child.exitCode ?? "running"}).`);
+  }
   await page.waitForFunction(() => document.readyState === "complete", undefined, { timeout: 60_000 });
-  await page.waitForTimeout(2_000);
 
   const initialPath = new URL(page.url()).pathname;
   const initialText = await page.locator("body").innerText().catch(() => "");
   if (initialText.trim().length < 10) throw new Error("The installed app window rendered no usable content.");
   await page.screenshot({ path: NodePath.join(artifactDir, "chat-start.png"), fullPage: true });
   const composer = page.locator('[contenteditable="true"]').first();
-  if (await composer.isVisible().catch(() => false)) {
-    const smokePrompt = "Sparky installed-app input check";
-    await composer.fill(smokePrompt);
-    if (!(await composer.innerText()).includes(smokePrompt)) {
-      throw new Error("The chat composer did not retain typed input.");
-    }
-    await composer.fill("");
+  await composer.waitFor({ state: "visible", timeout: 30_000 });
+  const smokePrompt = "Sparky installed-app input check";
+  await composer.fill(smokePrompt);
+  if (!(await composer.innerText()).includes(smokePrompt)) {
+    throw new Error("The chat composer did not retain typed input.");
   }
+  await composer.fill("");
 
   const manifest = [{ name: "chat-start", path: initialPath }];
   for (const [name, path] of routes) {

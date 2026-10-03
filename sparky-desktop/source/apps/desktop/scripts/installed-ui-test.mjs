@@ -27,7 +27,7 @@ const routes = [
   ["settings-models", "/settings/models"],
   ["settings-personalize", "/settings/personalize"],
   ["settings-plugins", "/settings/plugins"],
-  ["settings-source-control", "/settings/source-control"],
+  ["settings-source-control-redirect", "/settings/source-control", "/settings/general"],
 ];
 
 async function reservePort() {

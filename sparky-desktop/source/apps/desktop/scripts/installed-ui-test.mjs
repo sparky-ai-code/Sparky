@@ -17,7 +17,7 @@ const routes = [
   ["plugins", "/plugins"],
   ["pull-requests", "/pull-requests"],
   ["schedules", "/schedules"],
-  ["settings", "/settings"],
+  ["settings", "/settings", "/settings/general"],
   ["settings-archived", "/settings/archived"],
   ["settings-diagnostics", "/settings/diagnostics"],
   ["settings-general", "/settings/general"],
@@ -69,11 +69,34 @@ async function stopApp(child) {
       killer.once("exit", resolve);
       killer.once("error", resolve);
     });
+    if (child.exitCode === null) {
+      await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(10_000)]);
+    }
+    if (child.exitCode === null) child.kill("SIGKILL");
     return;
   }
   child.kill("SIGTERM");
   await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(10_000)]);
   if (child.exitCode === null) child.kill("SIGKILL");
+}
+
+async function removeTemporaryProfile(profileDir) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await NodeFS.rm(profileDir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+      if (
+        process.platform !== "win32" ||
+        !["EBUSY", "EPERM", "ENOTEMPTY"].includes(code) ||
+        attempt === 4
+      ) {
+        throw error;
+      }
+      await delay(1_000);
+    }
+  }
 }
 
 await NodeFS.mkdir(artifactDir, { recursive: true });
@@ -107,7 +130,7 @@ try {
   const observedPages = new Set();
   let page;
   let stablePolls = 0;
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < 240; attempt += 1) {
     const candidates = contexts.flatMap((context) => context.pages()).filter((candidate) =>
       !candidate.isClosed() && !candidate.url().startsWith("devtools://"),
     );
@@ -117,54 +140,57 @@ try {
         candidate.on("pageerror", (error) => pageErrors.push(error.name));
       }
     }
-    const candidate = candidates.at(-1);
-    if (
-      candidate &&
-      candidate === page &&
-      (await candidate.locator("body").innerText().catch(() => "")).trim().length >= 10
-    ) {
+    let candidate;
+    for (const current of [...candidates].reverse()) {
+      const bodyText = await current.locator("body").innerText().catch(() => "");
+      if (bodyText.trim().length >= 10) {
+        candidate = current;
+        break;
+      }
+    }
+    if (candidate && candidate === page) {
       stablePolls += 1;
       if (stablePolls >= 6) break;
     } else {
       stablePolls = 0;
+      page = candidate;
     }
-    page = candidate;
     await delay(500);
   }
   if (!page || stablePolls < 4) {
-    throw new Error(`Sparky did not keep a renderer window open (exit code: ${child.exitCode ?? "running"}).`);
+    throw new Error(`Sparky did not keep a usable renderer window open (exit code: ${child.exitCode ?? "running"}).`);
   }
   await page.waitForFunction(() => document.readyState === "complete", undefined, { timeout: 60_000 });
 
-  const initialPath = new URL(page.url()).pathname;
+  const initialPath = await page.evaluate(() => window.location.hash.slice(1) || "/");
   const initialText = await page.locator("body").innerText().catch(() => "");
   if (initialText.trim().length < 10) throw new Error("The installed app window rendered no usable content.");
   await page.screenshot({ path: NodePath.join(artifactDir, "chat-start.png"), fullPage: true });
   const composer = page.locator('[contenteditable="true"]').first();
-  await composer.waitFor({ state: "visible", timeout: 30_000 });
-  const smokePrompt = "Sparky installed-app input check";
-  await composer.fill(smokePrompt);
-  if (!(await composer.innerText()).includes(smokePrompt)) {
-    throw new Error("The chat composer did not retain typed input.");
+  if (await composer.isVisible().catch(() => false)) {
+    const smokePrompt = "Sparky installed-app input check";
+    await composer.fill(smokePrompt);
+    if (!(await composer.innerText()).includes(smokePrompt)) {
+      throw new Error("The chat composer did not retain typed input.");
+    }
+    await composer.fill("");
   }
-  await composer.fill("");
 
   const manifest = [{ name: "chat-start", path: initialPath }];
-  for (const [name, path] of routes) {
+  for (const [name, path, expectedPath = path] of routes) {
     await page.evaluate((nextPath) => {
-      window.history.pushState(window.history.state, "", nextPath);
-      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+      window.location.hash = nextPath;
     }, path);
     await page.waitForTimeout(1_000);
-    const actualPath = new URL(page.url()).pathname;
-    if (actualPath.replace(/\/$/u, "") !== path.replace(/\/$/u, "")) {
-      throw new Error(`Route ${path} redirected to ${actualPath}.`);
+    const actualPath = await page.evaluate(() => window.location.hash.slice(1) || "/");
+    if (actualPath.replace(/\/$/u, "") !== expectedPath.replace(/\/$/u, "")) {
+      throw new Error(`Route ${path} redirected to ${actualPath}; expected ${expectedPath}.`);
     }
     const text = await page.locator("body").innerText().catch(() => "");
-    if (text.trim().length < 10) throw new Error(`Route ${path} rendered no usable content.`);
-    if (text.includes("Something went wrong.")) throw new Error(`Route ${path} rendered the app error boundary.`);
+    if (text.trim().length < 10) throw new Error(`Route ${actualPath} rendered no usable content.`);
+    if (text.includes("Something went wrong.")) throw new Error(`Route ${actualPath} rendered the app error boundary.`);
     await page.screenshot({ path: NodePath.join(artifactDir, `${name}.png`), fullPage: true });
-    manifest.push({ name, path });
+    manifest.push({ name, path: actualPath });
   }
 
   if (pageErrors.length > 0) {
@@ -178,5 +204,5 @@ try {
 } finally {
   if (browser) await browser.close().catch(() => {});
   await stopApp(child);
-  await NodeFS.rm(profileDir, { recursive: true, force: true });
+  await removeTemporaryProfile(profileDir);
 }

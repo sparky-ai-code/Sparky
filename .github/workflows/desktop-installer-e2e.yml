@@ -46,13 +46,13 @@ jobs:
         env:
           NODE_ENV: production
       - name: Build Windows installer
-        run: pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64 --mock-updates
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:win:x64 -- --mock-updates --output-dir release-e2e
         env:
           NODE_ENV: production
       - name: Install Windows app
         shell: pwsh
         run: |
-          $installer = (Resolve-Path "release/Sparky-x64.exe").Path
+          $installer = (Resolve-Path "release-e2e/Sparky-x64.exe").Path
           $process = Start-Process -FilePath $installer -ArgumentList "/S" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Installer exited with code $($process.ExitCode)" }
           $app = Get-ChildItem "$env:LOCALAPPDATA/Programs" -Filter "Sparky.exe" -Recurse -File | Select-Object -First 1
@@ -66,7 +66,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: installer-windows-x64
-          path: sparky-desktop/source/release/Sparky-x64.exe
+          path: sparky-desktop/source/release-e2e/Sparky-x64.exe
           if-no-files-found: warn
           retention-days: 14
       - name: Upload Windows UI screenshots
@@ -112,7 +112,7 @@ jobs:
         env:
           NODE_ENV: production
       - name: Build macOS x64 installer
-        run: pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch x64 --mock-updates
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:x64 -- --mock-updates --output-dir release-e2e
         env:
           NODE_ENV: production
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -123,7 +123,7 @@ jobs:
           mount="$RUNNER_TEMP/sparky-dmg"
           app="$RUNNER_TEMP/Sparky.app"
           mkdir -p "$mount"
-          hdiutil attach release/Sparky-x64.dmg -nobrowse -mountpoint "$mount"
+          hdiutil attach release-e2e/Sparky-x64.dmg -nobrowse -mountpoint "$mount"
           ditto "$mount/Sparky.app" "$app"
           hdiutil detach "$mount"
           echo "SPARKY_UI_TEST_APP=$app/Contents/MacOS/Sparky" >> "$GITHUB_ENV"
@@ -135,7 +135,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: installer-macos-x64
-          path: sparky-desktop/source/release/Sparky-x64.dmg
+          path: sparky-desktop/source/release-e2e/Sparky-x64.dmg
           if-no-files-found: warn
           retention-days: 14
       - name: Upload macOS UI screenshots
@@ -181,7 +181,7 @@ jobs:
         env:
           NODE_ENV: production
       - name: Build macOS arm64 installer
-        run: pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64 --mock-updates
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:arm64 -- --mock-updates --output-dir release-e2e
         env:
           NODE_ENV: production
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -192,7 +192,7 @@ jobs:
           mount="$RUNNER_TEMP/sparky-dmg"
           app="$RUNNER_TEMP/Sparky.app"
           mkdir -p "$mount"
-          hdiutil attach release/Sparky-arm64.dmg -nobrowse -mountpoint "$mount"
+          hdiutil attach release-e2e/Sparky-arm64.dmg -nobrowse -mountpoint "$mount"
           ditto "$mount/Sparky.app" "$app"
           hdiutil detach "$mount"
           echo "SPARKY_UI_TEST_APP=$app/Contents/MacOS/Sparky" >> "$GITHUB_ENV"
@@ -204,7 +204,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: installer-macos-arm64
-          path: sparky-desktop/source/release/Sparky-arm64.dmg
+          path: sparky-desktop/source/release-e2e/Sparky-arm64.dmg
           if-no-files-found: warn
           retention-days: 14
       - name: Upload macOS UI screenshots

@@ -46,7 +46,7 @@ jobs:
         env:
           NODE_ENV: production
       - name: Build Windows installer
-        run: pnpm --config.verify-deps-before-run=false dist:desktop:win:x64 -- --mock-updates --output-dir release-e2e
+        run: pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64 --mock-updates --output-dir release-e2e --verbose
         env:
           NODE_ENV: production
       - name: Install Windows app
@@ -112,7 +112,7 @@ jobs:
         env:
           NODE_ENV: production
       - name: Build macOS x64 installer
-        run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:x64 -- --mock-updates --output-dir release-e2e
+        run: pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch x64 --mock-updates --output-dir release-e2e
         env:
           NODE_ENV: production
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -181,7 +181,7 @@ jobs:
         env:
           NODE_ENV: production
       - name: Build macOS arm64 installer
-        run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:arm64 -- --mock-updates --output-dir release-e2e
+        run: pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64 --mock-updates --output-dir release-e2e
         env:
           NODE_ENV: production
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -252,6 +252,7 @@ jobs:
         env:
           NODE_ENV: production
       - name: Build AppImage and Debian installers
+        id: build_installers
         shell: bash
         run: |
           set -euo pipefail
@@ -272,6 +273,7 @@ jobs:
           SPARKY_UI_TEST_ARTIFACT_DIR="$RUNNER_TEMP/sparky-ui-screenshots-deb" \
           xvfb-run -a node apps/desktop/scripts/installed-ui-test.mjs
       - name: Run AppImage UI test
+        if: ${{ !cancelled() && steps.build_installers.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail

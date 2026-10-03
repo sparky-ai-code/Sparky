@@ -1,0 +1,312 @@
+name: Desktop installer end-to-end
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-installer-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Build Sparky CLI
+        run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install desktop workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Build app bundles
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
+          NODE_ENV: production
+      - name: Build Windows installer
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:win:x64 --mock-updates --output-dir release-e2e
+        env:
+          NODE_ENV: production
+      - name: Install Windows app
+        shell: pwsh
+        run: |
+          $installer = (Resolve-Path "release-e2e/Sparky-x64.exe").Path
+          $process = Start-Process -FilePath $installer -ArgumentList "/S" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer exited with code $($process.ExitCode)" }
+          $app = Get-ChildItem "$env:LOCALAPPDATA/Programs" -Filter "Sparky.exe" -Recurse -File | Select-Object -First 1
+          if (-not $app) { throw "Installed Sparky.exe was not found." }
+          "SPARKY_UI_TEST_APP=$($app.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SPARKY_UI_TEST_ARTIFACT_DIR=$env:RUNNER_TEMP/sparky-ui-screenshots" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Launch installed app and capture every route
+        run: node apps/desktop/scripts/installed-ui-test.mjs
+      - name: Upload installed Windows installer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows-x64
+          path: sparky-desktop/source/release-e2e/Sparky-x64.exe
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload Windows UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots-windows-x64
+          path: ${{ runner.temp }}/sparky-ui-screenshots
+          if-no-files-found: warn
+          retention-days: 14
+
+  macos-x64:
+    runs-on: macos-15-intel
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-apple-darwin
+      - name: Build Sparky CLI
+        run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install desktop workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Build app bundles
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
+          NODE_ENV: production
+      - name: Build macOS x64 installer
+        run: pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch x64 --mock-updates --output-dir release-e2e
+        env:
+          NODE_ENV: production
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Install macOS app from DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          mount="$RUNNER_TEMP/sparky-dmg"
+          app="$RUNNER_TEMP/Sparky.app"
+          mkdir -p "$mount"
+          hdiutil attach release-e2e/Sparky-x64.dmg -nobrowse -mountpoint "$mount"
+          ditto "$mount/Sparky.app" "$app"
+          hdiutil detach "$mount"
+          echo "SPARKY_UI_TEST_APP=$app/Contents/MacOS/Sparky" >> "$GITHUB_ENV"
+          echo "SPARKY_UI_TEST_ARTIFACT_DIR=$RUNNER_TEMP/sparky-ui-screenshots" >> "$GITHUB_ENV"
+      - name: Launch installed app and capture every route
+        run: node apps/desktop/scripts/installed-ui-test.mjs
+      - name: Upload installed macOS installer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-macos-x64
+          path: sparky-desktop/source/release-e2e/Sparky-x64.dmg
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload macOS UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots-macos-x64
+          path: ${{ runner.temp }}/sparky-ui-screenshots
+          if-no-files-found: warn
+          retention-days: 14
+
+  macos-arm64:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-apple-darwin
+      - name: Build Sparky CLI
+        run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install desktop workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Build app bundles
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
+          NODE_ENV: production
+      - name: Build macOS arm64 installer
+        run: pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64 --mock-updates --output-dir release-e2e
+        env:
+          NODE_ENV: production
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Install macOS app from DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          mount="$RUNNER_TEMP/sparky-dmg"
+          app="$RUNNER_TEMP/Sparky.app"
+          mkdir -p "$mount"
+          hdiutil attach release-e2e/Sparky-arm64.dmg -nobrowse -mountpoint "$mount"
+          ditto "$mount/Sparky.app" "$app"
+          hdiutil detach "$mount"
+          echo "SPARKY_UI_TEST_APP=$app/Contents/MacOS/Sparky" >> "$GITHUB_ENV"
+          echo "SPARKY_UI_TEST_ARTIFACT_DIR=$RUNNER_TEMP/sparky-ui-screenshots" >> "$GITHUB_ENV"
+      - name: Launch installed app and capture every route
+        run: node apps/desktop/scripts/installed-ui-test.mjs
+      - name: Upload installed macOS installer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-macos-arm64
+          path: sparky-desktop/source/release-e2e/Sparky-arm64.dmg
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload macOS UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots-macos-arm64
+          path: ${{ runner.temp }}/sparky-ui-screenshots
+          if-no-files-found: warn
+          retention-days: 14
+
+  linux-x64:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-unknown-linux-gnu
+      - name: Install Linux build and UI-test dependencies
+        run: sudo apt-get update && sudo apt-get install -y imagemagick xvfb libfuse2t64
+      - name: Build Sparky CLI
+        run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install desktop workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Build app bundles
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
+          NODE_ENV: production
+      - name: Build AppImage and Debian installers
+        id: build_installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform linux --target AppImage --arch x64 --mock-updates --output-dir release-appimage
+          pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform linux --target deb --arch x64 --mock-updates --output-dir release-deb
+        env:
+          NODE_ENV: production
+      - name: Install Debian package and run installed app UI test
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="$(find release-deb -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$deb"
+          sudo apt-get install -y "./$deb"
+          app="$(command -v t3code || true)"
+          test -n "$app"
+          SPARKY_UI_TEST_APP="$app" \
+          SPARKY_UI_TEST_ARTIFACT_DIR="$RUNNER_TEMP/sparky-ui-screenshots-deb" \
+          xvfb-run -a node apps/desktop/scripts/installed-ui-test.mjs
+      - name: Run AppImage UI test
+        if: ${{ !cancelled() && steps.build_installers.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          appimage="$(find release-appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$appimage"
+          chmod +x "$appimage"
+          SPARKY_UI_TEST_APP="$PWD/$appimage" \
+          SPARKY_UI_TEST_ARTIFACT_DIR="$RUNNER_TEMP/sparky-ui-screenshots-appimage" \
+          APPIMAGE_EXTRACT_AND_RUN=1 \
+          xvfb-run -a node apps/desktop/scripts/installed-ui-test.mjs
+      - name: Upload installed Linux installers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-linux-x64
+          path: |
+            sparky-desktop/source/release-appimage/*.AppImage
+            sparky-desktop/source/release-deb/*.deb
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload Linux Debian UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots-linux-deb-x64
+          path: ${{ runner.temp }}/sparky-ui-screenshots-deb
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload Linux AppImage UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots-linux-appimage-x64
+          path: ${{ runner.temp }}/sparky-ui-screenshots-appimage
+          if-no-files-found: warn
+          retention-days: 14

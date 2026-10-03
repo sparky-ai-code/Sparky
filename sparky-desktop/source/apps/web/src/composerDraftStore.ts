@@ -1013,8 +1013,23 @@ export function deriveEffectiveComposerModelState(input: {
             activeSelection.model,
           ))
         : baseModel;
+  const activeSelectionModel = activeSelection?.model
+    ? normalizeModelSlug(activeSelection.model, input.selectedProvider)
+    : null;
+  const selectedModelSlug = selectedModel
+    ? normalizeModelSlug(selectedModel, input.selectedProvider)
+    : null;
+  const activeSelectionModelMatches =
+    !activeSelection?.model ||
+    !selectedModel ||
+    activeSelection.model === selectedModel ||
+    (activeSelectionModel !== null && activeSelectionModel === selectedModelSlug);
+  const effectiveDraftSelections =
+    activeSelectionModelMatches || !input.draft?.modelSelectionByProvider
+      ? input.draft?.modelSelectionByProvider
+      : { ...input.draft.modelSelectionByProvider, [activeSelectionInstanceId]: undefined };
   const modelOptions =
-    modelSelectionByProviderToOptions(input.draft?.modelSelectionByProvider) ??
+    modelSelectionByProviderToOptions(effectiveDraftSelections) ??
     providerSelectionsFromModelSelection(input.threadModelSelection) ??
     providerSelectionsFromModelSelection(input.projectModelSelection) ??
     null;
@@ -2718,12 +2733,18 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             // Update the map entry for this provider
             const nextMap = { ...base.modelSelectionByProvider };
             const currentForProvider = nextMap[instanceKey];
+            const selectionModel =
+              normalizeModelSlug(options?.model, normalizedProvider) ??
+              currentForProvider?.model ??
+              fallbackModel;
             if (providerOpts) {
               nextMap[instanceKey] = createModelSelection(
                 instanceKey,
-                currentForProvider?.model ?? fallbackModel,
+                selectionModel,
                 providerOpts,
               );
+            } else if (currentForProvider && currentForProvider.model !== selectionModel) {
+              nextMap[instanceKey] = createModelSelection(instanceKey, selectionModel);
             } else if (currentForProvider && (currentForProvider.options?.length ?? 0) > 0) {
               const { options: _, ...rest } = currentForProvider;
               nextMap[instanceKey] = rest as ModelSelection;
@@ -2741,9 +2762,11 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               if (providerOpts) {
                 nextStickyMap[instanceKey] = createModelSelection(
                   instanceKey,
-                  stickyBase.model,
+                  selectionModel,
                   providerOpts,
                 );
+              } else if (stickyBase.model !== selectionModel) {
+                nextStickyMap[instanceKey] = createModelSelection(instanceKey, selectionModel);
               } else if ((stickyBase.options?.length ?? 0) > 0) {
                 const { options: _, ...rest } = stickyBase;
                 nextStickyMap[instanceKey] = rest as ModelSelection;

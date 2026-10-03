@@ -341,6 +341,8 @@ const RuntimeServicesLive = ServerRuntimeStartup.layer.pipe(
   Layer.provideMerge(RuntimeDependenciesLive),
 );
 
+const McpProcessRunnerLayerLive = ProcessRunner.layer.pipe(Layer.provide(PlatformServicesLive));
+
 export const makeRoutesLayer = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
@@ -357,7 +359,10 @@ export const makeRoutesLayer = Layer.mergeAll(
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
   ),
-  McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
+  McpHttpServer.layer.pipe(
+    Layer.provide(McpSessionRegistry.layer),
+    Layer.provide(McpProcessRunnerLayerLive),
+  ),
 ).pipe(Layer.provide(PreviewAutomationBroker.layer), Layer.provide(browserApiCorsLayer));
 
 export const makeServerLayer = Layer.unwrap(

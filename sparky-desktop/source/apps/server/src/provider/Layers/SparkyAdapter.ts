@@ -34,6 +34,7 @@ import {
 } from "../codexContextWindow.ts";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import { T3_CODE_PULL_REQUEST_REVIEW_INSTRUCTIONS } from "../CodexDeveloperInstructions.ts";
 import {
   ProviderAdapterProcessError,
   ProviderAdapterRequestError,
@@ -469,6 +470,7 @@ export function sparkyToolPresentation(
       ? rawInput.pluginId.trim().toLowerCase()
       : undefined;
   const isBrowserTool = normalizedName.startsWith("preview_");
+  const isMcpTool = isBrowserTool || normalizedName === "getpullrequestcomments";
   const itemType: ToolLifecycleItemType =
     normalizedName === "bash"
       ? "command_execution"
@@ -476,7 +478,7 @@ export function sparkyToolPresentation(
         ? "file_change"
         : normalizedName === "web_search"
           ? "web_search"
-          : isBrowserTool
+          : isMcpTool
             ? "mcp_tool_call"
             : "dynamic_tool_call";
   const kind =
@@ -513,6 +515,7 @@ export function sparkyToolPresentation(
     preview_wait_for: "Wait for browser",
     preview_recording_start: "Start browser recording",
     preview_recording_stop: "Stop browser recording",
+    getpullrequestcomments: "Get pull request comments",
   };
   return {
     itemType,
@@ -1096,7 +1099,7 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
         const activeMcp = workspaceContext === "none" ? undefined : mcpSession;
         const effectiveInstructions = [
           customInstructions.trim(),
-          ...(activeMcp ? [SPARKY_BROWSER_INSTRUCTIONS] : []),
+          ...(activeMcp ? [SPARKY_BROWSER_INSTRUCTIONS, T3_CODE_PULL_REQUEST_REVIEW_INSTRUCTIONS] : []),
         ]
           .filter((instructions) => instructions.length > 0)
           .join("\n\n");

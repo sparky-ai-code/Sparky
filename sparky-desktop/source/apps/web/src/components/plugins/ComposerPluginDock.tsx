@@ -19,7 +19,9 @@ export function ComposerPluginDock(props: {
   const navigate = useNavigate();
   const account = useAccountState();
   const pluginSessionReady =
-    account.status === "signed-in" && account.pluginSessionReady;
+    loadPluginSessionToken() !== null ||
+    ((account.status === "signed-in" || account.status === "signed-out") &&
+      account.pluginSessionReady);
   const [statuses, setStatuses] = useState<PluginStatus[]>([]);
 
   useEffect(() => {

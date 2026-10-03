@@ -32,12 +32,16 @@ import {
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
-import { nextModelProviderEnvironment } from "./modelProviderEnvironment";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { primaryServerProvidersAtom, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ClaudeAI, FireworksAI, Gemini, Ollama, OpenAI, SparkyIcon } from "../Icons";
-import { getDisplayModelName, getModelProviderPresentation } from "../chat/providerIconUtils";
+import {
+  CerebrasLogo,
+  getDisplayModelName,
+  getModelProviderPresentation,
+  GroqLogo,
+} from "../chat/providerIconUtils";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
@@ -50,8 +54,8 @@ const CODEX_AUTH_PATH = "/api/sparky/codex-auth";
 
 type CodexAuthStatus = {
   readonly authenticated: boolean;
-  readonly accountId?: string | null;
   readonly expires?: number | null;
+  readonly planUsageAuthorized: boolean;
 };
 
 async function codexAuthRequest(path = "", method = "GET"): Promise<CodexAuthStatus> {
@@ -65,7 +69,7 @@ async function codexAuthRequest(path = "", method = "GET"): Promise<CodexAuthSta
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
     throw new Error(
-      `Could not reach T3 Code's local authentication service (${detail}). Restart T3 Code and try again.`,
+      `Could not reach the local ChatGPT authentication service (${detail}). Restart the app and try again.`,
       { cause },
     );
   }
@@ -74,10 +78,10 @@ async function codexAuthRequest(path = "", method = "GET"): Promise<CodexAuthSta
   try {
     payload = responseText
       ? (JSON.parse(responseText) as CodexAuthStatus & { readonly error?: string })
-      : { authenticated: false };
+      : { authenticated: false, planUsageAuthorized: false };
   } catch (cause) {
     throw new Error(
-      `T3 Code's authentication service returned an invalid response (HTTP ${response.status}).`,
+      `The local ChatGPT authentication service returned an invalid response (HTTP ${response.status}).`,
       { cause },
     );
   }
@@ -134,6 +138,22 @@ const MODEL_APIS: ReadonlyArray<{
     placeholder: "ollama_...",
     description: "Cloud-hosted Ollama models through ollama.com.",
     Logo: Ollama,
+  },
+  {
+    id: "cerebras",
+    name: "Cerebras",
+    envName: "CEREBRAS_API_KEY",
+    placeholder: "csk-...",
+    description: "OpenAI-compatible models through Cerebras Inference.",
+    Logo: CerebrasLogo,
+  },
+  {
+    id: "groq",
+    name: "Groq",
+    envName: "GROQ_API_KEY",
+    placeholder: "gsk_...",
+    description: "OpenAI-compatible models through GroqCloud.",
+    Logo: GroqLogo,
   },
 ];
 
@@ -220,9 +240,7 @@ export function ModelsSettingsPanel() {
 
   const refreshSparkyProvider = async () => {
     if (!primaryEnvironment) {
-      throw new Error(
-        "T3 Code's local provider is not connected yet. Restart T3 Code and try again.",
-      );
+      throw new Error("The local provider is not connected yet. Restart the app and try again.");
     }
     const result = await refreshServerProviders({
       environmentId: primaryEnvironment.environmentId,
@@ -272,16 +290,35 @@ export function ModelsSettingsPanel() {
   };
 
   const commitProviderKey = (api: (typeof MODEL_APIS)[number], keyValue: string) => {
-    const environment = nextModelProviderEnvironment(
-      instance?.environment ?? [],
-      api,
-      keyValue,
-      MODEL_APIS,
-    );
+    const providerKeyNames = new Set(MODEL_APIS.map((entry) => entry.envName));
+    const legacyEndpointNames = new Set([
+      "OPENAI_BASE_URL",
+      "ANTHROPIC_BASE_URL",
+      "GEMINI_BASE_URL",
+      "FIREWORKS_BASE_URL",
+      "OLLAMA_CLOUD_BASE_URL",
+    ]);
+    const existingVariables = (instance?.environment ?? []).filter((variable) => {
+      if (variable.name === api.envName) return false;
+      if (api.id === "ollama-cloud" && variable.name === "OLLAMA_CLOUD_CONFIGURED") return false;
+      return providerKeyNames.has(variable.name) || !legacyEndpointNames.has(variable.name);
+    });
+    const environment = [...existingVariables];
+    if (keyValue.length > 0) {
+      environment.push({
+        name: api.envName,
+        value: keyValue,
+        sensitive: true,
+        valueRedacted: false,
+      });
+      if (api.id === "ollama-cloud") {
+        environment.push({ name: "OLLAMA_CLOUD_CONFIGURED", value: "true", sensitive: false });
+      }
+    }
 
     const nextInstance: ProviderInstanceConfig = {
       driver: SPARKY_DRIVER,
-      displayName: "T3 Code",
+      displayName: "OpenAI",
       enabled: true,
       environment,
       config: instance?.config ?? { binaryPath: "" },
@@ -407,21 +444,46 @@ export function ModelsSettingsPanel() {
                               disabled={codexAuthBusy}
                               onClick={() =>
                                 void updateCodexAuthentication(
-                                  codexAuth?.authenticated ? "logout" : "login",
+                                  codexAuth?.planUsageAuthorized ? "logout" : "login",
                                 )
                               }
                             >
                               {codexAuthBusy ? (
                                 <LoaderCircleIcon className="size-3 animate-spin" />
-                              ) : codexAuth?.authenticated ? (
+                              ) : codexAuth?.planUsageAuthorized ? (
                                 <CheckCircle2Icon className="size-3 text-emerald-500" />
                               ) : null}
-                              {codexAuth?.authenticated
-                                ? "Signed in with ChatGPT subscription"
+                              {codexAuth?.authenticated && codexAuth.planUsageAuthorized
+                                ? "Disconnect ChatGPT plan"
                                 : codexAuthBusy
                                   ? "Signing in to ChatGPT…"
-                                  : "Already have a subscription? Sign in with ChatGPT"}
+                                  : "Use your ChatGPT plan"}
                             </button>
+                            {codexAuth?.planUsageAuthorized ? (
+                              <a
+                                href="https://chatgpt.com/#settings/usage"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="ml-2 text-xs text-muted-foreground/60 underline-offset-2 hover:text-muted-foreground hover:underline"
+                              >
+                                Manage usage
+                              </a>
+                            ) : null}
+                            {codexAuth?.authenticated && !codexAuth.planUsageAuthorized ? (
+                              <button
+                                type="button"
+                                className="ml-2 text-xs text-muted-foreground/60 underline-offset-2 hover:text-muted-foreground hover:underline disabled:opacity-50"
+                                disabled={codexAuthBusy}
+                                onClick={() => void updateCodexAuthentication("logout")}
+                              >
+                                Disconnect
+                              </button>
+                            ) : null}
+                            <p className="mt-1 text-xs text-muted-foreground/65">
+                              {codexAuth?.authenticated && !codexAuth.planUsageAuthorized
+                                ? "Signed in, but ChatGPT plan usage permission was not granted."
+                                : "Uses eligible OpenAI Responses API requests from your ChatGPT plan."}
+                            </p>
                             {codexAuthError ? (
                               <p role="alert" className="mt-1 text-xs text-destructive">
                                 {codexAuthError}

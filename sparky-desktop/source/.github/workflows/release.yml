@@ -321,7 +321,7 @@ jobs:
       T3CODE_NEON_AUTH_OAUTH_AUTHORIZE_URL: ${{ needs.relay_public_config.outputs.neon_auth_oauth_authorize_url }}
       T3CODE_NEON_AUTH_CLI_OAUTH_CLIENT_ID: ${{ needs.relay_public_config.outputs.neon_auth_cli_oauth_client_id }}
       T3CODE_RELAY_URL: ${{ needs.relay_public_config.outputs.relay_url }}
-      VITE_SPARKY_ANALYTICS_ENDPOINT: https://sensible-buffalo-67.eu-west-1.convex.site/analytics/event
+      VITE_SPARKY_ANALYTICS_ENDPOINT: https://artful-monitor-250.convex.site/analytics/event
       VITE_ACCOUNT_API_URL: ${{ vars.SPARKY_ACCOUNT_API_URL }}
       # Repository variable: deployed Convex site URL for sparky-analytics.
       SPARKY_UPDATE_URL: ${{ vars.SPARKY_UPDATE_SITE_URL }}${{ matrix.update_path }}

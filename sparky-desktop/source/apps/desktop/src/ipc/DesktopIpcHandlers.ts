@@ -2,7 +2,11 @@ import * as Effect from "effect/Effect";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
-import { getAccountSessionToken, setAccountSessionToken } from "./methods/accountSession.ts";
+import {
+  getAccountSessionToken,
+  getOrCreatePluginInstallationId,
+  setAccountSessionToken,
+} from "./methods/accountSession.ts";
 import {
   clearConnectionCatalog,
   getConnectionCatalog,
@@ -60,6 +64,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(getLocalEnvironmentBearerToken);
   yield* ipc.handle(getAccountSessionToken);
   yield* ipc.handle(setAccountSessionToken);
+  yield* ipc.handle(getOrCreatePluginInstallationId);
 
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);
@@ -94,6 +99,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(GitHubCliIpc.listRepositoriesMethod);
   yield* ipc.handle(GitHubCliIpc.list);
   yield* ipc.handle(GitHubCliIpc.getPullRequestMethod);
+  yield* ipc.handle(GitHubCliIpc.getPullRequestCommentsMethod);
+  yield* ipc.handle(GitHubCliIpc.updatePullRequestMethod);
+  yield* ipc.handle(GitHubCliIpc.postPullRequestReviewMethod);
   yield* ipc.handle(getPullRequestDiffMethod);
 
   yield* ipc.handle(pickFolder);

@@ -13,6 +13,17 @@ export interface ComposerTrigger {
   rangeEnd: number;
 }
 
+export function shouldOpenComposerMenu(
+  activeTrigger: ComposerTrigger | null,
+  liveTrigger: ComposerTrigger | null,
+): boolean {
+  return (
+    activeTrigger !== null &&
+    (liveTrigger !== null ||
+      (activeTrigger.kind === "path" && activeTrigger.rangeStart === activeTrigger.rangeEnd))
+  );
+}
+
 export function shouldSubmitComposerOnEnter(input: {
   isMobileViewport: boolean;
   shiftKey: boolean;

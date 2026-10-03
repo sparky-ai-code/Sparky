@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import type { ReactElement } from "react";
 import {
   ProviderDriverKind,
   type ProviderOptionDescriptor,
@@ -10,6 +11,7 @@ import {
   getComposerProviderState,
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
+  type TraitsRenderInput,
 } from "./composerProviderState";
 
 // Everything in composerProviderState is now data-driven by the model's
@@ -244,5 +246,39 @@ describe("provider traits render guards", () => {
 
     expect(renderProviderTraitsPicker(args)).toBeNull();
     expect(renderProviderTraitsMenuContent(args)).toBeNull();
+  });
+
+  it("builds nested picker controls from the selected model descriptors", () => {
+    const models = modelWith([
+      {
+        ...selectDescriptor("reasoning_effort", [
+          { id: "low", label: "Low" },
+          { id: "high", label: "High", isDefault: true },
+        ]),
+        label: "Reasoning effort",
+      },
+      {
+        ...selectDescriptor("contextWindow", [
+          { id: "272k", label: "272K", isDefault: true },
+          { id: "872k", label: "872K" },
+        ]),
+        label: "Context Window",
+      },
+    ]);
+    const content = renderProviderTraitsMenuContent({
+      provider: PROVIDER,
+      instanceId: "test-instance" as never,
+      draftId: "test-draft" as never,
+      model: MODEL,
+      models,
+      modelOptions: undefined,
+      prompt: "",
+      onPromptChange: () => {},
+      nested: true,
+    });
+
+    expect(content).not.toBeNull();
+    const traitsControl = content as ReactElement<{ input: TraitsRenderInput }>;
+    expect(traitsControl.props.input).toMatchObject({ nested: true, model: MODEL, models });
   });
 });

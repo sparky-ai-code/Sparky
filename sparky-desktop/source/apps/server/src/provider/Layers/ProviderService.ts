@@ -320,7 +320,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       )
     : undefined;
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-  const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
+  const prepareMcpSession = (
+    threadId: ThreadId,
+    providerInstanceId: ProviderInstanceId,
+    cwd?: string,
+  ) =>
     Effect.gen(function* () {
       const authSessionId = yield* currentAuthSessionId;
       // Clear first so an issuance failure cannot fall back to an expired token
@@ -331,6 +335,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const credential = yield* McpSessionRegistry.issueActiveMcpCredential({
         threadId,
         providerInstanceId,
+        ...(cwd ? { cwd } : {}),
       });
       if (credential) McpProviderSession.setMcpProviderSession(credential.config);
       return credential;
@@ -729,7 +734,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       );
 
       // Restore browser MCP credentials independently of the native search tool.
-      yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
+      yield* prepareMcpSession(input.binding.threadId, bindingInstanceId, persistedCwd);
       const resumed = yield* adapter
         .startSession({
           threadId: input.binding.threadId,
@@ -945,7 +950,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
         // Prepare browser MCP credentials separately; native web_search uses
         // its dedicated worker credential and does not depend on plugins.
-        yield* prepareMcpSession(threadId, resolvedInstanceId);
+        yield* prepareMcpSession(threadId, resolvedInstanceId, effectiveCwd);
         const session = yield* adapter
           .startSession({
             ...input,
@@ -1062,7 +1067,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       // provider-scoped credential immediately before launch so an idle or
       // restarted MCP registry cannot leave the child with an expired token.
       if (String(routed.adapter.provider) === "sparky") {
-        yield* prepareMcpSession(input.threadId, routed.instanceId);
+        yield* prepareMcpSession(
+          input.threadId,
+          routed.instanceId,
+          bindingMatchesInstance ? readPersistedCwd(binding?.runtimePayload) : undefined,
+        );
       }
       const turnStartedAt = yield* Clock.currentTimeNanos;
       yield* Ref.update(pendingTurnLatencies, (current) => {

@@ -269,6 +269,7 @@ describe("MessagesTimeline", () => {
       { name: "find", iconClass: "lucide-folder-search" },
       { name: "write", iconClass: "lucide-file-plus-corner" },
       { name: "edit", iconClass: "lucide-file-pen-line" },
+      { name: "review_pull_request", iconClass: "lucide-git-pull-request" },
     ] as const;
 
     const iconNames = tools.map(({ name }) => resolveWorkEntryToolIconName(name));
@@ -280,8 +281,9 @@ describe("MessagesTimeline", () => {
       "folder-search",
       "file-plus-2",
       "file-pen-line",
+      "git-pull-request",
     ]);
-    expect(new Set(iconNames).size).toBe(6);
+    expect(new Set(iconNames).size).toBe(7);
 
     for (const { name, iconClass } of tools) {
       const markup = renderToStaticMarkup(
@@ -879,14 +881,19 @@ describe("MessagesTimeline", () => {
               toolName: "web_search",
               itemType: "web_search",
               tone: "tool",
-              detail: "web_search({ query: \"stale\" })",
+              detail: 'web_search({ query: "stale" })',
               toolLifecycleStatus: "completed",
               toolData: {
                 result: {
                   output: JSON.stringify({
                     provider: "Exa",
                     results: [
-                      { title: "Docs", snippet: "Useful docs", url: "https://docs.example.com/a", favicon_url: "https://cdn.example.com/docs-icon.png" },
+                      {
+                        title: "Docs",
+                        snippet: "Useful docs",
+                        url: "https://docs.example.com/a",
+                        favicon_url: "https://cdn.example.com/docs-icon.png",
+                      },
                       {
                         title: "Guide",
                         snippet: "Useful guide",

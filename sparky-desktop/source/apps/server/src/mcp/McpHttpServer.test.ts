@@ -4,12 +4,16 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, PreviewTabId, ProviderInstanceId, ThreadId } from "@sparky/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import * as ProcessRunner from "../processRunner.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
@@ -49,6 +53,121 @@ it("normalizes empty successful notification responses to accepted", () => {
     HttpServerResponse.jsonUnsafe({ jsonrpc: "2.0", id: 1, result: {} }),
   );
   expect(resultResponse.status).toBe(200);
+});
+
+it.effect("reviews a PR with the separate review agent before posting validated findings", () => {
+  const headSha = "a".repeat(40);
+  const encodeJson = Schema.encodeUnknownSync(Schema.UnknownFromJsonString);
+  const pullRequestMetadata = encodeJson({
+    number: 7,
+    url: "https://github.com/owner/repo/pull/7",
+    title: "Review target",
+    body: "PR description",
+    baseRefName: "main",
+    headRefName: "feature",
+    headRefOid: headSha,
+  });
+  const postedReviewMetadata = encodeJson({
+    html_url: "https://github.com/owner/repo/pull/7#pullrequestreview-1",
+  });
+  const diff = `diff --git a/src/example.ts b/src/example.ts
+--- a/src/example.ts
++++ b/src/example.ts
+@@ -0,0 +1 @@
++const value = 1;
+`;
+  const calls: Array<ProcessRunner.ProcessRunInput> = [];
+  const reviewCalls: Array<
+    Parameters<GitWorkflowService.GitWorkflowService["Service"]["reviewPullRequest"]>[0]
+  > = [];
+  const runner = ProcessRunner.ProcessRunner.of({
+    run: (input) =>
+      Effect.sync(() => {
+        calls.push(input);
+        const stdout =
+          input.args[0] === "pr" && input.args[1] === "view"
+            ? pullRequestMetadata
+            : input.args[0] === "pr" && input.args[1] === "diff"
+              ? diff
+              : postedReviewMetadata;
+        return {
+          stdout,
+          stderr: "",
+          code: 0 as NonNullable<ProcessRunner.ProcessRunOutput["code"]>,
+          timedOut: false,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        };
+      }),
+  });
+  const gitWorkflowLayer = Layer.mock(GitWorkflowService.GitWorkflowService)({
+    reviewPullRequest: (input) =>
+      Effect.sync(() => {
+        reviewCalls.push(input);
+        return {
+          response: JSON.stringify({
+            summary: "One issue found.",
+            findings: [
+              {
+                path: "src/example.ts",
+                line: 1,
+                severity: "high",
+                title: "Guard the value",
+                body: "The upstream value can be empty.",
+              },
+            ],
+          }),
+        };
+      }),
+  });
+  const reviewLayer = McpHttpServer.PullRequestReviewToolkitRegistrationLive.pipe(
+    Layer.provide(Layer.succeed(ProcessRunner.ProcessRunner, runner)),
+    Layer.provideMerge(gitWorkflowLayer),
+    Layer.provideMerge(ServerSettings.layerTest()),
+    Layer.provideMerge(McpServer.McpServer.layer),
+  );
+
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      const result = yield* server
+        .callTool({
+          name: "review_pull_request",
+          arguments: { repository: "owner/repo", number: 7 },
+        })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, {
+            ...invocation,
+            cwd: "C:/workspace",
+          }),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({ submittedComments: 1, skippedComments: 0 });
+      expect(reviewCalls).toHaveLength(1);
+      expect(reviewCalls[0]?.cwd).toBe("C:/workspace");
+      expect(reviewCalls[0]?.prompt).toContain("diff --git a/src/example.ts b/src/example.ts");
+      expect(reviewCalls[0]?.prompt).toContain("const value = 1;");
+      expect(reviewCalls[0]?.systemPrompt).toContain("independent, one-shot code review agent");
+      const postCall = calls.find((call) => call.args[0] === "api");
+      expect(postCall?.command).toBe("gh");
+      expect(postCall?.cwd).toBe("C:/workspace");
+      const postedReview = yield* Schema.decodeUnknownEffect(Schema.UnknownFromJsonString)(
+        postCall?.stdin ?? "{}",
+      );
+      expect(postedReview).toMatchObject({
+        comments: [
+          {
+            path: "src/example.ts",
+            line: 1,
+            side: "RIGHT",
+            body: "**HIGH: Guard the value**\n\nThe upstream value can be empty.",
+          },
+        ],
+      });
+    }).pipe(Effect.provide(reviewLayer)),
+  );
 });
 
 it.effect("returns bounded structural preview snapshot failures", () =>

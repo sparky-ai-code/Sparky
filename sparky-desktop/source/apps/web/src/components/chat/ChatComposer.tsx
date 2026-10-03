@@ -41,6 +41,7 @@ import {
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   replaceTextRange,
+  shouldOpenComposerMenu,
   shouldSubmitComposerOnEnter,
 } from "../../composer-logic";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
@@ -532,6 +533,7 @@ export interface ChatComposerProps {
     cursorAdjacentToMention: boolean,
   ) => void;
   onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
+  onRefreshModelCatalog?: (instanceId: ProviderInstanceId) => Promise<unknown>;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -983,7 +985,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     prompt,
     expandCollapsedComposerCursor(prompt, composerCursor),
   );
-  const composerMenuOpen = activeComposerTrigger !== null && liveComposerTrigger !== null;
+  const composerMenuOpen = shouldOpenComposerMenu(activeComposerTrigger, liveComposerTrigger);
   const composerMenuSearchKey = activeComposerTrigger
     ? `${activeComposerTrigger.kind}:${activeComposerTrigger.query.trim().toLowerCase()}`
     : null;
@@ -1078,6 +1080,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     modelOptions: composerModelOptions?.[selectedInstanceId],
     prompt,
     onPromptChange: setPromptFromTraits,
+    nested: true,
   });
   const providerTraitsPicker = renderProviderTraitsPicker({
     provider: selectedProvider,
@@ -2450,7 +2453,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     planSidebarOpen={planSidebarOpen}
                     runtimeMode={runtimeMode}
                     showInteractionModeToggle={false}
-                    traitsMenuContent={providerTraitsMenuContent}
                     onToggleInteractionMode={toggleInteractionMode}
                     onTogglePlanSidebar={togglePlanSidebar}
                     onRuntimeModeChange={handleRuntimeModeChange}
@@ -2494,6 +2496,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   instanceEntries={providerInstanceEntries}
                   keybindings={keybindings}
                   modelOptionsByInstance={modelOptionsByInstance}
+                  traitsMenuContent={providerTraitsMenuContent}
                   terminalOpen={terminalOpen}
                   open={isComposerModelPickerOpen}
                   {...(composerProviderState.modelPickerIconClassName
@@ -2501,7 +2504,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         activeProviderIconClassName: composerProviderState.modelPickerIconClassName,
                       }
                     : {})}
-                  onOpenChange={setIsComposerModelPickerOpen}
+                  onOpenChange={(open) => {
+                    setIsComposerModelPickerOpen(open);
+                    if (!open) return;
+                    const sparkyProvider = providerInstanceEntries.find(
+                      (entry) =>
+                        entry.enabled && entry.driverKind === ProviderDriverKind.make("sparky"),
+                    );
+                    if (sparkyProvider && props.onRefreshModelCatalog) {
+                      void props.onRefreshModelCatalog(sparkyProvider.instanceId).catch(() => {});
+                    }
+                  }}
                   getModelDisabledReason={getModelDisabledReason}
                   onInstanceModelChange={onProviderModelSelect}
                 />

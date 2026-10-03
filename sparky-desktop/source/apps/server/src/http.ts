@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off
+// @effect-diagnostics nodeBuiltinImport:off globalTimers:off
 import Mime from "@effect/platform-node/Mime";
 import * as NodeChildProcess from "node:child_process";
 import {
@@ -49,6 +49,8 @@ const DESKTOP_RENDERER_ORIGINS = [
   "sparky-dev://app",
 ];
 const SPARKY_CODEX_AUTH_ROUTE = "/api/sparky/codex-auth";
+const CODEX_AUTH_STATUS_TIMEOUT_MS = 20_000;
+const CODEX_AUTH_LOGIN_TIMEOUT_MS = 15 * 60_000;
 
 export const browserApiCorsLayer = Layer.unwrap(
   Effect.gen(function* () {
@@ -104,8 +106,9 @@ const authenticateRawRouteWithScope = (
 
 type SparkyCodexAuthStatus = {
   readonly authenticated: boolean;
-  readonly accountId?: string | null;
+  readonly subject?: string | null;
   readonly expires?: number | null;
+  readonly planUsageAuthorized: boolean;
 };
 
 class SparkyCodexAuthCommandError extends Data.TaggedError("SparkyCodexAuthCommandError")<{
@@ -126,6 +129,20 @@ const runSparkyCodexAuthCommand = (argument: string) =>
         });
         let stdout = "";
         let stderr = "";
+        let settled = false;
+        let timeout: ReturnType<typeof setTimeout>;
+        const timeoutMs =
+          argument === "--codex-login" ? CODEX_AUTH_LOGIN_TIMEOUT_MS : CODEX_AUTH_STATUS_TIMEOUT_MS;
+        const finish = (callback: () => void) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          callback();
+        };
+        timeout = setTimeout(() => {
+          child.kill();
+          finish(() => reject(new Error("ChatGPT authentication service timed out.")));
+        }, timeoutMs);
         child.stdout.setEncoding("utf8");
         child.stderr.setEncoding("utf8");
         child.stdout.on("data", (chunk: string) => {
@@ -134,26 +151,28 @@ const runSparkyCodexAuthCommand = (argument: string) =>
         child.stderr.on("data", (chunk: string) => {
           stderr += chunk;
         });
-        child.once("error", reject);
+        child.once("error", (error) => finish(() => reject(error)));
         child.once("close", (code) => {
-          if (code !== 0) {
-            reject(
-              new SparkyCodexAuthCommandError({
-                detail: stderr.trim() || `Sparky exited with code ${code ?? "unknown"}.`,
-              }),
-            );
-            return;
-          }
-          try {
-            resolve(JSON.parse(stdout.trim()) as SparkyCodexAuthStatus);
-          } catch (cause) {
-            reject(
-              new SparkyCodexAuthCommandError({
-                detail: "Sparky returned invalid Codex authentication status.",
-                cause,
-              }),
-            );
-          }
+          finish(() => {
+            if (code !== 0) {
+              reject(
+                new SparkyCodexAuthCommandError({
+                  detail: stderr.trim() || `Sparky exited with code ${code ?? "unknown"}.`,
+                }),
+              );
+              return;
+            }
+            try {
+              resolve(JSON.parse(stdout.trim()) as SparkyCodexAuthStatus);
+            } catch (cause) {
+              reject(
+                new SparkyCodexAuthCommandError({
+                  detail: "Sparky returned invalid ChatGPT authentication status.",
+                  cause,
+                }),
+              );
+            }
+          });
         });
       }),
     catch: (cause) =>

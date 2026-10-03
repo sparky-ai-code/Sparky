@@ -18,8 +18,8 @@ import type {
   ModelSelection,
   ThreadId,
 } from "@sparky/contracts";
-
-import { GitCommandError, TextGenerationError } from "@sparky/contracts";
+import { GitCommandError, ProviderInstanceId, TextGenerationError } from "@sparky/contracts";
+import { createModelSelection } from "@sparky/shared/model";
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -83,6 +83,12 @@ interface FakeGitTextGeneration {
     diffPatch: string;
     modelSelection: ModelSelection;
   }) => Effect.Effect<{ title: string; body: string }, TextGenerationError>;
+  generatePullRequestReview: (input: {
+    cwd: string;
+    prompt: string;
+    systemPrompt: string;
+    modelSelection: ModelSelection;
+  }) => Effect.Effect<{ response: string }, TextGenerationError>;
   generateBranchName: (input: {
     cwd: string;
     message: string;
@@ -306,6 +312,7 @@ function createTextGeneration(
         title: "Add stacked git actions",
         body: "## Summary\n- Add stacked git workflow\n\n## Testing\n- Not run",
       }),
+    generatePullRequestReview: () => Effect.succeed({ response: '{"summary":"OK","findings":[]}' }),
     generateBranchName: () =>
       Effect.succeed({
         branch: "update-workflow",
@@ -335,6 +342,17 @@ function createTextGeneration(
           (cause) =>
             new TextGenerationError({
               operation: "generatePrContent",
+              detail: "fake text generation failed",
+              ...(cause !== undefined ? { cause } : {}),
+            }),
+        ),
+      ),
+    generatePullRequestReview: (input) =>
+      implementation.generatePullRequestReview(input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({
+              operation: "generatePullRequestReview",
               detail: "fake text generation failed",
               ...(cause !== undefined ? { cause } : {}),
             }),
@@ -627,6 +645,18 @@ function resolvePullRequest(
   return manager.resolvePullRequest(input);
 }
 
+function reviewPullRequest(
+  manager: GitManager.GitManager["Service"],
+  input: {
+    cwd: string;
+    modelSelection: ModelSelection;
+    prompt: string;
+    systemPrompt: string;
+  },
+) {
+  return manager.reviewPullRequest(input);
+}
+
 function preparePullRequestThread(
   manager: GitManager.GitManager["Service"],
   input: GitPreparePullRequestThreadInput,
@@ -686,6 +716,39 @@ function makeManager(input?: {
 }
 
 const asThreadId = (threadId: string) => threadId as ThreadId;
+
+it.effect("runs pull request review generation without any thread setup", () =>
+  Effect.gen(function* () {
+    const calls: Array<{ cwd: string; prompt: string; systemPrompt: string }> = [];
+    const modelSelection = createModelSelection(
+      ProviderInstanceId.make("sparky_review"),
+      "openai/gpt-4o-mini",
+    );
+    const { manager } = yield* makeManager({
+      textGeneration: {
+        generatePullRequestReview: (input) => {
+          calls.push({ cwd: input.cwd, prompt: input.prompt, systemPrompt: input.systemPrompt });
+          return Effect.succeed({ response: "review complete" });
+        },
+      },
+    });
+    const result = yield* reviewPullRequest(manager, {
+      cwd: process.cwd(),
+      modelSelection,
+      prompt: "Review the diff",
+      systemPrompt: "Use the dedicated review instructions",
+    });
+
+    expect(result.response).toBe("review complete");
+    expect(calls).toEqual([
+      {
+        cwd: process.cwd(),
+        prompt: "Review the diff",
+        systemPrompt: "Use the dedicated review instructions",
+      },
+    ]);
+  }),
+);
 
 const GitManagerTestLayer = GitVcsDriver.layer.pipe(
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-manager-test-" })),

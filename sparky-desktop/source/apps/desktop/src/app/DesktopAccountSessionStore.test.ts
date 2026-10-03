@@ -89,4 +89,26 @@ describe("DesktopAccountSessionStore", () => {
       false,
     ),
   );
+
+  it.effect("persists the plugin installation identity across app restarts", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "sparky-plugin-installation-test-",
+      });
+      const firstCandidate = "123e4567-e89b-42d3-a456-426614174000";
+      const laterCandidate = "123e4567-e89b-42d3-a456-426614174001";
+      const firstId = yield* Effect.gen(function* () {
+        const store = yield* DesktopAccountSessionStore.DesktopAccountSessionStore;
+        return yield* store.getOrCreateInstallationId(firstCandidate);
+      }).pipe(Effect.provide(makeLayer(baseDir)));
+      const laterId = yield* Effect.gen(function* () {
+        const store = yield* DesktopAccountSessionStore.DesktopAccountSessionStore;
+        return yield* store.getOrCreateInstallationId(laterCandidate);
+      }).pipe(Effect.provide(makeLayer(baseDir)));
+
+      assert.strictEqual(firstId, firstCandidate);
+      assert.strictEqual(laterId, firstCandidate);
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
 });

@@ -16,12 +16,13 @@ export const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
 export const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
 export const UPDATE_CHECK_CHANNEL = "desktop:update-check";
 export const GET_APP_BRANDING_CHANNEL = "desktop:get-app-branding";
-export const GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL =
-  "desktop:get-local-environment-bootstraps";
+export const GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL = "desktop:get-local-environment-bootstraps";
 export const GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL =
   "desktop:get-local-environment-bearer-token";
 export const GET_ACCOUNT_SESSION_TOKEN_CHANNEL = "desktop:get-account-session-token";
 export const SET_ACCOUNT_SESSION_TOKEN_CHANNEL = "desktop:set-account-session-token";
+export const GET_OR_CREATE_PLUGIN_INSTALLATION_ID_CHANNEL =
+  "desktop:get-or-create-plugin-installation-id";
 export const GET_CLIENT_SETTINGS_CHANNEL = "desktop:get-client-settings";
 export const SET_CLIENT_SETTINGS_CHANNEL = "desktop:set-client-settings";
 export const GET_CONNECTION_CATALOG_CHANNEL = "desktop:get-connection-catalog";
@@ -52,7 +53,12 @@ export const GITHUB_PLUGIN_SYNC_CHANNEL = "desktop:github-plugin-sync";
 export const GITHUB_CLI_LIST_REPOSITORIES_CHANNEL = "desktop:github-cli-list-repositories";
 export const GITHUB_CLI_LIST_PULL_REQUESTS_CHANNEL = "desktop:github-cli-list-pull-requests";
 export const GITHUB_CLI_GET_PULL_REQUEST_CHANNEL = "desktop:github-cli-get-pull-request";
+export const GITHUB_CLI_GET_PULL_REQUEST_COMMENTS_CHANNEL =
+  "desktop:github-cli-get-pull-request-comments";
 export const GITHUB_CLI_GET_PULL_REQUEST_DIFF_CHANNEL = "desktop:github-cli-get-pull-request-diff";
+export const GITHUB_CLI_UPDATE_PULL_REQUEST_CHANNEL = "desktop:github-cli-update-pull-request";
+export const GITHUB_CLI_POST_PULL_REQUEST_REVIEW_CHANNEL =
+  "desktop:github-cli-post-pull-request-review";
 export const SSH_PASSWORD_PROMPT_CANCELLED_RESULT = "ssh-password-prompt-cancelled";
 export const PREVIEW_CREATE_TAB_CHANNEL = "desktop:preview-create-tab";
 export const PREVIEW_CLOSE_TAB_CHANNEL = "desktop:preview-close-tab";

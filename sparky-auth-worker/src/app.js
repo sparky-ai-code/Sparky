@@ -497,7 +497,7 @@ async function handleWrappedRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/v1/session" && response.ok) {
     try {
       const value = await response.clone().json();
-      if (value?.user?.id && typeof value.user.id === "string") {
+      if (value?.anonymous !== true && value?.user?.id && typeof value.user.id === "string") {
         await touchAnalytics(env, value.user.id);
       }
     } catch {

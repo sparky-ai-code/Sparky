@@ -190,6 +190,10 @@
     "./httpReadiness": {
       "types": "./src/httpReadiness.ts",
       "import": "./src/httpReadiness.ts"
+    },
+    "./pullRequestReview": {
+      "types": "./src/pullRequestReview.ts",
+      "import": "./src/pullRequestReview.ts"
     }
   },
   "scripts": {

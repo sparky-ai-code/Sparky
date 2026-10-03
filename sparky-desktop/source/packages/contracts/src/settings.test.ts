@@ -4,12 +4,14 @@ import * as Schema from "effect/Schema";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
+  ClientSettingsPatch,
   DEFAULT_SERVER_SETTINGS,
   ServerSettings,
   ServerSettingsPatch,
 } from "./settings.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
+const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
@@ -66,6 +68,38 @@ describe("ClientSettings model selector style", () => {
     expect(decodeClientSettings({ modelSelectorStyle: "slider" }).modelSelectorStyle).toBe(
       "slider",
     );
+  });
+});
+
+describe("ClientSettings pull request review preferences", () => {
+  it("provides defaults for review model, focus, and effort", () => {
+    const settings = decodeClientSettings({});
+    expect(settings.pullRequestReviewModelSelection).toBeNull();
+    expect(settings.pullRequestReviewFocus).toBe("all");
+    expect(settings.pullRequestReviewEffort).toBe("thorough");
+  });
+
+  it("accepts configurable review model, focus, and effort values", () => {
+    const modelSelection = {
+      instanceId: ProviderInstanceId.make("sparky_review"),
+      model: "openai/gpt-4o-mini",
+    };
+    const decoded = decodeClientSettings({
+      pullRequestReviewModelSelection: modelSelection,
+      pullRequestReviewFocus: "security",
+      pullRequestReviewEffort: "deep",
+    });
+    const patch = decodeClientSettingsPatch({
+      pullRequestReviewModelSelection: modelSelection,
+      pullRequestReviewFocus: "security",
+      pullRequestReviewEffort: "deep",
+    });
+
+    expect(decoded.pullRequestReviewModelSelection).toMatchObject(modelSelection);
+    expect(decoded.pullRequestReviewFocus).toBe("security");
+    expect(decoded.pullRequestReviewEffort).toBe("deep");
+    expect(patch.pullRequestReviewFocus).toBe("security");
+    expect(patch.pullRequestReviewEffort).toBe("deep");
   });
 });
 

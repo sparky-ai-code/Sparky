@@ -96,15 +96,12 @@ export function useProviderTraitsRenderInput(
 
   if (!bridgedInput) return null;
 
-  const hasStoredSelection = Object.prototype.hasOwnProperty.call(
-    draftModelState.modelSelectionByProvider,
-    instanceId,
-  );
-  if (!hasStoredSelection) return bridgedInput;
+  const storedSelection = draftModelState.modelSelectionByProvider[instanceId];
+  if (!storedSelection || storedSelection.model !== bridgedInput.model) return bridgedInput;
 
   return {
     ...bridgedInput,
-    modelOptions: draftModelState.modelSelectionByProvider[instanceId]?.options,
+    modelOptions: storedSelection.options,
   };
 }
 

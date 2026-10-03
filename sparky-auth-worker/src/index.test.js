@@ -78,6 +78,48 @@ test("health endpoint reports configured state without leaking secret", async ()
   assert.equal(response.headers.get("cache-control"), "no-store, max-age=0");
 });
 
+test("creates stable anonymous plugin sessions without Clerk authentication", async () => {
+  const installationId = "d9428888-122b-4f71-9479-2f4f4f320f34";
+  const anonymousEnv = {
+    ...env,
+    PLUGIN_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32).toString("base64url"),
+  };
+  const createSession = () =>
+    handleRequest(
+      new Request("https://auth.example/v1/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ installationId }),
+      }),
+      anonymousEnv,
+    );
+
+  const firstResponse = await createSession();
+  const secondResponse = await createSession();
+  assert.equal(firstResponse.status, 200);
+  assert.equal(secondResponse.status, 200);
+  const first = await firstResponse.json();
+  const second = await secondResponse.json();
+  assert.equal(first.anonymous, true);
+  assert.equal(first.user.id, second.user.id);
+  assert.equal(first.user.email, null);
+  assert.notEqual(first.sessionToken, second.sessionToken);
+});
+
+test("rejects anonymous plugin sessions without a valid installation ID", async () => {
+  const response = await handleRequest(
+    new Request("https://auth.example/v1/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ installationId: "not-a-uuid" }),
+    }),
+    env,
+  );
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /installation ID/i);
+});
+
 test("revokes the persisted plugin session on explicit logout", async () => {
   const token = "session-token-with-enough-length";
   const key = `session:${await sha256(token)}`;

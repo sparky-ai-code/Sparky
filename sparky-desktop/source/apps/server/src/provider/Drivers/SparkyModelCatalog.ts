@@ -18,15 +18,27 @@ type ProviderDefinition = {
     | "ANTHROPIC_API_KEY"
     | "GEMINI_API_KEY"
     | "FIREWORKS_API_KEY"
-    | "OLLAMA_API_KEY";
+    | "OLLAMA_API_KEY"
+    | "CEREBRAS_API_KEY"
+    | "GROQ_API_KEY";
   readonly prefix:
     | "openai-codex"
     | "openai"
     | "anthropic"
     | "google"
     | "fireworks"
-    | "ollama-cloud";
-  readonly label: "OpenAI Codex" | "OpenAI" | "Claude" | "Google" | "Fireworks" | "Ollama Cloud";
+    | "ollama-cloud"
+    | "cerebras"
+    | "groq";
+  readonly label:
+    | "OpenAI Codex"
+    | "OpenAI"
+    | "Claude"
+    | "Google"
+    | "Fireworks"
+    | "Ollama Cloud"
+    | "Cerebras"
+    | "Groq";
   readonly load: (
     apiKey: string,
     fetchImplementation: FetchImplementation,
@@ -35,33 +47,64 @@ type ProviderDefinition = {
   ) => Promise<ReadonlyArray<RemoteModel>>;
 };
 
-export function hasCodexOAuthAuthentication(environment: NodeJS.ProcessEnv): boolean {
+function codexAuthDirectory(environment: NodeJS.ProcessEnv): string | undefined {
   const environmentHome = environment.USERPROFILE?.trim() || environment.HOME?.trim();
-  const authDirectory =
+  return (
     environment.SPARKY_CODEX_HOME?.trim() ||
-    environment.CODEX_HOME?.trim() ||
-    (environmentHome ? NodePath.join(environmentHome, ".codex") : undefined);
-  if (!authDirectory) return false;
+    (environmentHome ? NodePath.join(environmentHome, ".sparky", "codex-auth") : undefined)
+  );
+}
+
+function readCodexOAuthCredentials(environment: NodeJS.ProcessEnv):
+  | {
+      readonly accessToken: string;
+      readonly expiresAt: number;
+    }
+  | undefined {
+  const authDirectory = codexAuthDirectory(environment);
+  if (!authDirectory) return undefined;
   try {
     const credentials: unknown = JSON.parse(
       NodeFS.readFileSync(NodePath.join(authDirectory, "auth.json"), "utf8"),
     );
-    return (
+    if (
       isRecord(credentials) &&
-      credentials.auth_mode === "chatgpt" &&
+      credentials.auth_mode === "siwc" &&
       isRecord(credentials.tokens) &&
-      Boolean(nonEmptyString(credentials.tokens.access_token)) &&
-      Boolean(nonEmptyString(credentials.tokens.refresh_token)) &&
-      Boolean(nonEmptyString(credentials.tokens.account_id))
-    );
+      nonEmptyString(credentials.tokens.access_token) &&
+      nonEmptyString(credentials.tokens.refresh_token) &&
+      nonEmptyString(credentials.tokens.scope) &&
+      nonEmptyString(credentials.tokens.client_id) &&
+      typeof credentials.tokens.expires === "number" &&
+      Number.isSafeInteger(credentials.tokens.expires)
+    ) {
+      const scopes = new Set(nonEmptyString(credentials.tokens.scope)!.split(/\s+/u));
+      if (
+        !["offline_access", "resource.invoke", "chatgpt.tokens.use.direct"].every((scope) =>
+          scopes.has(scope),
+        )
+      ) {
+        return undefined;
+      }
+      return {
+        accessToken: nonEmptyString(credentials.tokens.access_token)!,
+        expiresAt: credentials.tokens.expires,
+      };
+    }
+    return undefined;
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+export function hasCodexOAuthAuthentication(environment: NodeJS.ProcessEnv): boolean {
+  return Boolean(readCodexOAuthCredentials(environment));
 }
 
 type RemoteReasoningEffort = {
   readonly id: string;
   readonly label?: string;
+  readonly description?: string;
 };
 
 type RemoteContextWindow = {
@@ -92,54 +135,47 @@ export type SparkyModelDiscovery = {
 type ModelsDevCatalog = Readonly<Record<string, Readonly<Record<string, Record<string, unknown>>>>>;
 
 const REQUEST_TIMEOUT_MS = 12_000;
+const CODEX_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
 
-// Some installed Codex app-server builds lag the current ChatGPT entitlement
-// catalog during staged model rollouts. Keep this OAuth-only fallback aligned
-// with the official model ids so an eligible account can select newly released
-// models while the local app-server catches up. Runtime authorization still
-// remains provider-authoritative; an ineligible account receives the provider
-// error.
-const CODEX_OAUTH_KNOWN_MODELS: ReadonlyArray<RemoteModel> = [
-  {
-    id: "gpt-6-sol",
-    name: "GPT-6 Sol",
-    reasoningSupported: true,
-    reasoningEfforts: [
-      { id: "low" },
-      { id: "medium" },
-      { id: "high" },
-      { id: "xhigh" },
-      { id: "max" },
-    ],
-    defaultReasoningEffort: "medium",
-  },
-  {
-    id: "gpt-6-luna",
-    name: "GPT-6 Luna",
-    reasoningSupported: true,
-    reasoningEfforts: [
-      { id: "low" },
-      { id: "medium" },
-      { id: "high" },
-      { id: "xhigh" },
-      { id: "max" },
-    ],
-    defaultReasoningEffort: "medium",
-  },
-  {
-    id: "gpt-6-astra",
-    name: "GPT-6 Astra",
-    reasoningSupported: true,
-    reasoningEfforts: [
-      { id: "low" },
-      { id: "medium" },
-      { id: "high" },
-      { id: "xhigh" },
-      { id: "max" },
-    ],
-    defaultReasoningEffort: "medium",
-  },
-];
+const CHATGPT_CODEX_MODELS = [
+  { id: "gpt-6.1-sol", name: "GPT-6.1 Sol" },
+  { id: "gpt-6-astra", name: "GPT-6 Astra" },
+  { id: "gpt-6-sol", name: "GPT-6 Sol" },
+  { id: "gpt-6-luna", name: "GPT-6 Luna" },
+  { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
+  { id: "gpt-5.6-terra", name: "GPT-5.6 Terra" },
+  { id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
+] as const satisfies ReadonlyArray<RemoteModel>;
+const CHATGPT_CODEX_MODEL_ORDER = new Map(
+  CHATGPT_CODEX_MODELS.map((model, index) => [`openai-codex/${model.id}`, index] as const),
+);
+
+async function refreshCodexOAuthSession(environment: NodeJS.ProcessEnv): Promise<void> {
+  const binaryPath = environment.SPARKY_BINARY_PATH?.trim() || "sparky";
+  await new Promise<void>((resolve, reject) => {
+    const child = NodeChildProcess.spawn(binaryPath, ["--codex-auth-refresh"], {
+      env: environment,
+      windowsHide: true,
+      shell: false,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(
+          new Error(stderr.trim() || `Sparky auth refresh exited with code ${code ?? "unknown"}.`),
+        );
+      }
+    });
+  });
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -225,7 +261,14 @@ function parseReasoningEffortEntries(
     if (!id || seen.has(id)) return [];
     seen.add(id);
     const label = nonEmptyString(entry.label) ?? nonEmptyString(entry.name);
-    return [{ id, ...(label ? { label } : {}) }];
+    const description = nonEmptyString(entry.description);
+    return [
+      {
+        id,
+        ...(label ? { label } : {}),
+        ...(description ? { description } : {}),
+      },
+    ];
   });
 }
 
@@ -273,6 +316,7 @@ function parseContextWindowEntry(value: unknown): RemoteContextWindow | undefine
       contextWindowTokens(value.tokenLimit) ??
       contextWindowTokens(value.contextWindow) ??
       contextWindowTokens(value.context_window) ??
+      contextWindowTokens(value.max_context_window) ??
       contextWindowTokens(value.contextLength) ??
       contextWindowTokens(value.context_length) ??
       contextWindowTokens(value.maxTokens) ??
@@ -323,6 +367,7 @@ function parseContextWindows(value: Record<string, unknown>): {
     for (const key of [
       "contextWindow",
       "context_window",
+      "max_context_window",
       "contextLength",
       "context_length",
       "contextLengthTokens",
@@ -378,7 +423,7 @@ function remoteModelFromRecord(
   value: Record<string, unknown>,
   contextWindowSource: ContextWindowSource = "provider",
 ): RemoteModel | undefined {
-  const id = nonEmptyString(value.id) ?? nonEmptyString(value.model);
+  const id = nonEmptyString(value.id) ?? nonEmptyString(value.model) ?? nonEmptyString(value.slug);
   if (!id) return undefined;
   const capabilities = isRecord(value.capabilities) ? value.capabilities : undefined;
   const reasoning =
@@ -395,6 +440,7 @@ function remoteModelFromRecord(
   const reasoningEfforts = parseReasoningEfforts(
     value.supportedReasoningEfforts ??
       value.supported_reasoning_efforts ??
+      value.supported_reasoning_levels ??
       value.reasoningEfforts ??
       value.reasoning_efforts ??
       value.supportedEfforts ??
@@ -417,6 +463,7 @@ function remoteModelFromRecord(
   const defaultReasoningEffort =
     nonEmptyString(value.defaultReasoningEffort) ??
     nonEmptyString(value.default_reasoning_effort) ??
+    nonEmptyString(value.default_reasoning_level) ??
     nonEmptyString(isRecord(reasoning) ? reasoning.default : undefined) ??
     nonEmptyString(isRecord(reasoning) ? reasoning.defaultEffort : undefined) ??
     nonEmptyString(isRecord(reasoning) ? reasoning.default_effort : undefined);
@@ -485,6 +532,7 @@ function applyCodexOAuthContextPolicy(
   const modelSlug = `openai-codex/${model.id}`;
   const oauthContext = readCodexOAuthContextWindow(modelSlug, environment);
   const effectiveDefaultContextWindowTokens = oauthContext?.effectiveContextWindowTokens;
+  const maxEffectiveContextWindowTokens = oauthContext?.maxEffectiveContextWindowTokens;
   const contextWindows = (model.contextWindows ?? [])
     .map((contextWindow) => {
       const tokens = normalizeCodexOAuthEffectiveContextWindowTokens(
@@ -510,6 +558,25 @@ function applyCodexOAuthContextPolicy(
       (contextWindow, index, all) =>
         all.findIndex((candidate) => candidate.tokens === contextWindow.tokens) === index,
     );
+  if (maxEffectiveContextWindowTokens !== undefined) {
+    const selectableSizes = [
+      64_000,
+      128_000,
+      256_000,
+      512_000,
+      1_000_000,
+      maxEffectiveContextWindowTokens,
+    ].filter((tokens) => tokens <= maxEffectiveContextWindowTokens);
+    for (const tokens of selectableSizes) {
+      if (contextWindows.some((contextWindow) => contextWindow.tokens === tokens)) continue;
+      contextWindows.push({
+        id: canonicalContextWindowId(tokens),
+        tokens,
+        label: humanizeContextWindow(tokens),
+      });
+    }
+    contextWindows.sort((left, right) => left.tokens - right.tokens);
+  }
   if (
     effectiveDefaultContextWindowTokens !== undefined &&
     !contextWindows.some(
@@ -545,11 +612,6 @@ function applyCodexOAuthContextPolicy(
     ...(defaultContextWindowTokens !== undefined ? { defaultContextWindowTokens } : {}),
     contextWindowSource: "oauth",
   };
-}
-
-function addKnownCodexOAuthModels(models: ReadonlyArray<RemoteModel>): ReadonlyArray<RemoteModel> {
-  const knownIds = new Set(models.map((model) => model.id.trim()));
-  return [...models, ...CODEX_OAUTH_KNOWN_MODELS.filter((model) => !knownIds.has(model.id))];
 }
 
 async function fetchJson(
@@ -751,107 +813,45 @@ async function loadGoogleModels(
   );
 }
 
-async function loadCodexModels(
+export async function loadCodexModels(
   _apiKey: string,
-  _fetchImplementation: FetchImplementation,
+  fetchImplementation: FetchImplementation,
   environment: NodeJS.ProcessEnv,
+  _modelsDev?: ModelsDevCatalog,
 ): Promise<ReadonlyArray<RemoteModel>> {
-  const binaryPath = environment.SPARKY_CODEX_BINARY?.trim() || "codex";
-  const codexHome =
-    environment.SPARKY_CODEX_HOME?.trim() || environment.CODEX_HOME?.trim() || undefined;
-  return new Promise((resolve, reject) => {
-    const child = NodeChildProcess.spawn(binaryPath, ["app-server"], {
-      env: { ...environment, ...(codexHome ? { CODEX_HOME: codexHome } : {}) },
-      windowsHide: true,
-      shell: false,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let buffer = "";
-    let stderr = "";
-    let settled = false;
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      child.kill();
-      reject(new Error("Codex model discovery timed out"));
-    }, REQUEST_TIMEOUT_MS);
-    const finish = (error?: Error, models?: ReadonlyArray<RemoteModel>) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      child.kill();
-      if (error) reject(error);
-      else resolve(models ?? []);
-    };
-    const send = (message: Record<string, unknown>) => {
-      child.stdin.write(`${JSON.stringify(message)}\n`);
-    };
-    const handleLine = (line: string) => {
-      if (!line.trim()) return;
-      let message: unknown;
-      try {
-        message = JSON.parse(line);
-      } catch {
-        return;
-      }
-      if (!isRecord(message)) return;
-      if (message.id === 1) {
-        if (isRecord(message.error)) {
-          finish(new Error(nonEmptyString(message.error.message) ?? "Codex initialization failed"));
-          return;
-        }
-        send({ method: "initialized", params: {} });
-        send({ id: 2, method: "model/list", params: {} });
-        return;
-      }
-      if (message.id === 2) {
-        if (isRecord(message.error)) {
-          finish(
-            new Error(nonEmptyString(message.error.message) ?? "Codex model discovery failed"),
-          );
-          return;
-        }
-        const result = isRecord(message.result) ? message.result : {};
-        const data = Array.isArray(result.data) ? result.data : [];
-        const models = data.flatMap((entry) =>
-          isRecord(entry) ? (remoteModelFromRecord(entry) ?? []) : [],
-        );
-        finish(undefined, models);
-      }
-    };
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      buffer += chunk;
-      let newline = buffer.indexOf("\n");
-      while (newline >= 0) {
-        handleLine(buffer.slice(0, newline));
-        buffer = buffer.slice(newline + 1);
-        newline = buffer.indexOf("\n");
-      }
-    });
-    child.stderr.on("data", (chunk: string) => {
-      stderr = `${stderr}${chunk}`.slice(-8192);
-    });
-    child.once("error", (cause) =>
-      finish(cause instanceof Error ? cause : new Error(String(cause))),
-    );
-    child.once("close", (code) => {
-      if (!settled && code !== 0) {
-        finish(new Error(stderr.trim() || `Codex exited with code ${code ?? "unknown"}`));
-      }
-    });
-    send({
-      id: 1,
-      method: "initialize",
-      params: {
-        clientInfo: { name: "sparky_desktop", title: "Sparky Desktop", version: "1.0.0" },
-        capabilities: { experimentalApi: true },
-      },
-    });
-  });
-}
+  let credentials = readCodexOAuthCredentials(environment);
+  if (!credentials) return [];
+  if (credentials.expiresAt <= Date.now() + 5 * 60 * 1000) {
+    await refreshCodexOAuthSession(environment);
+    credentials = readCodexOAuthCredentials(environment);
+    if (!credentials) {
+      throw new Error("The ChatGPT session could not be refreshed for model discovery");
+    }
+  }
 
+  try {
+    const payload = await fetchJson(fetchImplementation, CODEX_MODELS_ENDPOINT, {
+      headers: { Authorization: `Bearer ${credentials.accessToken}` },
+    });
+    if (!Array.isArray(payload.models)) return CHATGPT_CODEX_MODELS;
+    const metadataByModelId = new Map(
+      payload.models.flatMap((entry): ReadonlyArray<readonly [string, Record<string, unknown>]> => {
+        if (!isRecord(entry)) return [];
+        const id =
+          nonEmptyString(entry.slug) ?? nonEmptyString(entry.id) ?? nonEmptyString(entry.model);
+        return id ? [[id, entry]] : [];
+      }),
+    );
+    return CHATGPT_CODEX_MODELS.map((model) => {
+      const metadata = metadataByModelId.get(model.id);
+      return metadata
+        ? (remoteModelFromRecord({ ...metadata, id: model.id, name: model.name }) ?? model)
+        : model;
+    });
+  } catch {
+    return CHATGPT_CODEX_MODELS;
+  }
+}
 export type CodexModelLoader = (
   environment: NodeJS.ProcessEnv,
 ) => Promise<ReadonlyArray<RemoteModel>>;
@@ -909,6 +909,32 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
         "ollama",
       ),
   },
+  {
+    env: "CEREBRAS_API_KEY",
+    prefix: "cerebras",
+    label: "Cerebras",
+    load: (apiKey, fetchImplementation, environment, modelsDev) =>
+      loadOpenAICompatibleModels(
+        apiKey,
+        fetchImplementation,
+        providerBaseUrl("https://api.cerebras.ai/v1"),
+        modelsDev,
+        "cerebras",
+      ),
+  },
+  {
+    env: "GROQ_API_KEY",
+    prefix: "groq",
+    label: "Groq",
+    load: (apiKey, fetchImplementation, environment, modelsDev) =>
+      loadOpenAICompatibleModels(
+        apiKey,
+        fetchImplementation,
+        providerBaseUrl("https://api.groq.com/openai/v1"),
+        modelsDev,
+        "groq",
+      ),
+  },
 ];
 
 export async function discoverSparkyModels(
@@ -941,7 +967,7 @@ export async function discoverSparkyModels(
             : await provider.load(apiKey, fetchImplementation, environment, modelsDev);
         const remoteModels =
           provider.prefix === "openai-codex"
-            ? addKnownCodexOAuthModels(loadedRemoteModels)
+            ? loadedRemoteModels
                 .map((model) =>
                   mergeRemoteModelMetadata(
                     model,
@@ -986,6 +1012,7 @@ export async function discoverSparkyModels(
                     options: supportedReasoningEfforts.map((effort) => ({
                       id: effort.id,
                       label: effort.label || humanizeModelId(effort.id),
+                      ...(effort.description ? { description: effort.description } : {}),
                       ...(effort.id === defaultReasoningEffort ? { isDefault: true } : {}),
                     })),
                     ...(defaultReasoningEffort ? { currentValue: defaultReasoningEffort } : {}),
@@ -1046,7 +1073,15 @@ export async function discoverSparkyModels(
       const providerDelta =
         PROVIDERS.findIndex((provider) => provider.label === left.subProvider) -
         PROVIDERS.findIndex((provider) => provider.label === right.subProvider);
-      return providerDelta || left.name.localeCompare(right.name, undefined, { numeric: true });
+      const codexModelDelta =
+        (CHATGPT_CODEX_MODEL_ORDER.get(left.slug) ?? Number.POSITIVE_INFINITY) -
+        (CHATGPT_CODEX_MODEL_ORDER.get(right.slug) ?? Number.POSITIVE_INFINITY);
+      return (
+        providerDelta ||
+        (Number.isFinite(codexModelDelta)
+          ? codexModelDelta
+          : left.name.localeCompare(right.name, undefined, { numeric: true }))
+      );
     })
     .map((model, index) => (index === 0 ? { ...model, isDefault: true } : model));
 

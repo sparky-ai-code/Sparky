@@ -36,6 +36,9 @@ const clientSettings: ClientSettings = {
   streamingTextAnimation: "lift",
   timestampFormat: "24-hour",
   modelSelectorStyle: "menu",
+  pullRequestReviewModelSelection: null,
+  pullRequestReviewFocus: "all",
+  pullRequestReviewEffort: "thorough",
   wordWrap: true,
 };
 

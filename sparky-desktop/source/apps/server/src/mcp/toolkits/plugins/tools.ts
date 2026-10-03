@@ -39,4 +39,22 @@ export const PluginCallTool = Tool.make("sparky_plugin_call", {
   .annotate(Tool.OpenWorld, true)
   .annotate(Tool.Destructive, true);
 
-export const PluginToolkit = Toolkit.make(RequestPluginAuthorizationTool, PluginCallTool);
+export const GetPullRequestCommentsTool = Tool.make("getPullRequestComments", {
+  description:
+    "Retrieve conversation, review, and inline review comments for a specific GitHub pull request using the same authenticated comments fetcher as the in-app Pull Requests sidebar. Use the exact owner/repository name.",
+  parameters: Schema.Struct({
+    repository: Schema.String,
+    number: Schema.Number,
+  }),
+  success: Schema.Unknown,
+  failure: Schema.Never,
+})
+  .annotate(Tool.Title, "Get pull request comments")
+  .annotate(Tool.OpenWorld, false)
+  .annotate(Tool.Destructive, false);
+
+export const PluginToolkit = Toolkit.make(
+  RequestPluginAuthorizationTool,
+  PluginCallTool,
+  GetPullRequestCommentsTool,
+);

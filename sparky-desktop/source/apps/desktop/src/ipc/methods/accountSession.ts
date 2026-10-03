@@ -25,3 +25,15 @@ export const setAccountSessionToken = DesktopIpc.makeIpcMethod({
     return yield* store.set(token);
   }),
 });
+
+export const getOrCreatePluginInstallationId = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GET_OR_CREATE_PLUGIN_INSTALLATION_ID_CHANNEL,
+  payload: Schema.NullOr(Schema.String),
+  result: Schema.String,
+  handler: Effect.fn("desktop.ipc.accountSession.getOrCreatePluginInstallationId")(
+    function* (candidate) {
+      const store = yield* DesktopAccountSessionStore.DesktopAccountSessionStore;
+      return yield* store.getOrCreateInstallationId(candidate);
+    },
+  ),
+});

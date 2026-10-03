@@ -1,5 +1,5 @@
 import {
-  type ProviderDriverKind,
+  ProviderDriverKind,
   type ProviderInstanceId,
   type ServerProvider,
   ServerProvider as ServerProviderSchema,
@@ -21,7 +21,9 @@ const mergeProviderModels = (
   fallbackModels: ReadonlyArray<ServerProvider["models"][number]>,
   cachedModels: ReadonlyArray<ServerProvider["models"][number]>,
 ): ReadonlyArray<ServerProvider["models"][number]> => {
-  const retainedFallbackModels = fallbackModels.filter((model) => !model.slug.startsWith("opencode/"));
+  const retainedFallbackModels = fallbackModels.filter(
+    (model) => !model.slug.startsWith("opencode/"),
+  );
   const retainedCachedModels = cachedModels.filter((model) => !model.slug.startsWith("opencode/"));
   const cachedBySlug = new Map(retainedCachedModels.map((model) => [model.slug, model] as const));
   const fallbackSlugs = new Set(retainedFallbackModels.map((model) => model.slug));
@@ -55,7 +57,10 @@ export const hydrateCachedProvider = (input: {
   readonly cachedProvider: ServerProvider;
   readonly fallbackProvider: ServerProvider;
 }): ServerProvider => {
-  if (!isCachedProviderCorrelated(input)) {
+  if (
+    !isCachedProviderCorrelated(input) ||
+    input.fallbackProvider.driver === ProviderDriverKind.make("sparky")
+  ) {
     return input.fallbackProvider;
   }
 

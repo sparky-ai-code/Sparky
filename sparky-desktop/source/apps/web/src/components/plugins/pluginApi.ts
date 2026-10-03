@@ -6,10 +6,14 @@ import type { PluginId } from "./pluginCatalog";
 
 const DEFAULT_WORKER_URL = "https://auth.sparky.llc";
 const SESSION_STORAGE_KEY = "sparky.plugin-session.v1";
+const INSTALLATION_ID_STORAGE_KEY = "sparky.plugin-installation-id.v1";
 const PENDING_SESSION_REVOKE_STORAGE_KEY = "sparky.plugin-session-revoke.v1";
 const PLUGIN_STATUS_CACHE_TTL_MS = 5 * 60_000;
+const INSTALLATION_ID_PATTERN =
+  /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/iu;
 
 let inMemorySessionToken: string | null | undefined;
+let inMemoryInstallationId: string | null = null;
 
 export interface PluginStatus {
   readonly pluginId: PluginId;
@@ -65,6 +69,61 @@ function githubPluginBridge(): GitHubPluginBridge | null {
 function workerBaseUrl(): string {
   const configured = import.meta.env.VITE_SPARKY_PLUGIN_WORKER_URL?.trim() || DEFAULT_WORKER_URL;
   return configured.replace(/\/$/u, "");
+}
+
+async function workerFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const retryDelaysMs = [0, 300, 900] as const;
+  let lastError: unknown;
+  for (const [attempt, delayMs] of retryDelaysMs.entries()) {
+    if (delayMs > 0) await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+    try {
+      return await fetch(input, init);
+    } catch (error: unknown) {
+      lastError = error;
+      if (attempt === retryDelaysMs.length - 1) {
+        throw new Error(
+          "Sparky's plugin service could not be reached. Check your connection and try again.",
+          { cause: error },
+        );
+      }
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Sparky's plugin service is unavailable.");
+}
+
+async function installationId(): Promise<string> {
+  if (inMemoryInstallationId) return inMemoryInstallationId;
+
+  let candidate: string;
+  try {
+    const saved = window.localStorage.getItem(INSTALLATION_ID_STORAGE_KEY)?.trim() ?? "";
+    candidate = INSTALLATION_ID_PATTERN.test(saved)
+      ? saved.toLowerCase()
+      : window.crypto.randomUUID();
+  } catch {
+    candidate = window.crypto.randomUUID();
+  }
+
+  let stableId = candidate;
+  const getOrCreateId = window.desktopBridge?.getOrCreatePluginInstallationId;
+  if (typeof getOrCreateId === "function") {
+    try {
+      const persistedId = await getOrCreateId(candidate);
+      if (INSTALLATION_ID_PATTERN.test(persistedId)) stableId = persistedId.toLowerCase();
+    } catch {
+      // Keep the browser-persisted identity as a fallback if desktop storage is unavailable.
+    }
+  }
+
+  inMemoryInstallationId = stableId;
+  try {
+    window.localStorage.setItem(INSTALLATION_ID_STORAGE_KEY, stableId);
+  } catch {
+    // The native store remains authoritative when browser storage is unavailable.
+  }
+  return stableId;
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -230,10 +289,24 @@ export async function syncPluginSessionToServer(token: string | null): Promise<v
 
 export async function createPluginSession(clerkJwt: string): Promise<PluginSession> {
   await retryPendingPluginSessionRevocation();
-  const response = await fetch(`${workerBaseUrl()}/v1/session`, {
+  const response = await workerFetch(`${workerBaseUrl()}/v1/session`, {
     method: "POST",
     headers: { Authorization: `Bearer ${clerkJwt}`, "Content-Type": "application/json" },
     body: "{}",
+  });
+  const session = await readJson<PluginSession>(response);
+  invalidatePluginStatusCache();
+  await persistPluginSessionTokenDurably(session.sessionToken);
+  await syncPluginSessionToServer(session.sessionToken);
+  return session;
+}
+
+export async function createAnonymousPluginSession(): Promise<PluginSession> {
+  await retryPendingPluginSessionRevocation();
+  const response = await workerFetch(`${workerBaseUrl()}/v1/session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ installationId: await installationId() }),
   });
   const session = await readJson<PluginSession>(response);
   invalidatePluginStatusCache();
@@ -271,7 +344,7 @@ export async function listPluginStatus(
     inFlight: null,
   };
   const request = (async () => {
-    const response = await fetch(`${workerBaseUrl()}/v1/plugins`, {
+    const response = await workerFetch(`${workerBaseUrl()}/v1/plugins`, {
       headers: authenticatedHeaders(sessionToken),
     });
     return (await readJson<{ plugins: PluginStatus[] }>(response)).plugins;
@@ -306,7 +379,7 @@ export async function startPluginAuthorization(
   readonly authorizationUrl: string | null;
   readonly managedBy?: string;
 }> {
-  const response = await fetch(`${workerBaseUrl()}/v1/plugins/${pluginId}/authorize`, {
+  const response = await workerFetch(`${workerBaseUrl()}/v1/plugins/${pluginId}/authorize`, {
     method: "POST",
     headers: authenticatedHeaders(sessionToken),
     body: "{}",

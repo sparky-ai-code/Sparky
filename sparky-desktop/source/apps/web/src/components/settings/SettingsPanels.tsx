@@ -500,6 +500,25 @@ export function GeneralSettingsPanel() {
     settings.textGenerationModelSelection ?? null,
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
   );
+  const pullRequestReviewModelSelection = resolveAppModelSelectionState(
+    {
+      ...settings,
+      textGenerationModelSelection:
+        settings.pullRequestReviewModelSelection ?? settings.textGenerationModelSelection,
+    },
+    serverProviders,
+  );
+  const pullRequestReviewModelOptions = getCustomModelOptionsByInstance(
+    settings,
+    serverProviders,
+    pullRequestReviewModelSelection.instanceId,
+    pullRequestReviewModelSelection.model,
+  );
+  const isPullRequestReviewModelDirty = settings.pullRequestReviewModelSelection !== null;
+  const isPullRequestReviewFocusDirty =
+    settings.pullRequestReviewFocus !== DEFAULT_UNIFIED_SETTINGS.pullRequestReviewFocus;
+  const isPullRequestReviewEffortDirty =
+    settings.pullRequestReviewEffort !== DEFAULT_UNIFIED_SETTINGS.pullRequestReviewEffort;
 
   return (
     <SettingsPageContainer>
@@ -817,6 +836,135 @@ export function GeneralSettingsPanel() {
                 }}
               />
             </div>
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Pull request reviews">
+        <SettingsRow
+          title="Review model"
+          description="Choose the model for background pull request reviews. Defaults to the text generation model."
+          resetAction={
+            isPullRequestReviewModelDirty ? (
+              <SettingResetButton
+                label="pull request review model"
+                onClick={() => updateSettings({ pullRequestReviewModelSelection: null })}
+              />
+            ) : null
+          }
+          control={
+            <ProviderModelPicker
+              activeInstanceId={pullRequestReviewModelSelection.instanceId}
+              model={pullRequestReviewModelSelection.model}
+              lockedProvider={null}
+              instanceEntries={gitModelInstanceEntries}
+              modelOptionsByInstance={pullRequestReviewModelOptions}
+              triggerVariant="outline"
+              triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+              onInstanceModelChange={(instanceId, model) => {
+                updateSettings({
+                  pullRequestReviewModelSelection: resolveAppModelSelectionState(
+                    {
+                      ...settings,
+                      textGenerationModelSelection: createModelSelection(instanceId, model),
+                    },
+                    serverProviders,
+                  ),
+                });
+              }}
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Review focus"
+          description="Limit findings to security, all actionable bugs, critical issues, or simple bugs."
+          resetAction={
+            isPullRequestReviewFocusDirty ? (
+              <SettingResetButton
+                label="pull request review focus"
+                onClick={() =>
+                  updateSettings({
+                    pullRequestReviewFocus: DEFAULT_UNIFIED_SETTINGS.pullRequestReviewFocus,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.pullRequestReviewFocus}
+              onValueChange={(value) => {
+                if (
+                  value === "security" ||
+                  value === "all" ||
+                  value === "critical" ||
+                  value === "simple"
+                ) {
+                  updateSettings({ pullRequestReviewFocus: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-48" aria-label="Pull request review focus">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="security">
+                  Security only
+                </SelectItem>
+                <SelectItem hideIndicator value="all">
+                  All actionable bugs
+                </SelectItem>
+                <SelectItem hideIndicator value="critical">
+                  Critical issues
+                </SelectItem>
+                <SelectItem hideIndicator value="simple">
+                  Simple bugs
+                </SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+
+        <SettingsRow
+          title="Review effort"
+          description="Quick prioritizes high-confidence issues; deep examines edge cases and regressions."
+          resetAction={
+            isPullRequestReviewEffortDirty ? (
+              <SettingResetButton
+                label="pull request review effort"
+                onClick={() =>
+                  updateSettings({
+                    pullRequestReviewEffort: DEFAULT_UNIFIED_SETTINGS.pullRequestReviewEffort,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.pullRequestReviewEffort}
+              onValueChange={(value) => {
+                if (value === "quick" || value === "thorough" || value === "deep") {
+                  updateSettings({ pullRequestReviewEffort: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-48" aria-label="Pull request review effort">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="quick">
+                  Quick
+                </SelectItem>
+                <SelectItem hideIndicator value="thorough">
+                  Thorough
+                </SelectItem>
+                <SelectItem hideIndicator value="deep">
+                  Deep
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
       </SettingsSection>

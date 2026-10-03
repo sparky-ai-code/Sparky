@@ -55,12 +55,14 @@ import {
   FolderIcon,
   FolderSearchIcon,
   GlobeIcon,
+  GitPullRequestIcon,
   HammerIcon,
   KeyboardIcon,
   LoaderCircleIcon,
   ListChecksIcon,
   Maximize2Icon,
   MessageCircleIcon,
+  MessagesSquareIcon,
   MinusIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
@@ -1897,6 +1899,7 @@ type WorkEntryIconName =
   | "folder-search"
   | "search"
   | "globe"
+  | "git-pull-request"
   | "code-2"
   | "search-web"
   | "hammer"
@@ -1905,6 +1908,7 @@ type WorkEntryIconName =
   | "brain"
   | "calendar-clock"
   | "message-circle"
+  | "messages-square"
   | "mouse-pointer-click"
   | "pause-circle"
   | "play-circle"
@@ -1939,6 +1943,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <SearchIcon className={className} aria-hidden />;
     case "globe":
       return <GlobeIcon className={className} aria-hidden />;
+    case "git-pull-request":
+      return <GitPullRequestIcon className={className} aria-hidden />;
     case "search-web":
       return (
         <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -1975,6 +1981,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <CalendarClockIcon className={className} aria-hidden />;
     case "message-circle":
       return <MessageCircleIcon className={className} aria-hidden />;
+    case "messages-square":
+      return <MessagesSquareIcon className={className} aria-hidden />;
     case "mouse-pointer-click":
       return <MousePointerClickIcon className={className} aria-hidden />;
     case "pause-circle":
@@ -2170,10 +2178,7 @@ function WebSearchSourceFavicon({
     return (
       <span
         aria-hidden="true"
-        className={cn(
-          className,
-          "p-0 text-[8px] font-semibold text-muted-foreground",
-        )}
+        className={cn(className, "p-0 text-[8px] font-semibold text-muted-foreground")}
         title={source.domain}
       >
         {source.domain.charAt(0).toUpperCase()}
@@ -2204,10 +2209,7 @@ function WebSearchSourcePlaceholder({ className }: { readonly className?: string
   return (
     <span
       aria-hidden="true"
-      className={cn(
-        "size-4 shrink-0 rounded-full border border-background bg-muted/45",
-        className,
-      )}
+      className={cn("size-4 shrink-0 rounded-full border border-background bg-muted/45", className)}
     />
   );
 }
@@ -2339,6 +2341,10 @@ export function resolveWorkEntryToolIconName(
       return "search";
     case "find":
       return "folder-search";
+    case "getpullrequestcomments":
+      return "messages-square";
+    case "review_pull_request":
+      return "git-pull-request";
     case "write":
       return "file-plus-2";
     case "edit":

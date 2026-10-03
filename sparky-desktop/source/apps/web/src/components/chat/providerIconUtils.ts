@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { ProviderDriverKind } from "@sparky/contracts";
 import { ClaudeAI, FireworksAI, Gemini, Icon, Ollama, OpenAI, SparkyIcon } from "../Icons";
 import { PROVIDER_OPTIONS } from "../../session-logic";
@@ -29,6 +30,24 @@ export type ModelProviderPresentation = {
   Icon: Icon;
 };
 
+// Use the provider marks from their official websites; do not redraw them.
+// Source: https://www.cerebras.ai (official favicon) and https://groq.com/favicon.svg.
+export const CerebrasLogo: Icon = ({ className }) =>
+  createElement("img", {
+    src: "/provider-logos/cerebras.png",
+    alt: "",
+    "aria-hidden": true,
+    className,
+  });
+
+export const GroqLogo: Icon = ({ className }) =>
+  createElement("img", {
+    src: "/provider-logos/groq.svg",
+    alt: "",
+    "aria-hidden": true,
+    className,
+  });
+
 const MODEL_PROVIDER_PRESENTATION_BY_LABEL: Readonly<Record<string, ModelProviderPresentation>> = {
   Claude: { label: "Claude", Icon: ClaudeAI },
   Google: { label: "Google", Icon: Gemini },
@@ -36,6 +55,8 @@ const MODEL_PROVIDER_PRESENTATION_BY_LABEL: Readonly<Record<string, ModelProvide
   "OpenAI Codex": { label: "OpenAI Codex", Icon: OpenAI },
   Fireworks: { label: "Fireworks", Icon: FireworksAI },
   "Ollama Cloud": { label: "Ollama Cloud", Icon: Ollama },
+  Cerebras: { label: "Cerebras", Icon: CerebrasLogo },
+  Groq: { label: "Groq", Icon: GroqLogo },
 };
 
 /** Resolve the actual model vendor, rather than the Sparky runtime serving it. */

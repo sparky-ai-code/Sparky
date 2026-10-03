@@ -86,11 +86,16 @@ const DESKTOP_BACKEND_ENV_NAMES = [
   "T3CODE_TAILSCALE_SERVE_PORT",
 ] as const;
 
-// Sensitive env vars that the WSL backend needs but Windows process.env won't
-// forward across the wsl.exe boundary without WSLENV. The dev-server URL is
-// handled separately via a `--dev-url` CLI flag because WSLENV translation of
-// URL-shaped values (colons / slashes) is unreliable.
-const WSL_FORWARDED_ENV_NAMES = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"] as const;
+// Env vars that the WSL backend needs but Windows process.env won't forward
+// across the wsl.exe boundary without WSLENV. The dev-server URL is handled
+// separately via a `--dev-url` CLI flag because URL-shaped values (colons /
+// slashes) are unreliable across that boundary.
+const WSL_FORWARDED_ENV_NAMES = [
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "CEREBRAS_API_KEY",
+  "GROQ_API_KEY",
+] as const;
 
 const WSL_SERVER_SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
@@ -358,6 +363,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       env: {
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
+        SPARKY_CODEX_HOME: environment.path.join(environment.stateDir, "chatgpt-auth"),
         SPARKY_BINARY_PATH: configuredSparkyBinaryPath ||
           (environment.isPackaged
             ? environment.path.join(environment.resourcesPath, "sparky", sparkyExecutable)
@@ -481,6 +487,12 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       forwardedEnvNames.push(name);
     }
   }
+  const windowsAuthHome = environment.path.join(environment.stateDir, "chatgpt-auth");
+  const wslAuthHome = yield* wslEnvironment.windowsToWslPath(distroForConfig, windowsAuthHome);
+  if (Option.isSome(wslAuthHome)) {
+    forwardedEnv.SPARKY_CODEX_HOME = wslAuthHome.value;
+    forwardedEnvNames.push("SPARKY_CODEX_HOME");
+  }
 
   // Build an explicit copy of process.env minus T3CODE_HOME (dev-runner
   // exports the Windows-side base dir for the primary; if it leaks into
@@ -489,7 +501,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   // their env-ids collide).
   const parentEnvWithoutT3Home: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (key === "T3CODE_HOME") continue;
+    if (key === "T3CODE_HOME" || key === "SPARKY_CODEX_HOME") continue;
     parentEnvWithoutT3Home[key] = value;
   }
   const wslEnv = mergeWslEnv(parentEnvWithoutT3Home.WSLENV, forwardedEnvNames);

@@ -56,6 +56,7 @@ async fn plan_mode_uses_read_only_prompt_and_still_loads_context() {
     assert!(prompt.contains("end_task"));
     assert!(prompt.contains("<project_context>"));
     assert!(prompt.contains("Prefer focused changes"));
+    assert!(!prompt.contains("## Sparky tool system"));
 
     let build_prompt = sparky_prompt::PromptBuilder::new(root.to_string_lossy())
         .with_plan_mode(false)
@@ -66,6 +67,15 @@ async fn plan_mode_uses_read_only_prompt_and_still_loads_context() {
     assert!(build_prompt.contains("The in-app browser is an interaction and verification tool"));
     assert!(build_prompt.contains("Never invent, call, or suggest a fallback search engine"));
     assert!(build_prompt.contains("Do not mention search providers, indexing, ranking"));
+    assert!(build_prompt.contains("## Sparky tool system"));
+    assert!(build_prompt.contains("read(path, start_line?, end_line?)"));
+    assert!(build_prompt.contains("write(path, content)"));
+    assert!(build_prompt.contains("memory_update(id, title, content, category?, importance?)"));
+    assert!(build_prompt.contains("preview_status(tabId?)"));
+    assert!(build_prompt.contains("sparky_plugin_call(pluginId, action, input)"));
+    assert!(build_prompt.contains("sparky_request_plugin_authorization(pluginId)"));
+    assert!(build_prompt.contains("review_pull_request"));
+    assert!(build_prompt.contains("JavaScript/TypeScript extension"));
     assert!(!build_prompt.contains("You are Sparky in Plan mode"));
 }
 
@@ -107,4 +117,5 @@ async fn custom_prompt_still_receives_workspace_instructions_and_skill_catalog()
     assert!(prompt.contains("workspace instructions"));
     assert!(prompt.contains("path=\".agents/skills/example/SKILL.md\""));
     assert!(!prompt.contains("skill body"));
+    assert!(!prompt.contains("## Sparky tool system"));
 }

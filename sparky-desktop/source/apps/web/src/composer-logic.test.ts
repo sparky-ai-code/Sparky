@@ -8,6 +8,7 @@ import {
   isCollapsedCursorAdjacentToInlineToken,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
+  shouldOpenComposerMenu,
   shouldSubmitComposerOnEnter,
 } from "./composer-logic";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
@@ -23,6 +24,27 @@ describe("shouldSubmitComposerOnEnter", () => {
 
   it("inserts a newline for Shift+Enter", () => {
     expect(shouldSubmitComposerOnEnter({ isMobileViewport: false, shiftKey: true })).toBe(false);
+  });
+});
+
+describe("shouldOpenComposerMenu", () => {
+  it("opens the path picker for an explicit empty-range trigger", () => {
+    expect(
+      shouldOpenComposerMenu({ kind: "path", query: "", rangeStart: 4, rangeEnd: 4 }, null),
+    ).toBe(true);
+  });
+
+  it("keeps the menu closed when there is no active trigger", () => {
+    expect(shouldOpenComposerMenu(null, null)).toBe(false);
+  });
+
+  it("does not open an explicit non-path trigger without a live trigger", () => {
+    expect(
+      shouldOpenComposerMenu(
+        { kind: "slash-command", query: "", rangeStart: 0, rangeEnd: 0 },
+        null,
+      ),
+    ).toBe(false);
   });
 });
 

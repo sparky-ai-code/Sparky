@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { SourceControlProviderError, SourceControlProviderInfo } from "./sourceControl.ts";
 import { VcsDriverKind } from "./vcs.ts";
+import { ModelSelection } from "./orchestration.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const GIT_LIST_BRANCHES_MAX_LIMIT = 200;
@@ -141,6 +142,25 @@ export const VcsCreateWorktreeInput = Schema.Struct({
   path: Schema.NullOr(TrimmedNonEmptyStringSchema),
 });
 export type VcsCreateWorktreeInput = typeof VcsCreateWorktreeInput.Type;
+
+export const GIT_PULL_REQUEST_REVIEW_MAX_PROMPT_CHARS = 350_000;
+export const GIT_PULL_REQUEST_REVIEW_MAX_SYSTEM_PROMPT_CHARS = 16_000;
+export const GIT_PULL_REQUEST_REVIEW_MAX_RESPONSE_CHARS = 250_000;
+
+export const GitPullRequestReviewInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  modelSelection: ModelSelection,
+  prompt: Schema.String.check(Schema.isMaxLength(GIT_PULL_REQUEST_REVIEW_MAX_PROMPT_CHARS)),
+  systemPrompt: TrimmedNonEmptyStringSchema.check(
+    Schema.isMaxLength(GIT_PULL_REQUEST_REVIEW_MAX_SYSTEM_PROMPT_CHARS),
+  ),
+});
+export type GitPullRequestReviewInput = typeof GitPullRequestReviewInput.Type;
+
+export const GitPullRequestReviewResult = Schema.Struct({
+  response: Schema.String.check(Schema.isMaxLength(GIT_PULL_REQUEST_REVIEW_MAX_RESPONSE_CHARS)),
+});
+export type GitPullRequestReviewResult = typeof GitPullRequestReviewResult.Type;
 
 export const GitPullRequestRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,

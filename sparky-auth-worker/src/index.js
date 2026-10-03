@@ -278,19 +278,43 @@ async function verifyClerkJwt(token, env) {
 
 async function createPluginSession(request, env) {
   const authorization = request.headers.get("authorization") || "";
-  if (!authorization.startsWith("Bearer ")) return fail("Clerk authentication is required.", 401, "unauthorized");
-  const identity = await verifyClerkJwt(authorization.slice(7).trim(), env);
+  let identity;
+  let anonymous = false;
+  if (authorization.startsWith("Bearer ")) {
+    identity = await verifyClerkJwt(authorization.slice(7).trim(), env);
+  } else {
+    const body = await readJson(request);
+    if (
+      typeof body.installationId !== "string" ||
+      !/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/iu.test(
+        body.installationId,
+      )
+    ) {
+      return fail("A valid Sparky installation ID is required.", 400, "invalid_installation");
+    }
+    identity = {
+      userId: `guest_${await sha256(body.installationId.toLowerCase())}`,
+      email: null,
+      sessionId: null,
+    };
+    anonymous = true;
+  }
   const token = await sealStateless(
     {
       type: "plugin-session",
       userId: identity.userId,
       email: identity.email,
       sessionId: identity.sessionId,
+      anonymous,
       expiresAt: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
     },
     env,
   );
-  return json({ sessionToken: token, user: { id: identity.userId, email: identity.email } });
+  return json({
+    sessionToken: token,
+    user: { id: identity.userId, email: identity.email },
+    anonymous,
+  });
 }
 
 export async function authenticatePluginSession(request, env) {
@@ -869,9 +893,49 @@ async function executePluginAction(env, session, pluginId, action, input) {
   if (pluginId === "github") {
     const headers = { "X-GitHub-Api-Version": GITHUB_API_VERSION, "User-Agent": "Sparky-Plugin-Tool" };
     if (action === "list_repositories") return apiJson(`${GITHUB_API}/user/repos?sort=updated&per_page=${inputNumber(input, "limit", 30, 1, 100)}`, connection, {}, headers);
-    const repo = encodeURIComponent(inputString(input, "repository")).replaceAll("%2F", "/");
+    const repository = inputString(input, "repository");
+    const repositoryParts = repository.split("/");
+    if (
+      repositoryParts.length !== 2 ||
+      !/^[a-z\d-]+$/i.test(repositoryParts[0]) ||
+      !/^[a-z\d._-]+$/i.test(repositoryParts[1]) ||
+      repositoryParts[1] === "." ||
+      repositoryParts[1] === ".."
+    ) {
+      throw new Error("repository must be an owner/name pair.");
+    }
+    const repo = repositoryParts.map(encodeURIComponent).join("/");
     if (action === "list_pull_requests") return apiJson(`${GITHUB_API}/repos/${repo}/pulls?state=${encodeURIComponent(inputString(input, "state", false) || "open")}&per_page=${inputNumber(input, "limit", 30, 1, 100)}`, connection, {}, headers);
     if (action === "get_pull_request") return apiJson(`${GITHUB_API}/repos/${repo}/pulls/${inputNumber(input, "number", 1, 1, 1_000_000)}`, connection, {}, headers);
+    if (action === "list_pull_request_comments") {
+      const number = Number(input.number);
+      if (!Number.isSafeInteger(number) || number < 1 || number > 1_000_000) {
+        throw new Error("number must be a valid pull request number.");
+      }
+      const base = `${GITHUB_API}/repos/${repo}`;
+      const readPages = async (path) => {
+        const items = [];
+        for (let page = 1; page <= 10; page += 1) {
+          const value = await apiJson(`${base}${path}?per_page=100&page=${page}`, connection, {}, headers);
+          if (!Array.isArray(value)) throw new Error("GitHub returned an invalid pull request comments list.");
+          items.push(...value);
+          if (value.length < 100) break;
+        }
+        return items;
+      };
+      const [conversation, reviews, inline] = await Promise.all([
+        readPages(`/issues/${number}/comments`),
+        readPages(`/pulls/${number}/reviews`),
+        readPages(`/pulls/${number}/comments`),
+      ]);
+      const author = (item) => typeof item?.user?.login === "string" ? item.user.login : null;
+      const comments = [
+        ...conversation.map((item) => ({ id: `conversation:${item.id}`, kind: "conversation", authorLogin: author(item), body: typeof item.body === "string" ? item.body : "", createdAt: item.created_at ?? null, url: item.html_url ?? null, path: null, line: null })),
+        ...reviews.filter((item) => typeof item.body === "string" && item.body.trim()).map((item) => ({ id: `review:${item.id}`, kind: "review", authorLogin: author(item), body: item.body, createdAt: item.submitted_at ?? null, url: item.html_url ?? null, path: null, line: null })),
+        ...inline.map((item) => ({ id: `inline:${item.id}`, kind: "inline", authorLogin: author(item), body: typeof item.body === "string" ? item.body : "", createdAt: item.created_at ?? null, url: item.html_url ?? null, path: item.path ?? null, line: item.line ?? item.original_line ?? null })),
+      ].sort((left, right) => String(left.createdAt ?? "").localeCompare(String(right.createdAt ?? "")));
+      return { repository, number, comments };
+    }
     if (action === "create_issue") return apiJson(`${GITHUB_API}/repos/${repo}/issues`, connection, { method: "POST", body: JSON.stringify({ title: inputString(input, "title"), body: inputString(input, "body", false) || undefined }) }, headers);
     if (action === "create_comment") return apiJson(`${GITHUB_API}/repos/${repo}/issues/${inputNumber(input, "number", 1, 1, 1_000_000)}/comments`, connection, { method: "POST", body: JSON.stringify({ body: inputString(input, "body") }) }, headers);
   }
@@ -954,7 +1018,7 @@ async function executePluginAction(env, session, pluginId, action, input) {
 }
 
 const ACTIONS = {
-  github: ["list_repositories", "list_pull_requests", "get_pull_request", "create_issue", "create_comment"],
+  github: ["list_repositories", "list_pull_requests", "get_pull_request", "list_pull_request_comments", "create_issue", "create_comment"],
   jira: ["search_issues", "get_issue", "create_issue", "update_issue"],
   notion: ["search", "get_page", "create_page", "update_page"],
   gmail: ["search_messages", "get_message", "send_email", "create_draft"],

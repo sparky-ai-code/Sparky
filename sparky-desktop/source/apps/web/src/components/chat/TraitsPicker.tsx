@@ -397,6 +397,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
                     <MenuRadioItem
                       key={option.id}
                       value={option.id}
+                      title={option.description}
                       hideIndicator
                       disabled={
                         ultrathinkInBodyText && descriptor.id === primarySelectDescriptor?.id
@@ -445,6 +446,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
                   <MenuRadioItem
                     key={option.id}
                     value={option.id}
+                    title={option.description}
                     hideIndicator
                     disabled={ultrathinkInBodyText && descriptor.id === primarySelectDescriptor?.id}
                   >

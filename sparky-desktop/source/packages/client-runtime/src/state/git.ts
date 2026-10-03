@@ -19,5 +19,9 @@ export function createGitEnvironmentAtoms<R, E>(
       scheduler: vcsCommandScheduler,
       concurrency: vcsCommandConcurrency,
     }),
+    reviewPullRequest: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:git:review-pull-request",
+      tag: WS_METHODS.gitReviewPullRequest,
+    }),
   };
 }

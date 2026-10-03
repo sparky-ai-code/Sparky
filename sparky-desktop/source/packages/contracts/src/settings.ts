@@ -47,6 +47,14 @@ export const SidebarThreadPreviewCount = Schema.Int.check(
 export type SidebarThreadPreviewCount = typeof SidebarThreadPreviewCount.Type;
 export const DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT: SidebarThreadPreviewCount = 6;
 
+export const PullRequestReviewFocus = Schema.Literals(["security", "all", "critical", "simple"]);
+export type PullRequestReviewFocus = typeof PullRequestReviewFocus.Type;
+export const DEFAULT_PULL_REQUEST_REVIEW_FOCUS: PullRequestReviewFocus = "all";
+
+export const PullRequestReviewEffort = Schema.Literals(["quick", "thorough", "deep"]);
+export type PullRequestReviewEffort = typeof PullRequestReviewEffort.Type;
+export const DEFAULT_PULL_REQUEST_REVIEW_EFFORT: PullRequestReviewEffort = "thorough";
+
 export const ClientSettingsSchema = Schema.Struct({
   onboardingCompleted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   onboardingUseCase: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
@@ -110,6 +118,15 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   modelSelectorStyle: ModelSelectorStyle.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MODEL_SELECTOR_STYLE)),
+  ),
+  pullRequestReviewModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  pullRequestReviewFocus: PullRequestReviewFocus.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PULL_REQUEST_REVIEW_FOCUS)),
+  ),
+  pullRequestReviewEffort: PullRequestReviewEffort.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PULL_REQUEST_REVIEW_EFFORT)),
   ),
   wordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
@@ -653,6 +670,9 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   streamingTextAnimation: Schema.optionalKey(StreamingTextAnimation),
+  pullRequestReviewModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  pullRequestReviewFocus: Schema.optionalKey(PullRequestReviewFocus),
+  pullRequestReviewEffort: Schema.optionalKey(PullRequestReviewEffort),
   wordWrap: Schema.optionalKey(Schema.Boolean),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

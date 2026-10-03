@@ -13,7 +13,7 @@ if (!appPath || !artifactDir) {
 }
 
 const routes = [
-  ["onboarding", "/onboarding"],
+  ["onboarding-redirect", "/onboarding", /^\/(?:draft\/[0-9a-f-]{36})?$/u],
   ["plugins", "/plugins"],
   ["pull-requests", "/pull-requests"],
   ["schedules", "/schedules"],
@@ -143,7 +143,12 @@ try {
     let candidate;
     for (const current of [...candidates].reverse()) {
       const bodyText = await current.locator("body").innerText().catch(() => "");
-      if (bodyText.trim().length >= 10) {
+      const composerVisible = await current
+        .locator('[contenteditable="true"]')
+        .first()
+        .isVisible()
+        .catch(() => false);
+      if (bodyText.trim().length >= 10 && composerVisible) {
         candidate = current;
         break;
       }
@@ -167,14 +172,13 @@ try {
   if (initialText.trim().length < 10) throw new Error("The installed app window rendered no usable content.");
   await page.screenshot({ path: NodePath.join(artifactDir, "chat-start.png"), fullPage: true });
   const composer = page.locator('[contenteditable="true"]').first();
-  if (await composer.isVisible().catch(() => false)) {
-    const smokePrompt = "Sparky installed-app input check";
-    await composer.fill(smokePrompt);
-    if (!(await composer.innerText()).includes(smokePrompt)) {
-      throw new Error("The chat composer did not retain typed input.");
-    }
-    await composer.fill("");
+  await composer.waitFor({ state: "visible", timeout: 30_000 });
+  const smokePrompt = "Sparky installed-app input check";
+  await composer.fill(smokePrompt);
+  if (!(await composer.innerText()).includes(smokePrompt)) {
+    throw new Error("The chat composer did not retain typed input.");
   }
+  await composer.fill("");
 
   const manifest = [{ name: "chat-start", path: initialPath }];
   for (const [name, path, expectedPath = path] of routes) {
@@ -183,7 +187,11 @@ try {
     }, path);
     await page.waitForTimeout(1_000);
     const actualPath = await page.evaluate(() => window.location.hash.slice(1) || "/");
-    if (actualPath.replace(/\/$/u, "") !== expectedPath.replace(/\/$/u, "")) {
+    const matchesExpectedPath =
+      expectedPath instanceof RegExp
+        ? expectedPath.test(actualPath)
+        : actualPath.replace(/\/$/u, "") === expectedPath.replace(/\/$/u, "");
+    if (!matchesExpectedPath) {
       throw new Error(`Route ${path} redirected to ${actualPath}; expected ${expectedPath}.`);
     }
     const text = await page.locator("body").innerText().catch(() => "");

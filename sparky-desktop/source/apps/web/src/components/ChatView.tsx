@@ -1107,6 +1107,9 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
+  const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
     reportFailure: false,
   });
@@ -5771,6 +5774,11 @@ function ChatViewContent(props: ChatViewProps) {
                           onChangeActivePendingUserInputCustomAnswer
                         }
                         onProviderModelSelect={onProviderModelSelect}
+                        onRefreshModelCatalog={
+                          routeKind === "server"
+                            ? (instanceId) => refreshServerProviders({ instanceId })
+                            : undefined
+                        }
                         getModelDisabledReason={getModelDisabledReason}
                         toggleInteractionMode={toggleInteractionMode}
                         handleRuntimeModeChange={handleRuntimeModeChange}

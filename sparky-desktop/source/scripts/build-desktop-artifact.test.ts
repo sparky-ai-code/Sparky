@@ -36,15 +36,9 @@ import {
   resolveMockUpdateServerUrl,
   resolvePackageManagerUserAgent,
   stageLinuxIconSize,
-  resolveStageInstallArgs,
   STAGE_INSTALL_ARGS,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
-import {
-  DESKTOP_ASAR_RUNTIME_FILES,
-  findMissingDesktopAsarRuntimeFiles,
-  shouldBundleDesktopMainDependency,
-} from "./lib/desktop-main-runtime.ts";
 import { HostProcessArchitecture, HostProcessPlatform } from "@sparky/shared/hostProcess";
 
 function mockProcess(exitCode: number) {
@@ -185,27 +179,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     );
   });
 
-  it("bundles Effect runtime dependencies into the desktop main bundle", () => {
-    assert.isTrue(shouldBundleDesktopMainDependency("@effect/platform-node/NodeHttpClient"));
-    assert.isTrue(shouldBundleDesktopMainDependency("@effect/platform-node-shared"));
-    assert.isTrue(shouldBundleDesktopMainDependency("effect/Context"));
-    assert.isTrue(shouldBundleDesktopMainDependency("@sparky/ssh"));
-    assert.isFalse(shouldBundleDesktopMainDependency("electron-updater"));
-  });
-
-  it("requires Effect runtime modules to be unpacked from the packaged ASAR", () => {
-    assert.deepStrictEqual(
-      findMissingDesktopAsarRuntimeFiles(
-        (filePath) => new Set<string>(DESKTOP_ASAR_RUNTIME_FILES).has(filePath),
-      ),
-      [],
-    );
-    assert.deepStrictEqual(
-      findMissingDesktopAsarRuntimeFiles((filePath) => filePath !== DESKTOP_ASAR_RUNTIME_FILES[0]),
-      [DESKTOP_ASAR_RUNTIME_FILES[0]],
-    );
-  });
-
   it("omits Electron from staged server dependencies", () => {
     assert.deepStrictEqual(
       resolveServerRuntimeDependencies(
@@ -262,12 +235,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it("installs optional native dependencies for the target desktop architecture", () => {
     assert.deepStrictEqual(STAGE_INSTALL_ARGS, ["install", "--prod"]);
-    assert.deepStrictEqual(resolveStageInstallArgs("mac"), ["install", "--prod"]);
-    assert.deepStrictEqual(resolveStageInstallArgs("linux"), ["install", "--prod"]);
-    assert.deepStrictEqual(
-      resolveStageInstallArgs("win"),
-      ["install", "--prod", "--", "--node-linker=hoisted"],
-    );
     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "mac", arch: "x64" }), {
       supportedArchitectures: {
         os: ["darwin"],

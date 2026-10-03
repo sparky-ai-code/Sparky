@@ -120,9 +120,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     [props.activeInstanceId, props.instanceEntries],
   );
   const selectedInstanceOptions = props.modelOptionsByInstance.get(props.activeInstanceId) ?? [];
-  const selectedModel =
-    selectedInstanceOptions.find((option) => option.slug === props.model) ??
-    selectedInstanceOptions[0];
+  const selectedModel = selectedInstanceOptions.find((option) => option.slug === props.model);
   const triggerTitle = selectedModel ? getTriggerDisplayModelName(selectedModel) : props.model;
   const triggerLabel = selectedModel ? getTriggerDisplayModelLabel(selectedModel) : props.model;
   const selectedModelProvider = selectedModel ? getModelProviderPresentation(selectedModel) : null;

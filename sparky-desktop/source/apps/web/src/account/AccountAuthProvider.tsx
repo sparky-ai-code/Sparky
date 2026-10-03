@@ -12,13 +12,13 @@ import {
 
 import {
   clearPluginSession,
+  createAnonymousPluginSession,
   createPluginSession,
   loadPersistedPluginSessionToken,
   loadPluginSessionToken,
   retryPendingPluginSessionRevocation,
   syncPluginSessionToServer,
 } from "../components/plugins/pluginApi";
-import { AuthLoadingScreen, AuthSurfaceShell } from "../components/auth/AuthSurfaceShell";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import {
   clerkAuthFrameUrl,
@@ -35,7 +35,13 @@ import {
 
 type AccountState =
   | { readonly status: "loading"; readonly user: null; readonly session: null }
-  | { readonly status: "signed-out"; readonly user: null; readonly session: null }
+  | {
+      readonly status: "signed-out";
+      readonly user: null;
+      readonly session: null;
+      readonly pluginSessionReady: boolean;
+      readonly pluginError: string | null;
+    }
   | {
       readonly status: "signed-in";
       readonly user: ClerkUser;
@@ -50,10 +56,16 @@ type AccountState =
       readonly error: string;
     };
 
-const AccountContext = createContext<AccountState>({
-  status: "loading",
-  user: null,
-  session: null,
+interface AccountContextValue {
+  readonly account: AccountState;
+}
+
+const AccountContext = createContext<AccountContextValue>({
+  account: {
+    status: "loading",
+    user: null,
+    session: null,
+  },
 });
 const TOKEN_REQUEST_TIMEOUT_MS = 5_000;
 let tokenRequestSequence = 0;
@@ -72,7 +84,7 @@ function tokenExpiresWithin(token: string, seconds: number): boolean {
 }
 
 export function useAccountState(): AccountState {
-  return useContext(AccountContext);
+  return useContext(AccountContext).account;
 }
 
 function makeRequestId(): string {
@@ -136,7 +148,41 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
 
   useEffect(() => {
     let active = true;
+    let releaseFrameReadiness: (() => void) | null = null;
+    const frameReadiness = new Promise<void>((resolve) => {
+      releaseFrameReadiness = resolve;
+    });
+    const signalFrameReadiness = () => {
+      releaseFrameReadiness?.();
+      releaseFrameReadiness = null;
+    };
     void retryPendingPluginSessionRevocation();
+    const createGuestSession = async () => {
+      try {
+        await createAnonymousPluginSession();
+        if (active && activeSessionIdRef.current === null) {
+          setState({
+            status: "signed-out",
+            user: null,
+            session: null,
+            pluginSessionReady: true,
+            pluginError: null,
+          });
+        }
+      } catch (error: unknown) {
+        if (active && activeSessionIdRef.current === null) {
+          setState({
+            status: "signed-out",
+            user: null,
+            session: null,
+            pluginSessionReady: false,
+            pluginError:
+              error instanceof Error ? error.message : "Plugin session could not be created.",
+          });
+        }
+      }
+    };
+
     const clearAccount = () => {
       if (externalSessionRef.current || restoringSessionRef.current) return;
       latestTokenRef.current = null;
@@ -144,8 +190,18 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
       pluginSessionIdRef.current = null;
       setActiveClerkTokenReader(null);
       setManagedRelaySession(appAtomRegistry, null);
-      void clearPluginSession();
-      if (active) setState({ status: "signed-out", user: null, session: null });
+      if (active) {
+        setState({
+          status: "signed-out",
+          user: null,
+          session: null,
+          pluginSessionReady: false,
+          pluginError: null,
+        });
+      }
+      void clearPluginSession()
+        .catch(() => undefined)
+        .then(createGuestSession);
     };
 
     const applySession = (
@@ -318,6 +374,7 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
       }
 
       if (message.type === "ready") {
+        signalFrameReadiness();
         return;
       }
 
@@ -327,6 +384,7 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
       }
 
       if (message.type === "error") {
+        signalFrameReadiness();
         if (activeSessionIdRef.current === null) {
           setState({ status: "error", user: null, session: null, error: message.message });
         }
@@ -340,21 +398,43 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
 
     window.addEventListener("message", onMessage);
     const removeClerkCallback = window.desktopBridge?.onClerkCallback?.(handleExternalCallback);
-    const restoreAttempt = loadPersistedPluginSessionToken().then((savedPluginSessionToken) =>
-      savedPluginSessionToken
-        ? restoreClerkSession(savedPluginSessionToken).then(async (restored) => {
-            if (restored === null) {
-              await clearPluginSession(savedPluginSessionToken);
-            }
-            return restored;
-          })
-        : null,
+    const restoreAttempt = loadPersistedPluginSessionToken().then(
+      async (savedPluginSessionToken) => {
+        if (!savedPluginSessionToken) {
+          return { restored: null, savedPluginSessionToken: null, restoreError: null };
+        }
+        try {
+          const restored = await restoreClerkSession(savedPluginSessionToken);
+          if (restored === null) await clearPluginSession(savedPluginSessionToken);
+          return { restored, savedPluginSessionToken, restoreError: null };
+        } catch (restoreError: unknown) {
+          return { restored: null, savedPluginSessionToken, restoreError };
+        }
+      },
     );
     void restoreAttempt
-      .then((restored) => {
+      .then(async ({ restored, savedPluginSessionToken, restoreError }) => {
         if (!active) return;
         if (!restored) {
-          setState({ status: "signed-out", user: null, session: null });
+          await Promise.race([
+            frameReadiness,
+            new Promise<void>((resolve) => window.setTimeout(resolve, 5_000)),
+          ]);
+          if (activeSessionIdRef.current === null) {
+            if (savedPluginSessionToken && restoreError) {
+              await syncPluginSessionToServer(savedPluginSessionToken).catch(() => undefined);
+              setState({
+                status: "signed-out",
+                user: null,
+                session: null,
+                pluginSessionReady: true,
+                pluginError:
+                  "Could not refresh the saved account session. Keeping existing plugin connections; check your connection and try signing in again.",
+              });
+              return;
+            }
+            await createGuestSession();
+          }
           return;
         }
         externalSessionRef.current = true;
@@ -402,54 +482,24 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
     };
   }, [readToken]);
 
-  const contextValue = useMemo(() => state, [state]);
+  const contextValue = useMemo(() => ({ account: state }), [state]);
   const authFrame = (
     <iframe
       ref={iframeRef}
-      title="Sparky account sign in"
+      title="Sparky account session"
       src={clerkAuthFrameUrl()}
       sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
-      aria-hidden={state.status === "loading" || state.status === "signed-in"}
-      className={
-        state.status === "loading" || state.status === "signed-in"
-          ? "pointer-events-none fixed left-0 top-0 size-px border-0 opacity-0"
-          : "h-[min(660px,calc(100vh-3rem))] w-full max-w-[480px] border-0 bg-transparent"
-      }
+      aria-hidden="true"
+      className="pointer-events-none fixed left-0 top-0 size-px border-0 opacity-0"
     />
   );
 
-  if (state.status === "loading") {
-    // Keep the broker frame mounted while the branded loading screen is shown.
-    // The frame is what emits the Clerk ready/session message that advances
-    // this state; returning only the splash would make loading permanent.
-    return (
-      <>
-        <AuthLoadingScreen />
-        {authFrame}
-      </>
-    );
-  }
-
-  if (state.status === "signed-out") {
-    return <AuthSurfaceShell>{authFrame}</AuthSurfaceShell>;
-  }
-
-  if (state.status === "error") {
-    return (
-      <AuthSurfaceShell>
-        <div className="w-full max-w-[480px] rounded-2xl border border-border bg-card p-5 text-sm">
-          <h1 className="font-semibold">Sparky sign in</h1>
-          <p className="mt-2 leading-6 text-muted-foreground">{state.error}</p>
-          <div className="mt-4 overflow-hidden rounded-xl border border-border/70">{authFrame}</div>
-        </div>
-      </AuthSurfaceShell>
-    );
-  }
-
+  // Keep the broker frame mounted in the background, but plugin access is backed
+  // by an anonymous installation session when no Sparky account is signed in.
   return (
     <AccountContext.Provider value={contextValue}>
-      {authFrame}
       {children}
+      {authFrame}
     </AccountContext.Provider>
   );
 }

@@ -15,6 +15,7 @@ import { currentAuthSessionId } from "../provider/ProviderExecutionContext.ts";
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly cwd?: string;
 }
 
 export interface McpIssuedCredential {
@@ -127,6 +128,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const expiresAt = issuedAt + maximumLifetimeMs;
       const scope: McpInvocationContext.McpInvocationScope = {
         environmentId,
+        ...(request.cwd ? { cwd: request.cwd } : {}),
         ...(authSessionId ? { authSessionId } : {}),
         threadId: ThreadId.make(request.threadId),
         providerSessionId,

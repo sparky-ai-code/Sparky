@@ -142,11 +142,8 @@ impl CodexProvider {
             let credentials = valid_codex_credentials().await?;
             let response = self
                 .client
-                .post("https://chatgpt.com/backend-api/codex/responses")
+                .post("https://api.openai.com/v1/responses")
                 .bearer_auth(credentials.access)
-                .header("chatgpt-account-id", credentials.account_id)
-                .header("originator", "sparky")
-                .header("OpenAI-Beta", "responses=experimental")
                 .header("Accept", "text/event-stream")
                 .header(
                     "User-Agent",

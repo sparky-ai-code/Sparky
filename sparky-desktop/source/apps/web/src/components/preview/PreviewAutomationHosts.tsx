@@ -51,7 +51,12 @@ import {
   PreviewAutomationTargetUnavailableError,
   PreviewAutomationViewportTimeoutError,
 } from "./previewAutomationErrors";
-import { previewAutomationOpenNeedsOverlay } from "./previewAutomationOpenReadiness";
+import {
+  preparePreviewAutomationOpen,
+  previewAutomationOpenNeedsOverlay,
+  previewAutomationOpenRequiresVisibility,
+  previewAutomationOverlayReady,
+} from "./previewAutomationOpenReadiness";
 import { createPreviewAutomationRequestConsumerAtom } from "./previewAutomationRequestConsumer";
 import { createPreviewAutomationClientId } from "./previewAutomationClientId";
 import {
@@ -66,13 +71,16 @@ const waitForDesktopOverlay = async (
   requestId: string,
   tabId: string,
   timeoutMs: number,
+  requireVisible = false,
 ): Promise<void> => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
     const state = readThreadPreviewState(threadRef);
     if (state.desktopByTabId[tabId] && previewBridge) {
       const status = await previewBridge.automation.status(tabId);
-      if (status.available) return;
+      // A registered but hidden guest can still hang CDP snapshot/evaluate requests.
+      const visible = useBrowserSurfaceStore.getState().byTabId[tabId]?.visible === true;
+      if (previewAutomationOverlayReady(status.available, visible, requireVisible)) return;
     }
     await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
   }
@@ -299,6 +307,23 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
 
   const handleRequest = useCallback(
     async (request: PreviewAutomationRequest): Promise<unknown> => {
+      if (request.operation === "githubPullRequestComments") {
+        const githubBridge = window.desktopBridge as
+          | (typeof window.desktopBridge & {
+              getGitHubPullRequestComments?: (input: {
+                repository: string;
+                number: number;
+              }) => Promise<{ comments: unknown[]; error: string | null }>;
+            })
+          | undefined;
+        if (typeof githubBridge?.getGitHubPullRequestComments !== "function") {
+          throw new Error("GitHub pull request comments are unavailable in this desktop session.");
+        }
+        return await githubBridge.getGitHubPullRequestComments(
+          request.input as { repository: string; number: number },
+        );
+      }
+
       const threadRef: ScopedThreadRef = {
         environmentId,
         threadId: request.threadId,
@@ -379,24 +404,35 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
             if (input.show ?? true) {
               useRightPanelStore.getState().openBrowser(threadRef, activeTabId);
             }
-            if (activeSnapshot && previewAutomationOpenNeedsOverlay(input, activeSnapshot)) {
-              await waitForDesktopOverlay(
-                threadRef,
-                request.requestId,
-                activeTabId,
-                request.timeoutMs,
-              );
-            }
-            if (reusedExistingTab && resolvedInputUrl && previewBridge) {
-              await previewBridge.navigate(activeTabId, resolvedInputUrl);
-              await waitForNavigationReadiness(
-                threadRef,
-                request.requestId,
-                activeTabId,
-                "load",
-                request.timeoutMs,
-              );
-            }
+            const bridge = previewBridge;
+            const navigateExistingTab =
+              reusedExistingTab && resolvedInputUrl && bridge
+                ? async () => {
+                    await bridge.navigate(activeTabId, resolvedInputUrl);
+                    await waitForNavigationReadiness(
+                      threadRef,
+                      request.requestId,
+                      activeTabId,
+                      "load",
+                      request.timeoutMs,
+                    );
+                  }
+                : undefined;
+            const waitForOverlay =
+              activeSnapshot && previewAutomationOpenNeedsOverlay(input, activeSnapshot)
+                ? async () =>
+                    waitForDesktopOverlay(
+                      threadRef,
+                      request.requestId,
+                      activeTabId,
+                      request.timeoutMs,
+                      previewAutomationOpenRequiresVisibility(input),
+                    )
+                : undefined;
+            await preparePreviewAutomationOpen({
+              navigate: navigateExistingTab,
+              waitForOverlay,
+            });
             return await currentStatus(threadRef, activeTabId);
           }
           case "navigate": {

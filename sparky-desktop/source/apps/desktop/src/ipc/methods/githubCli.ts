@@ -10,21 +10,19 @@ import { app, safeStorage, shell } from "electron";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import { PositiveInt, TrimmedNonEmptyString } from "@sparky/contracts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import { GITHUB_OAUTH_SCOPE, githubUserRepositoriesPath } from "./githubOAuth.ts";
 import { isDefinitiveGitHubAuthFailure } from "./githubResilience.ts";
+import { buildGitHubPullRequestReviewPayload } from "@sparky/shared/pullRequestReview";
 
 const execFile = promisify(execFileCallback);
 
 declare const __SPARKY_GITHUB_CLIENT_ID__: string;
 declare const __SPARKY_GITHUB_AUTH_BROKER_URL__: string;
 
-const GitHubCliAuthStatusSchema = Schema.Literals([
-  "authenticated",
-  "unauthenticated",
-  "unknown",
-]);
+const GitHubCliAuthStatusSchema = Schema.Literals(["authenticated", "unauthenticated", "unknown"]);
 
 const GitHubCliStatusSchema = Schema.Struct({
   installed: Schema.Boolean,
@@ -64,8 +62,8 @@ const GitHubPullRequestSchema = Schema.Struct({
   body: Schema.NullOr(Schema.String),
   commentsCount: Schema.Number,
   reviewsCount: Schema.Number,
-  checksCount: Schema.Number,
-  failedChecksCount: Schema.Number,
+  checksCount: Schema.NullOr(Schema.Number),
+  failedChecksCount: Schema.NullOr(Schema.Number),
   reviewers: Schema.Array(Schema.String),
   labels: Schema.Array(Schema.String),
 });
@@ -85,10 +83,55 @@ const GitHubPullRequestDetailResultSchema = Schema.Struct({
   pullRequest: Schema.NullOr(GitHubPullRequestSchema),
   error: Schema.NullOr(Schema.String),
 });
+const GitHubPullRequestCommentSchema = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literals(["conversation", "review", "inline"]),
+  authorLogin: Schema.NullOr(Schema.String),
+  body: Schema.String,
+  createdAt: Schema.NullOr(Schema.String),
+  url: Schema.NullOr(Schema.String),
+  path: Schema.NullOr(Schema.String),
+  line: Schema.NullOr(Schema.Number),
+});
+const GitHubPullRequestCommentsResultSchema = Schema.Struct({
+  comments: Schema.Array(GitHubPullRequestCommentSchema),
+  error: Schema.NullOr(Schema.String),
+});
 
 const ListRepositoriesInputSchema = Schema.Struct({ cwds: Schema.Array(Schema.String) });
-const ListPullRequestsInputSchema = Schema.Struct({ repository: Schema.String, scope: PullRequestScopeSchema });
-const GetPullRequestInputSchema = Schema.Struct({ repository: Schema.String, number: Schema.Number });
+const ListPullRequestsInputSchema = Schema.Struct({
+  repository: Schema.String,
+  scope: PullRequestScopeSchema,
+});
+const GetPullRequestInputSchema = Schema.Struct({
+  repository: Schema.String,
+  number: Schema.Number,
+});
+const UpdatePullRequestInputSchema = Schema.Struct({
+  repository: Schema.String,
+  number: Schema.Number,
+  action: Schema.Literals(["merge", "squash", "close"]),
+});
+const UpdatePullRequestResultSchema = Schema.Struct({ error: Schema.NullOr(Schema.String) });
+const GitHubReviewFindingSchema = Schema.Struct({
+  path: TrimmedNonEmptyString.check(Schema.isMaxLength(1_000)),
+  line: PositiveInt,
+  severity: Schema.Literals(["critical", "high", "medium", "low"]),
+  title: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  body: TrimmedNonEmptyString.check(Schema.isMaxLength(5_000)),
+});
+const PostPullRequestReviewInputSchema = Schema.Struct({
+  repository: TrimmedNonEmptyString.check(Schema.isMaxLength(500)),
+  number: PositiveInt,
+  expectedHeadSha: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
+  summary: TrimmedNonEmptyString.check(Schema.isMaxLength(8_000)),
+  findings: Schema.Array(GitHubReviewFindingSchema),
+});
+const PostPullRequestReviewResultSchema = Schema.Struct({
+  submittedComments: Schema.Number,
+  skippedComments: Schema.Number,
+  error: Schema.NullOr(Schema.String),
+});
 
 type GitHubCliStatus = typeof GitHubCliStatusSchema.Type;
 type PullRequestScope = typeof PullRequestScopeSchema.Type;
@@ -97,7 +140,35 @@ type GitHubPullRequest = typeof GitHubPullRequestSchema.Type;
 type GitHubRepositoryListResult = typeof GitHubRepositoryListResultSchema.Type;
 type GitHubPullRequestListResult = typeof GitHubPullRequestListResultSchema.Type;
 type GitHubPullRequestDetailResult = typeof GitHubPullRequestDetailResultSchema.Type;
+type PostPullRequestReviewInput = typeof PostPullRequestReviewInputSchema.Type;
 type JsonRecord = Record<string, unknown>;
+
+type PullRequestCheckSummary = {
+  readonly checksCount: number;
+  readonly failedChecksCount: number;
+};
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function parseGitHubRepository(repository: string): { owner: string; repo: string } | null {
+  const parts = repository.split("/");
+  const owner = parts[0];
+  const repo = parts[1];
+  if (
+    parts.length !== 2 ||
+    !owner ||
+    !repo ||
+    !/^[a-z\d-]+$/i.test(owner) ||
+    !/^[a-z\d._-]+$/i.test(repo) ||
+    repo === "." ||
+    repo === ".."
+  ) {
+    return null;
+  }
+  return { owner, repo };
+}
 
 type GitHubCredentials = {
   version: 1;
@@ -186,7 +257,11 @@ function securePersistenceAvailable(): boolean {
 function validCredentials(value: unknown): GitHubCredentials | null {
   if (!value || typeof value !== "object") return null;
   const record = value as JsonRecord;
-  if (record.version !== 1 || typeof record.accessToken !== "string" || record.accessToken.length < 20) {
+  if (
+    record.version !== 1 ||
+    typeof record.accessToken !== "string" ||
+    record.accessToken.length < 20
+  ) {
     return null;
   }
   return {
@@ -246,7 +321,8 @@ function configuredBrokerUrl(): string | null {
   if (!AUTH_BROKER_URL) return null;
   try {
     const url = new URL(AUTH_BROKER_URL);
-    const loopbackDev = url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "::1");
+    const loopbackDev =
+      url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "::1");
     if (url.protocol !== "https:" && !loopbackDev) return null;
     url.pathname = url.pathname.replace(/\/+$/u, "");
     url.search = "";
@@ -258,7 +334,8 @@ function configuredBrokerUrl(): string | null {
 }
 
 function authConfigurationError(): string | null {
-  if (!CLIENT_ID) return "GitHub authentication is not configured: missing SPARKY_GITHUB_CLIENT_ID.";
+  if (!CLIENT_ID)
+    return "GitHub authentication is not configured: missing SPARKY_GITHUB_CLIENT_ID.";
   if (!configuredBrokerUrl()) {
     return "GitHub authentication is not configured: SPARKY_GITHUB_AUTH_BROKER_URL must be HTTPS (or loopback HTTP for development).";
   }
@@ -290,7 +367,8 @@ async function brokerJson(path: string, body: JsonRecord): Promise<JsonRecord> {
   if (text) {
     try {
       const parsed = JSON.parse(text) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) value = parsed as JsonRecord;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+        value = parsed as JsonRecord;
     } catch {
       // Preserve the HTTP error below without exposing response internals.
     }
@@ -298,7 +376,9 @@ async function brokerJson(path: string, body: JsonRecord): Promise<JsonRecord> {
   if (!response.ok) {
     throw new GitHubBrokerError(
       response.status,
-      typeof value.error === "string" ? value.error : `GitHub authentication broker returned HTTP ${response.status}.`,
+      typeof value.error === "string"
+        ? value.error
+        : `GitHub authentication broker returned HTTP ${response.status}.`,
     );
   }
   return value;
@@ -309,7 +389,8 @@ function credentialsFromBroker(value: JsonRecord): GitHubCredentials {
     throw new Error("GitHub authentication broker returned an invalid access token response.");
   }
   const now = Date.now();
-  const expiresIn = typeof value.expires_in === "number" && value.expires_in > 0 ? value.expires_in : null;
+  const expiresIn =
+    typeof value.expires_in === "number" && value.expires_in > 0 ? value.expires_in : null;
   const refreshExpiresIn =
     typeof value.refresh_token_expires_in === "number" && value.refresh_token_expires_in > 0
       ? value.refresh_token_expires_in
@@ -327,7 +408,10 @@ function credentialsFromBroker(value: JsonRecord): GitHubCredentials {
 async function refreshCredentials(force = false): Promise<GitHubCredentials | null> {
   const current = await loadCredentials();
   if (!current) return null;
-  if (!force && (current.expiresAt === null || current.expiresAt - TOKEN_EXPIRY_SKEW_MS > Date.now())) {
+  if (
+    !force &&
+    (current.expiresAt === null || current.expiresAt - TOKEN_EXPIRY_SKEW_MS > Date.now())
+  ) {
     return current;
   }
   if (!current.refreshToken) {
@@ -368,7 +452,9 @@ async function getAccessToken(): Promise<string | null> {
 async function fetchGitHub(path: string, init: RequestInit, headers: Headers): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GITHUB_REQUEST_TIMEOUT_MS);
-  const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal;
+  const signal = init.signal
+    ? AbortSignal.any([init.signal, controller.signal])
+    : controller.signal;
   try {
     return await fetch(`${GITHUB_API}${path}`, { ...init, headers, signal });
   } finally {
@@ -376,7 +462,11 @@ async function fetchGitHub(path: string, init: RequestInit, headers: Headers): P
   }
 }
 
-async function githubFetch(path: string, init: RequestInit = {}, allowRefresh = true): Promise<Response> {
+async function githubFetch(
+  path: string,
+  init: RequestInit = {},
+  allowRefresh = true,
+): Promise<Response> {
   const token = await getAccessToken();
   if (!token) throw new Error("GitHub authentication is required.");
   const headers = new Headers(init.headers);
@@ -403,7 +493,10 @@ async function githubJson(path: string, init: RequestInit = {}): Promise<unknown
   const response = await githubFetch(path, init);
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    throw new GitHubApiError(response.status, `GitHub API ${response.status}: ${detail || response.statusText}`);
+    throw new GitHubApiError(
+      response.status,
+      `GitHub API ${response.status}: ${detail || response.statusText}`,
+    );
   }
   return response.json() as Promise<unknown>;
 }
@@ -418,7 +511,13 @@ async function currentUser(): Promise<string | null> {
 async function getGitHubCliStatus(): Promise<GitHubCliStatus> {
   const configurationError = authConfigurationError();
   if (configurationError) {
-    return { installed: true, version: "GitHub OAuth App + PKCE", auth: "unknown", account: null, detail: configurationError };
+    return {
+      installed: true,
+      version: "GitHub OAuth App + PKCE",
+      auth: "unknown",
+      account: null,
+      detail: configurationError,
+    };
   }
   const credentials = await loadCredentials();
   if (!credentials) {
@@ -437,7 +536,13 @@ async function getGitHubCliStatus(): Promise<GitHubCliStatus> {
   try {
     const account = await currentUser();
     if (!account) throw new Error("GitHub did not return an account.");
-    return { installed: true, version: "GitHub OAuth App + PKCE", auth: "authenticated", account, detail: authDetail };
+    return {
+      installed: true,
+      version: "GitHub OAuth App + PKCE",
+      auth: "authenticated",
+      account,
+      detail: authDetail,
+    };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const status =
@@ -511,27 +616,39 @@ async function runAuthorizationCodeFlow(): Promise<void> {
     try {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       if (request.method !== "GET" || url.pathname !== OAUTH_CALLBACK_PATH) {
-        response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+        response.writeHead(404, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
         response.end("Not found");
         return;
       }
       const returnedState = url.searchParams.get("state") ?? "";
       if (!statesEqual(returnedState, state)) {
-        response.writeHead(400, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+        response.writeHead(400, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
         response.end(callbackHtml(false));
         rejectCallback?.(new Error("GitHub authorization state validation failed."));
         return;
       }
       const oauthError = url.searchParams.get("error");
       if (oauthError) {
-        response.writeHead(400, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+        response.writeHead(400, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
         response.end(callbackHtml(false));
         rejectCallback?.(new Error(url.searchParams.get("error_description") || oauthError));
         return;
       }
       const code = url.searchParams.get("code");
       if (!code) {
-        response.writeHead(400, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+        response.writeHead(400, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
         response.end(callbackHtml(false));
         rejectCallback?.(new Error("GitHub did not return an authorization code."));
         return;
@@ -545,7 +662,10 @@ async function runAuthorizationCodeFlow(): Promise<void> {
       response.end(callbackHtml(true));
       resolveCallback?.(code);
     } catch {
-      response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+      response.writeHead(400, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
       response.end("Bad request");
       rejectCallback?.(new Error("Could not process GitHub authorization callback."));
     }
@@ -574,7 +694,10 @@ async function runAuthorizationCodeFlow(): Promise<void> {
   await shell.openExternal(authorize.toString());
 
   const timeout = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error("GitHub authorization timed out. Please try again.")), OAUTH_CALLBACK_TIMEOUT_MS);
+    setTimeout(
+      () => reject(new Error("GitHub authorization timed out. Please try again.")),
+      OAUTH_CALLBACK_TIMEOUT_MS,
+    );
   });
 
   try {
@@ -589,7 +712,6 @@ async function runAuthorizationCodeFlow(): Promise<void> {
     authDetail = securePersistenceAvailable()
       ? null
       : "Connected for this session. Secure OS credential storage is unavailable, so credentials were not persisted.";
-
   } finally {
     server.close();
   }
@@ -612,7 +734,9 @@ async function startGitHubCliAuth(): Promise<GitHubCliStatus> {
 async function disconnectGitHub(): Promise<GitHubCliStatus> {
   const current = await loadCredentials();
   if (current && configuredBrokerUrl()) {
-    await brokerJson("/v1/github/revoke", { access_token: current.accessToken }).catch(() => undefined);
+    await brokerJson("/v1/github/revoke", { access_token: current.accessToken }).catch(
+      () => undefined,
+    );
   }
   await clearCredentials();
   authDetail = null;
@@ -670,7 +794,9 @@ async function listUserRepositories(): Promise<GitHubRepository[]> {
   );
 }
 
-async function listRepositories(input: { cwds: readonly string[] }): Promise<GitHubRepositoryListResult> {
+async function listRepositories(input: {
+  cwds: readonly string[];
+}): Promise<GitHubRepositoryListResult> {
   const status = await getGitHubCliStatus();
   if (status.auth !== "authenticated") {
     return { repositories: [], error: status.detail ?? "GitHub is not authenticated." };
@@ -687,9 +813,16 @@ async function listRepositories(input: { cwds: readonly string[] }): Promise<Git
       ...repository,
       isLocal: localNames.has(repository.nameWithOwner),
     }));
-    repositories.sort((a, b) => Number(b.isLocal) - Number(a.isLocal) || (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+    repositories.sort(
+      (a, b) =>
+        Number(b.isLocal) - Number(a.isLocal) ||
+        (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""),
+    );
     if (repositories.length === 0) {
-      return { repositories: [], error: "No repositories are available to this GitHub OAuth authorization." };
+      return {
+        repositories: [],
+        error: "No repositories are available to this GitHub OAuth authorization.",
+      };
     }
     return { repositories, error: null };
   } catch (error) {
@@ -715,7 +848,8 @@ function prFromRest(value: unknown): GitHubPullRequest | null {
     number: item.number,
     title: item.title,
     url: item.html_url,
-    state: typeof item.merged_at === "string" ? "MERGED" : String(item.state ?? "OPEN").toUpperCase(),
+    state:
+      typeof item.merged_at === "string" ? "MERGED" : String(item.state ?? "OPEN").toUpperCase(),
     isDraft: item.draft === true,
     headRefName: typeof head?.ref === "string" ? head.ref : "",
     baseRefName: typeof base?.ref === "string" ? base.ref : "",
@@ -723,31 +857,97 @@ function prFromRest(value: unknown): GitHubPullRequest | null {
     createdAt: typeof item.created_at === "string" ? item.created_at : item.updated_at,
     authorLogin: typeof user?.login === "string" ? user.login : null,
     reviewDecision: null,
-    mergeable: typeof item.mergeable === "boolean" ? (item.mergeable ? "MERGEABLE" : "CONFLICTING") : null,
-    mergeStateStatus: typeof item.mergeable_state === "string" ? item.mergeable_state.toUpperCase() : null,
+    mergeable:
+      typeof item.mergeable === "boolean" ? (item.mergeable ? "MERGEABLE" : "CONFLICTING") : null,
+    mergeStateStatus:
+      typeof item.mergeable_state === "string" ? item.mergeable_state.toUpperCase() : null,
     additions: typeof item.additions === "number" ? item.additions : 0,
     deletions: typeof item.deletions === "number" ? item.deletions : 0,
     changedFiles: typeof item.changed_files === "number" ? item.changed_files : 0,
     body: typeof item.body === "string" ? item.body : null,
     commentsCount: typeof item.comments === "number" ? item.comments : 0,
     reviewsCount: typeof item.review_comments === "number" ? item.review_comments : 0,
-    checksCount: 0,
-    failedChecksCount: 0,
+    checksCount: null,
+    failedChecksCount: null,
     reviewers: Array.isArray(item.requested_reviewers)
       ? item.requested_reviewers.flatMap((reviewer) =>
-          typeof reviewer === "object" && reviewer !== null && typeof (reviewer as JsonRecord).login === "string"
+          typeof reviewer === "object" &&
+          reviewer !== null &&
+          typeof (reviewer as JsonRecord).login === "string"
             ? [(reviewer as JsonRecord).login as string]
             : [],
         )
       : [],
     labels: Array.isArray(item.labels)
       ? item.labels.flatMap((label) =>
-          typeof label === "object" && label !== null && typeof (label as JsonRecord).name === "string"
+          typeof label === "object" &&
+          label !== null &&
+          typeof (label as JsonRecord).name === "string"
             ? [(label as JsonRecord).name as string]
             : [],
         )
       : [],
   };
+}
+
+async function getPullRequestCheckSummary(input: {
+  readonly owner: string;
+  readonly repo: string;
+  readonly headSha: string;
+}): Promise<PullRequestCheckSummary | null> {
+  const commitPath = `/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/commits/${encodeURIComponent(input.headSha)}`;
+  try {
+    const [checkRunsValue, statusValue] = await Promise.all([
+      githubJson(`${commitPath}/check-runs?per_page=100`),
+      githubJson(`${commitPath}/status?per_page=100`),
+    ]);
+    if (!isJsonRecord(checkRunsValue) || !isJsonRecord(statusValue)) return null;
+    const checkRuns = checkRunsValue.check_runs;
+    const statuses = statusValue.statuses;
+    if (!Array.isArray(checkRuns) || !Array.isArray(statuses)) return null;
+
+    const checkRunCount =
+      typeof checkRunsValue.total_count === "number"
+        ? checkRunsValue.total_count
+        : checkRuns.length;
+    const statusCount =
+      typeof statusValue.total_count === "number" ? statusValue.total_count : statuses.length;
+    if (
+      !Number.isSafeInteger(checkRunCount) ||
+      checkRunCount < 0 ||
+      !Number.isSafeInteger(statusCount) ||
+      statusCount < 0
+    ) {
+      return null;
+    }
+
+    const failedConclusions = new Set([
+      "action_required",
+      "cancelled",
+      "failure",
+      "startup_failure",
+      "timed_out",
+    ]);
+    const failedCheckRuns = checkRuns.filter(
+      (value) =>
+        isJsonRecord(value) &&
+        typeof value.conclusion === "string" &&
+        failedConclusions.has(value.conclusion),
+    ).length;
+    const failedStatuses = statuses.filter(
+      (value) =>
+        isJsonRecord(value) &&
+        typeof value.state === "string" &&
+        ["error", "failure"].includes(value.state.toLowerCase()),
+    ).length;
+
+    return {
+      checksCount: checkRunCount + statusCount,
+      failedChecksCount: failedCheckRuns + failedStatuses,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function listPullRequests(input: {
@@ -756,11 +956,16 @@ async function listPullRequests(input: {
 }): Promise<GitHubPullRequestListResult> {
   const status = await getGitHubCliStatus();
   if (status.auth !== "authenticated") {
-    return { repository: input.repository, pullRequests: [], error: status.detail ?? "GitHub is not authenticated." };
+    return {
+      repository: input.repository,
+      pullRequests: [],
+      error: status.detail ?? "GitHub is not authenticated.",
+    };
   }
   try {
-    const [owner, repo] = input.repository.split("/", 2);
-    if (!owner || !repo) throw new Error("Invalid GitHub repository name.");
+    const repository = parseGitHubRepository(input.repository);
+    if (!repository) throw new Error("Invalid GitHub repository name.");
+    const { owner, repo } = repository;
     const value = await githubJson(
       `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?state=all&per_page=100&sort=updated&direction=desc`,
     );
@@ -773,11 +978,17 @@ async function listPullRequests(input: {
       pullRequests = pullRequests.filter((pr) => pr.authorLogin === status.account);
     } else if (input.scope === "reviewing" && status.account) {
       const reviewer = status.account.toLowerCase();
-      pullRequests = pullRequests.filter((pr) => pr.reviewers.some((name) => name.toLowerCase() === reviewer));
+      pullRequests = pullRequests.filter((pr) =>
+        pr.reviewers.some((name) => name.toLowerCase() === reviewer),
+      );
     }
     return { repository: input.repository, pullRequests, error: null };
   } catch (error) {
-    return { repository: input.repository, pullRequests: [], error: error instanceof Error ? error.message : String(error) };
+    return {
+      repository: input.repository,
+      pullRequests: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -790,17 +1001,247 @@ async function getPullRequest(input: {
     return { pullRequest: null, error: status.detail ?? "GitHub is not authenticated." };
   }
   try {
-    const [owner, repo] = input.repository.split("/", 2);
-    if (!owner || !repo) throw new Error("Invalid GitHub repository name.");
+    const repository = parseGitHubRepository(input.repository);
+    if (!repository) throw new Error("Invalid GitHub repository name.");
+    const { owner, repo } = repository;
     const value = await githubJson(
       `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${input.number}`,
     );
     const pullRequest = prFromRest(value);
-    return pullRequest
-      ? { pullRequest, error: null }
-      : { pullRequest: null, error: "GitHub returned an invalid pull request response." };
+    if (!pullRequest) {
+      return { pullRequest: null, error: "GitHub returned an invalid pull request response." };
+    }
+    const head = isJsonRecord(value) && isJsonRecord(value.head) ? value.head : null;
+    const checks =
+      typeof head?.sha === "string"
+        ? await getPullRequestCheckSummary({ owner, repo, headSha: head.sha })
+        : null;
+    return {
+      pullRequest: {
+        ...pullRequest,
+        checksCount: checks?.checksCount ?? null,
+        failedChecksCount: checks?.failedChecksCount ?? null,
+      },
+      error: null,
+    };
   } catch (error) {
     return { pullRequest: null, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function listPullRequestComments(input: {
+  repository: string;
+  number: number;
+}): Promise<typeof GitHubPullRequestCommentsResultSchema.Type> {
+  const status = await getGitHubCliStatus();
+  if (status.auth !== "authenticated") {
+    return { comments: [], error: status.detail ?? "GitHub is not authenticated." };
+  }
+  const repository = parseGitHubRepository(input.repository);
+  if (!repository || !Number.isSafeInteger(input.number) || input.number < 1) {
+    return { comments: [], error: "Invalid GitHub pull request." };
+  }
+  try {
+    const base = `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}`;
+    const pullRequestPath = `${base}/pulls/${input.number}`;
+    const fetchPages = async (path: string): Promise<JsonRecord[]> => {
+      const items: JsonRecord[] = [];
+      for (let page = 1; page <= 10; page += 1) {
+        const value = await githubJson(`${path}?per_page=100&page=${page}`);
+        if (!Array.isArray(value)) {
+          throw new Error("GitHub returned an invalid pull request comments list.");
+        }
+        items.push(...value.filter(isJsonRecord));
+        if (value.length < 100) break;
+      }
+      return items;
+    };
+    const [conversation, reviews, inline] = await Promise.all([
+      fetchPages(`${base}/issues/${input.number}/comments`),
+      fetchPages(`${pullRequestPath}/reviews`),
+      fetchPages(`${pullRequestPath}/comments`),
+    ]);
+    const authorLogin = (comment: JsonRecord): string | null =>
+      isJsonRecord(comment.user) && typeof comment.user.login === "string"
+        ? comment.user.login
+        : null;
+    const comments = [
+      ...conversation.map((comment) => ({
+        id: `conversation:${String(comment.id ?? "")}`,
+        kind: "conversation" as const,
+        authorLogin: authorLogin(comment),
+        body: typeof comment.body === "string" ? comment.body : "",
+        createdAt: typeof comment.created_at === "string" ? comment.created_at : null,
+        url: typeof comment.html_url === "string" ? comment.html_url : null,
+        path: null,
+        line: null,
+      })),
+      ...reviews
+        .filter((review) => typeof review.body === "string" && review.body.trim().length > 0)
+        .map((review) => ({
+          id: `review:${String(review.id ?? "")}`,
+          kind: "review" as const,
+          authorLogin: authorLogin(review),
+          body: String(review.body),
+          createdAt: typeof review.submitted_at === "string" ? review.submitted_at : null,
+          url: typeof review.html_url === "string" ? review.html_url : null,
+          path: null,
+          line: null,
+        })),
+      ...inline.map((comment) => ({
+        id: `inline:${String(comment.id ?? "")}`,
+        kind: "inline" as const,
+        authorLogin: authorLogin(comment),
+        body: typeof comment.body === "string" ? comment.body : "",
+        createdAt: typeof comment.created_at === "string" ? comment.created_at : null,
+        url: typeof comment.html_url === "string" ? comment.html_url : null,
+        path: typeof comment.path === "string" ? comment.path : null,
+        line:
+          typeof comment.line === "number"
+            ? comment.line
+            : typeof comment.original_line === "number"
+              ? comment.original_line
+              : null,
+      })),
+    ].sort((left, right) => (left.createdAt ?? "").localeCompare(right.createdAt ?? ""));
+    return { comments, error: null };
+  } catch (error) {
+    return { comments: [], error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function updatePullRequest(input: {
+  repository: string;
+  number: number;
+  action: "merge" | "squash" | "close";
+}): Promise<{ error: string | null }> {
+  const status = await getGitHubCliStatus();
+  if (status.auth !== "authenticated") {
+    return { error: status.detail ?? "GitHub is not authenticated." };
+  }
+  try {
+    const repository = parseGitHubRepository(input.repository);
+    if (!repository || !Number.isSafeInteger(input.number) || input.number < 1) {
+      throw new Error("Invalid GitHub pull request.");
+    }
+    const { owner, repo } = repository;
+    const pullRequestPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${input.number}`;
+    const response =
+      input.action === "close"
+        ? await githubFetch(pullRequestPath, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ state: "closed" }),
+          })
+        : await githubFetch(`${pullRequestPath}/merge`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ merge_method: input.action === "squash" ? "squash" : "merge" }),
+          });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new GitHubApiError(
+        response.status,
+        `GitHub API ${response.status}: ${detail || response.statusText}`,
+      );
+    }
+    return { error: null };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function postPullRequestReview(
+  input: PostPullRequestReviewInput,
+): Promise<typeof PostPullRequestReviewResultSchema.Type> {
+  const status = await getGitHubCliStatus();
+  if (status.auth !== "authenticated") {
+    return {
+      submittedComments: 0,
+      skippedComments: 0,
+      error: status.detail ?? "GitHub is not authenticated.",
+    };
+  }
+
+  try {
+    const repository = parseGitHubRepository(input.repository);
+    if (
+      !repository ||
+      !Number.isSafeInteger(input.number) ||
+      input.number < 1 ||
+      !/^[a-f0-9]{40,64}$/i.test(input.expectedHeadSha)
+    ) {
+      throw new Error("Invalid GitHub pull request review request.");
+    }
+    const { owner, repo } = repository;
+    const summary = input.summary.trim();
+    if (summary.length === 0) throw new Error("The review summary is empty.");
+
+    const pullRequestPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${input.number}`;
+    const pullRequest = await githubJson(pullRequestPath);
+    if (typeof pullRequest !== "object" || pullRequest === null) {
+      throw new Error("GitHub returned an invalid pull request.");
+    }
+    const head = (pullRequest as JsonRecord).head;
+    const currentHeadSha =
+      typeof head === "object" && head !== null ? (head as JsonRecord).sha : null;
+    if (typeof currentHeadSha !== "string") {
+      throw new Error("GitHub did not provide the pull request head commit.");
+    }
+    if (currentHeadSha !== input.expectedHeadSha) {
+      throw new Error("The pull request changed during review. Refresh it and try again.");
+    }
+
+    const diffResponse = await githubFetch(pullRequestPath, {
+      headers: { Accept: "application/vnd.github.v3.diff" },
+    });
+    if (!diffResponse.ok) {
+      const detail = await diffResponse.text().catch(() => "");
+      throw new GitHubApiError(
+        diffResponse.status,
+        `Could not validate review positions. GitHub API ${diffResponse.status}: ${detail || diffResponse.statusText}`,
+      );
+    }
+    const diff = await diffResponse.text();
+    const latestPullRequest = await githubJson(pullRequestPath);
+    const latestHead =
+      typeof latestPullRequest === "object" && latestPullRequest !== null
+        ? (latestPullRequest as JsonRecord).head
+        : null;
+    const latestHeadSha =
+      typeof latestHead === "object" && latestHead !== null ? (latestHead as JsonRecord).sha : null;
+    if (latestHeadSha !== currentHeadSha) {
+      throw new Error("The pull request changed during review. Refresh it and try again.");
+    }
+    const review = buildGitHubPullRequestReviewPayload({
+      headSha: currentHeadSha,
+      summary,
+      findings: input.findings,
+      diff,
+    });
+    const response = await githubFetch(`${pullRequestPath}/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(review.payload),
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new GitHubApiError(
+        response.status,
+        `Could not post pull request review. GitHub API ${response.status}: ${detail || response.statusText}`,
+      );
+    }
+    return {
+      submittedComments: review.submittedComments,
+      skippedComments: review.skippedComments,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      submittedComments: 0,
+      skippedComments: 0,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -855,4 +1296,25 @@ export const getPullRequestMethod = DesktopIpc.makeIpcMethod({
   payload: GetPullRequestInputSchema,
   result: GitHubPullRequestDetailResultSchema,
   handler: (input) => Effect.tryPromise(() => getPullRequest(input)),
+});
+
+export const getPullRequestCommentsMethod = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GITHUB_CLI_GET_PULL_REQUEST_COMMENTS_CHANNEL,
+  payload: GetPullRequestInputSchema,
+  result: GitHubPullRequestCommentsResultSchema,
+  handler: (input) => Effect.tryPromise(() => listPullRequestComments(input)),
+});
+
+export const updatePullRequestMethod = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GITHUB_CLI_UPDATE_PULL_REQUEST_CHANNEL,
+  payload: UpdatePullRequestInputSchema,
+  result: UpdatePullRequestResultSchema,
+  handler: (input) => Effect.tryPromise(() => updatePullRequest(input)),
+});
+
+export const postPullRequestReviewMethod = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GITHUB_CLI_POST_PULL_REQUEST_REVIEW_CHANNEL,
+  payload: PostPullRequestReviewInputSchema,
+  result: PostPullRequestReviewResultSchema,
+  handler: (input) => Effect.tryPromise(() => postPullRequestReview(input)),
 });

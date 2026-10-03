@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 import { callPluginWorkerTool } from "../../../plugins/workerSession.ts";
 import { PluginToolkit } from "./tools.ts";
 
@@ -21,6 +22,23 @@ const handlers = {
       );
     }).pipe(
       Effect.catch((error) => Effect.succeed({ status: "unavailable", message: error.detail })),
+    ),
+  getPullRequestComments: (input) =>
+    Effect.gen(function* () {
+      const invocation = yield* currentInvocation;
+      const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+      const result = yield* broker.invoke<{
+        comments: unknown[];
+        error: string | null;
+      }>({
+        scope: invocation,
+        operation: "githubPullRequestComments",
+        input,
+        timeoutMs: 30_000,
+      });
+      return result.error ? { comments: [], error: result.error } : result;
+    }).pipe(
+      Effect.catch((error) => Effect.succeed({ comments: [], error: error.message })),
     ),
   sparky_plugin_call: (input) =>
     Effect.gen(function* () {

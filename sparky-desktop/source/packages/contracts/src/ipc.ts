@@ -971,6 +971,7 @@ export interface DesktopBridge {
   getLocalEnvironmentBearerToken: () => Promise<string>;
   getAccountSessionToken: () => Promise<string | null>;
   setAccountSessionToken: (token: string | null) => Promise<boolean>;
+  getOrCreatePluginInstallationId?: (candidate: string | null) => Promise<string>;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
   getConnectionCatalog?: () => Promise<string | null>;

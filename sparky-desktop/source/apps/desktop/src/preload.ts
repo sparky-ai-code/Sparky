@@ -71,8 +71,41 @@ type GitHubPullRequestDetailResult = {
   error: string | null;
 };
 
+type GitHubPullRequestCommentsResult = {
+  comments: Array<{
+    id: string;
+    kind: "conversation" | "review" | "inline";
+    authorLogin: string | null;
+    body: string;
+    createdAt: string | null;
+    url: string | null;
+    path: string | null;
+    line: number | null;
+  }>;
+  error: string | null;
+};
+
 type GitHubPullRequestDiffResult = {
   diff: string | null;
+  headSha: string | null;
+  error: string | null;
+};
+
+type GitHubPullRequestUpdateResult = {
+  error: string | null;
+};
+
+type GitHubPullRequestReviewFinding = {
+  path: string;
+  line: number;
+  severity: "critical" | "high" | "medium" | "low";
+  title: string;
+  body: string;
+};
+
+type GitHubPullRequestReviewResult = {
+  submittedComments: number;
+  skippedComments: number;
   error: string | null;
 };
 
@@ -87,9 +120,7 @@ type ExtendedDesktopBridge = DesktopBridge & {
   installGitHubCli: () => Promise<GitHubCliStatus>;
   startGitHubCliAuth: () => Promise<GitHubCliStatus>;
   disconnectGitHub: () => Promise<GitHubCliStatus>;
-  syncGitHubPluginConnection: (input: {
-    sessionToken: string;
-  }) => Promise<GitHubPluginSyncResult>;
+  syncGitHubPluginConnection: (input: { sessionToken: string }) => Promise<GitHubPluginSyncResult>;
   listGitHubRepositories: (input: { cwds: string[] }) => Promise<GitHubRepositoryListResult>;
   listGitHubPullRequests: (input: {
     repository: string;
@@ -99,10 +130,26 @@ type ExtendedDesktopBridge = DesktopBridge & {
     repository: string;
     number: number;
   }) => Promise<GitHubPullRequestDetailResult>;
+  getGitHubPullRequestComments: (input: {
+    repository: string;
+    number: number;
+  }) => Promise<GitHubPullRequestCommentsResult>;
   getGitHubPullRequestDiff: (input: {
     repository: string;
     number: number;
   }) => Promise<GitHubPullRequestDiffResult>;
+  updateGitHubPullRequest: (input: {
+    repository: string;
+    number: number;
+    action: "merge" | "squash" | "close";
+  }) => Promise<GitHubPullRequestUpdateResult>;
+  postGitHubPullRequestReview: (input: {
+    repository: string;
+    number: number;
+    expectedHeadSha: string;
+    summary: string;
+    findings: GitHubPullRequestReviewFinding[];
+  }) => Promise<GitHubPullRequestReviewResult>;
 };
 
 function unwrapEnsureSshEnvironmentResult(result: unknown) {
@@ -141,6 +188,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   getAccountSessionToken: () => ipcRenderer.invoke(IpcChannels.GET_ACCOUNT_SESSION_TOKEN_CHANNEL),
   setAccountSessionToken: (token) =>
     ipcRenderer.invoke(IpcChannels.SET_ACCOUNT_SESSION_TOKEN_CHANNEL, token),
+  getOrCreatePluginInstallationId: (candidate) =>
+    ipcRenderer.invoke(IpcChannels.GET_OR_CREATE_PLUGIN_INSTALLATION_ID_CHANNEL, candidate),
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>
     ipcRenderer.invoke(IpcChannels.SET_CLIENT_SETTINGS_CHANNEL, settings),
@@ -200,8 +249,14 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.invoke(IpcChannels.GITHUB_CLI_LIST_PULL_REQUESTS_CHANNEL, input),
   getGitHubPullRequest: (input) =>
     ipcRenderer.invoke(IpcChannels.GITHUB_CLI_GET_PULL_REQUEST_CHANNEL, input),
+  getGitHubPullRequestComments: (input) =>
+    ipcRenderer.invoke(IpcChannels.GITHUB_CLI_GET_PULL_REQUEST_COMMENTS_CHANNEL, input),
   getGitHubPullRequestDiff: (input) =>
     ipcRenderer.invoke(IpcChannels.GITHUB_CLI_GET_PULL_REQUEST_DIFF_CHANNEL, input),
+  updateGitHubPullRequest: (input) =>
+    ipcRenderer.invoke(IpcChannels.GITHUB_CLI_UPDATE_PULL_REQUEST_CHANNEL, input),
+  postGitHubPullRequestReview: (input) =>
+    ipcRenderer.invoke(IpcChannels.GITHUB_CLI_POST_PULL_REQUEST_REVIEW_CHANNEL, input),
   getWslState: () => ipcRenderer.invoke(IpcChannels.GET_WSL_STATE_CHANNEL),
   setWslBackendEnabled: (enabled) =>
     ipcRenderer.invoke(IpcChannels.SET_WSL_BACKEND_ENABLED_CHANNEL, enabled),
@@ -242,7 +297,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       listener(fullscreen);
     };
     ipcRenderer.on(IpcChannels.WINDOW_FULLSCREEN_STATE_CHANNEL, wrappedListener);
-    return () => ipcRenderer.removeListener(IpcChannels.WINDOW_FULLSCREEN_STATE_CHANNEL, wrappedListener);
+    return () =>
+      ipcRenderer.removeListener(IpcChannels.WINDOW_FULLSCREEN_STATE_CHANNEL, wrappedListener);
   },
   getUpdateState: () => ipcRenderer.invoke(IpcChannels.UPDATE_GET_STATE_CHANNEL),
   setUpdateChannel: (channel) =>
@@ -263,7 +319,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     closeTab: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_CLOSE_TAB_CHANNEL, { tabId }),
     registerWebview: (tabId, webContentsId) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_REGISTER_WEBVIEW_CHANNEL, { tabId, webContentsId }),
-    navigate: (tabId, url) => ipcRenderer.invoke(IpcChannels.PREVIEW_NAVIGATE_CHANNEL, { tabId, url }),
+    navigate: (tabId, url) =>
+      ipcRenderer.invoke(IpcChannels.PREVIEW_NAVIGATE_CHANNEL, { tabId, url }),
     goBack: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_GO_BACK_CHANNEL, { tabId }),
     goForward: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_GO_FORWARD_CHANNEL, { tabId }),
     refresh: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_REFRESH_CHANNEL, { tabId }),
@@ -271,7 +328,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     zoomOut: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_ZOOM_OUT_CHANNEL, { tabId }),
     resetZoom: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_RESET_ZOOM_CHANNEL, { tabId }),
     hardReload: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_HARD_RELOAD_CHANNEL, { tabId }),
-    openDevTools: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_OPEN_DEVTOOLS_CHANNEL, { tabId }),
+    openDevTools: (tabId) =>
+      ipcRenderer.invoke(IpcChannels.PREVIEW_OPEN_DEVTOOLS_CHANNEL, { tabId }),
     clearCookies: () => ipcRenderer.invoke(IpcChannels.PREVIEW_CLEAR_COOKIES_CHANNEL),
     clearCache: () => ipcRenderer.invoke(IpcChannels.PREVIEW_CLEAR_CACHE_CHANNEL),
     getPreviewConfig: (environmentId) =>
@@ -283,7 +341,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke(IpcChannels.PREVIEW_CANCEL_PICK_ELEMENT_CHANNEL, { tabId }),
     captureScreenshot: (tabId) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_CAPTURE_SCREENSHOT_CHANNEL, { tabId }),
-    revealArtifact: (path) => ipcRenderer.invoke(IpcChannels.PREVIEW_REVEAL_ARTIFACT_CHANNEL, { path }),
+    revealArtifact: (path) =>
+      ipcRenderer.invoke(IpcChannels.PREVIEW_REVEAL_ARTIFACT_CHANNEL, { path }),
     copyArtifactToClipboard: (path) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_COPY_ARTIFACT_CHANNEL, { path }),
     recording: {
@@ -299,26 +358,40 @@ contextBridge.exposeInMainWorld("desktopBridge", {
           listener(frame as DesktopPreviewRecordingFrame);
         };
         ipcRenderer.on(IpcChannels.PREVIEW_RECORDING_FRAME_CHANNEL, wrappedListener);
-        return () => ipcRenderer.removeListener(IpcChannels.PREVIEW_RECORDING_FRAME_CHANNEL, wrappedListener);
+        return () =>
+          ipcRenderer.removeListener(IpcChannels.PREVIEW_RECORDING_FRAME_CHANNEL, wrappedListener);
       },
     },
     automation: {
-      status: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_STATUS_CHANNEL, { tabId }),
-      snapshot: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_SNAPSHOT_CHANNEL, { tabId }),
-      click: (tabId, input) => ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_CLICK_CHANNEL, { tabId, input }),
-      type: (tabId, input) => ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_TYPE_CHANNEL, { tabId, input }),
-      press: (tabId, input) => ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_PRESS_CHANNEL, { tabId, input }),
-      scroll: (tabId, input) => ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_SCROLL_CHANNEL, { tabId, input }),
-      evaluate: (tabId, input) => ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_EVALUATE_CHANNEL, { tabId, input }),
-      waitFor: (tabId, input) => ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_WAIT_FOR_CHANNEL, { tabId, input }),
+      status: (tabId) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_STATUS_CHANNEL, { tabId }),
+      snapshot: (tabId) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_SNAPSHOT_CHANNEL, { tabId }),
+      click: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_CLICK_CHANNEL, { tabId, input }),
+      type: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_TYPE_CHANNEL, { tabId, input }),
+      press: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_PRESS_CHANNEL, { tabId, input }),
+      scroll: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_SCROLL_CHANNEL, { tabId, input }),
+      evaluate: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_EVALUATE_CHANNEL, { tabId, input }),
+      waitFor: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_WAIT_FOR_CHANNEL, { tabId, input }),
     },
     onStateChange: (listener) => {
-      const wrappedListener = (_event: Electron.IpcRendererEvent, tabId: unknown, state: unknown) => {
+      const wrappedListener = (
+        _event: Electron.IpcRendererEvent,
+        tabId: unknown,
+        state: unknown,
+      ) => {
         if (typeof tabId !== "string" || typeof state !== "object" || state === null) return;
         listener(tabId, state as DesktopPreviewTabState);
       };
       ipcRenderer.on(IpcChannels.PREVIEW_STATE_CHANGE_CHANNEL, wrappedListener);
-      return () => ipcRenderer.removeListener(IpcChannels.PREVIEW_STATE_CHANGE_CHANNEL, wrappedListener);
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.PREVIEW_STATE_CHANGE_CHANNEL, wrappedListener);
     },
     onPointerEvent: (listener) => {
       const wrappedListener = (_event: Electron.IpcRendererEvent, pointerEvent: unknown) => {
@@ -326,7 +399,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         listener(pointerEvent as DesktopPreviewPointerEvent);
       };
       ipcRenderer.on(IpcChannels.PREVIEW_POINTER_EVENT_CHANNEL, wrappedListener);
-      return () => ipcRenderer.removeListener(IpcChannels.PREVIEW_POINTER_EVENT_CHANNEL, wrappedListener);
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.PREVIEW_POINTER_EVENT_CHANNEL, wrappedListener);
     },
   },
 } satisfies ExtendedDesktopBridge);

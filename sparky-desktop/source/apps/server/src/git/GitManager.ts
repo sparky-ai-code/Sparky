@@ -18,6 +18,8 @@ import {
   GitCommandError,
   GitPreparePullRequestThreadInput,
   GitPreparePullRequestThreadResult,
+  GitPullRequestReviewInput,
+  GitPullRequestReviewResult,
   GitPullRequestRefInput,
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
@@ -79,6 +81,9 @@ export class GitManager extends Context.Service<
     readonly resolvePullRequest: (
       input: GitPullRequestRefInput,
     ) => Effect.Effect<GitResolvePullRequestResult, GitManagerServiceError>;
+    readonly reviewPullRequest: (
+      input: GitPullRequestReviewInput,
+    ) => Effect.Effect<GitPullRequestReviewResult, GitManagerServiceError>;
     readonly preparePullRequestThread: (
       input: GitPreparePullRequestThreadInput,
     ) => Effect.Effect<GitPreparePullRequestThreadResult, GitManagerServiceError>;
@@ -1458,6 +1463,17 @@ export const make = Effect.gen(function* () {
     return { pullRequest };
   });
 
+  const reviewPullRequest: GitManager["Service"]["reviewPullRequest"] = Effect.fn(
+    "reviewPullRequest",
+  )(function* (input) {
+    return yield* textGeneration.generatePullRequestReview({
+      cwd: input.cwd,
+      modelSelection: input.modelSelection,
+      prompt: input.prompt,
+      systemPrompt: input.systemPrompt,
+    });
+  });
+
   const preparePullRequestThread: GitManager["Service"]["preparePullRequestThread"] = Effect.fn(
     "preparePullRequestThread",
   )(function* (input) {
@@ -1866,6 +1882,7 @@ export const make = Effect.gen(function* () {
     invalidateRemoteStatus,
     invalidateStatus,
     resolvePullRequest,
+    reviewPullRequest,
     preparePullRequestThread,
     runStackedAction,
   });

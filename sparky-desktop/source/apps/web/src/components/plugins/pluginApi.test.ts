@@ -3,11 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { __setPrimaryHttpRunnerForTests } from "../../lib/runtime";
 import {
   clearPluginSession,
+  createAnonymousPluginSession,
   invalidatePluginStatusCache,
   listPluginStatus,
   loadPersistedPluginSessionToken,
   persistPluginSessionToken,
   retryPendingPluginSessionRevocation,
+  startPluginAuthorization,
 } from "./pluginApi";
 
 const sessionToken = "session-token-with-enough-length";
@@ -45,6 +47,56 @@ describe("plugin status cache", () => {
 
     await expect(loadPersistedPluginSessionToken()).resolves.toBe(sessionToken);
     expect(storage.getItem("sparky.plugin-session.v1")).toBeNull();
+  });
+
+  it("uses the native installation identity when creating an anonymous session", async () => {
+    const storage = installLocalStorage();
+    const browserCandidate = "123e4567-e89b-42d3-a456-426614174000";
+    const stableInstallationId = "123e4567-e89b-42d3-a456-426614174001";
+    storage.setItem("sparky.plugin-installation-id.v1", browserCandidate);
+    const getOrCreatePluginInstallationId = vi.fn(async () => stableInstallationId);
+    vi.stubGlobal("window", {
+      localStorage: storage,
+      desktopBridge: { getOrCreatePluginInstallationId },
+    });
+    __setPrimaryHttpRunnerForTests(async <A>() => ({ ready: true }) as A);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      Response.json({
+        sessionToken,
+        user: { id: "guest-installation", email: null },
+        anonymous: true,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createAnonymousPluginSession();
+
+    expect(getOrCreatePluginInstallationId).toHaveBeenCalledWith(browserCandidate);
+    const requestBody = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as {
+      installationId: string;
+    };
+    expect(requestBody.installationId).toBe(stableInstallationId);
+  });
+
+  it("retries a failed authorization-service fetch before surfacing an error", async () => {
+    const storage = installLocalStorage();
+    vi.stubGlobal("window", { localStorage: storage, setTimeout });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce(
+        Response.json({
+          pluginId: "gmail",
+          status: "pending",
+          authorizationUrl: "https://accounts.google.com/authorize",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(startPluginAuthorization(sessionToken, "gmail")).resolves.toMatchObject({
+      status: "pending",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("reuses fresh status data across plugin pages", async () => {

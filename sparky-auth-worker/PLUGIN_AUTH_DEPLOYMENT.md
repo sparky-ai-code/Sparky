@@ -1,8 +1,8 @@
 # Sparky plugin auth worker
 
-This Worker owns persistent per-user plugin authorization for Sparky Desktop. Composio is not used. GitHub keeps Sparky's existing native desktop OAuth flow; Gmail, Outlook, Slack, Jira, Notion, Sentry, and Figma use their provider OAuth flows directly through this Worker.
+This Worker owns persistent per-installation plugin authorization for Sparky Desktop. Composio is not used. GitHub keeps Sparky's existing native desktop OAuth flow; Gmail, Outlook, Slack, Jira, Notion, Sentry, and Figma use their provider OAuth flows directly through this Worker. Sparky account sign-in is not required to create a plugin session or connect a provider; each provider still requires its own authorization.
 
-The desktop renderer receives an opaque, encrypted Sparky plugin-session token. Desktop session creation, validation, restore, and the browser handoff are stateless and do not use Cloudflare KV. Provider access/refresh tokens remain encrypted at rest in Cloudflare KV and are never returned to the renderer.
+The desktop renderer receives an opaque, encrypted Sparky plugin-session token. When no Sparky account session exists, the Worker issues an anonymous session scoped to a stable, random installation ID; session creation and validation are stateless and do not use Cloudflare KV. Provider access/refresh tokens remain encrypted at rest in Cloudflare KV and are never returned to the renderer.
 
 The Worker also hosts `/v1/clerk/desktop`, the isolated cross-origin Clerk sign-in surface used by Sparky Desktop.
 

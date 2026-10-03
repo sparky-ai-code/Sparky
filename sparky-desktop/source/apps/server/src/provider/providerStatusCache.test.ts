@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Logger from "effect/Logger";
 
+import { mergeProviderSnapshot } from "./Layers/ProviderRegistry.ts";
 import {
   hydrateCachedProvider,
   isCachedProviderCorrelated,
@@ -23,6 +24,7 @@ const emptyCapabilities = createModelCapabilities({ optionDescriptors: [] });
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
 const OPENCODE_DRIVER = ProviderDriverKind.make("opencode");
+const SPARKY_DRIVER = ProviderDriverKind.make("sparky");
 
 const makeProvider = (
   provider: ProviderDriverKind,
@@ -180,6 +182,65 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
         message: cachedCodex.message,
       },
     );
+  });
+
+  it("uses the live Sparky catalog instead of stale cached provider models", () => {
+    const cachedProvider = makeProvider(SPARKY_DRIVER, {
+      models: [
+        {
+          slug: "openai-codex/gpt-5.2",
+          name: "GPT-5.2",
+          isCustom: false,
+          capabilities: emptyCapabilities,
+        },
+        {
+          slug: "anthropic/claude-sonnet-5",
+          name: "Claude Sonnet 5",
+          isCustom: false,
+          capabilities: emptyCapabilities,
+        },
+      ],
+    });
+    const fallbackProvider = makeProvider(SPARKY_DRIVER, {
+      models: [],
+      auth: { status: "unauthenticated" },
+    });
+
+    assert.deepStrictEqual(
+      hydrateCachedProvider({ cachedProvider, fallbackProvider }),
+      fallbackProvider,
+    );
+  });
+
+  it("replaces the previous Sparky catalog on every successful discovery refresh", () => {
+    const previousProvider = makeProvider(SPARKY_DRIVER, {
+      models: [
+        {
+          slug: "openai-codex/gpt-5.2",
+          name: "GPT-5.2",
+          isCustom: false,
+          capabilities: emptyCapabilities,
+        },
+        {
+          slug: "anthropic/claude-sonnet-5",
+          name: "Claude Sonnet 5",
+          isCustom: false,
+          capabilities: emptyCapabilities,
+        },
+      ],
+    });
+    const nextProvider = makeProvider(SPARKY_DRIVER, {
+      models: [
+        {
+          slug: "openai-codex/gpt-6-astra",
+          name: "GPT-6 Astra",
+          isCustom: false,
+          capabilities: emptyCapabilities,
+        },
+      ],
+    });
+
+    assert.deepStrictEqual(mergeProviderSnapshot(previousProvider, nextProvider), nextProvider);
   });
 
   it("does not let a fallback refresh replace the cached context window", () => {

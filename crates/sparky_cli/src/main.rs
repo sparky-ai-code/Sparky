@@ -29,6 +29,9 @@ struct Cli {
     #[arg(long, help = "Print ChatGPT Codex authentication status as JSON")]
     codex_auth_status: bool,
 
+    #[arg(long, hide = true, help = "Refresh the saved ChatGPT plan-usage session")]
+    codex_auth_refresh: bool,
+
     #[arg(long, help = "Remove the saved ChatGPT Codex authentication")]
     codex_logout: bool,
 
@@ -72,7 +75,7 @@ struct Cli {
         short = 'r',
         long,
         default_value = "openai",
-        help = "Model API: openai, anthropic, gemini, fireworks, ollama-cloud, ollama"
+        help = "Model API: openai, anthropic, gemini, fireworks, ollama-cloud, cerebras, groq, ollama"
     )]
     provider: String,
 
@@ -436,6 +439,11 @@ async fn main() -> anyhow::Result<()> {
         println!("{}", serde_json::to_string(&login_codex().await?)?);
         return Ok(());
     }
+    if cli.codex_auth_refresh {
+        let _ = sparky_ai::codex_auth::valid_codex_credentials().await?;
+        println!("{}", serde_json::to_string(&codex_auth_status())?);
+        return Ok(());
+    }
     if cli.codex_auth_status {
         println!("{}", serde_json::to_string(&codex_auth_status())?);
         return Ok(());
@@ -489,6 +497,34 @@ async fn main() -> anyhow::Result<()> {
                 "OLLAMA_API_KEY",
                 "ollama-cloud",
                 "Ollama Cloud",
+            ))
+        }
+        "cerebras" => {
+            let key = required_api_key("CEREBRAS_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "https://api.cerebras.ai/v1",
+            );
+            Arc::new(OpenAiProvider::new_named(
+                key,
+                Some(base_url),
+                "CEREBRAS_API_KEY",
+                "cerebras",
+                "Cerebras",
+            ))
+        }
+        "groq" => {
+            let key = required_api_key("GROQ_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "https://api.groq.com/openai/v1",
+            );
+            Arc::new(OpenAiProvider::new_named(
+                key,
+                Some(base_url),
+                "GROQ_API_KEY",
+                "groq",
+                "Groq",
             ))
         }
         "ollama" => {

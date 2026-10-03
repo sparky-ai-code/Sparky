@@ -19,6 +19,8 @@ const makeStubTextGeneration = (
     generateCommitMessage: () =>
       Effect.die("generateCommitMessage stub not configured for this test"),
     generatePrContent: () => Effect.die("generatePrContent stub not configured for this test"),
+    generatePullRequestReview: () =>
+      Effect.die("generatePullRequestReview stub not configured for this test"),
     generateBranchName: () => Effect.die("generateBranchName stub not configured for this test"),
     generateThreadTitle: () => Effect.die("generateThreadTitle stub not configured for this test"),
     ...overrides,
@@ -93,6 +95,44 @@ describe("makeTextGenerationFromRegistry", () => {
       expect(result.branch).toBe("personal-branch");
       expect(personalCalls).toEqual(["Refactor the routing layer"]);
     }),
+  );
+
+  it.effect(
+    "delegates one-shot pull request reviews to the selected provider without creating a thread",
+    () =>
+      Effect.gen(function* () {
+        const instanceId = ProviderInstanceId.make("sparky_review");
+        const calls: Array<{ cwd: string; prompt: string; systemPrompt: string }> = [];
+        const instance = makeStubInstance(
+          instanceId,
+          makeStubTextGeneration({
+            generatePullRequestReview: (input) => {
+              calls.push({
+                cwd: input.cwd,
+                prompt: input.prompt,
+                systemPrompt: input.systemPrompt,
+              });
+              return Effect.succeed({ response: "one-shot review output" });
+            },
+          }),
+        );
+        const tg = TextGeneration.makeTextGenerationFromRegistry(makeStubRegistry([instance]));
+        const result = yield* tg.generatePullRequestReview({
+          cwd: process.cwd(),
+          prompt: "Review this diff",
+          systemPrompt: "Return validated JSON",
+          modelSelection: createModelSelection(instanceId, "openai/gpt-4o-mini"),
+        });
+
+        expect(result.response).toBe("one-shot review output");
+        expect(calls).toEqual([
+          {
+            cwd: process.cwd(),
+            prompt: "Review this diff",
+            systemPrompt: "Return validated JSON",
+          },
+        ]);
+      }),
   );
 
   it.effect("fails with TextGenerationError when the instance is unknown", () =>

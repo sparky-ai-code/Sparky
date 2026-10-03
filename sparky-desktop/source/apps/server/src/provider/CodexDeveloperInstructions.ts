@@ -1,5 +1,12 @@
 import type { ProviderInteractionMode } from "@sparky/contracts";
 
+export const T3_CODE_PULL_REQUEST_REVIEW_INSTRUCTIONS = `
+
+## Requested GitHub pull request reviews
+
+Use the review_pull_request tool only when it is available and the user explicitly requests a review of a specific pull request. The tool fetches the PR metadata and diff, delegates review to a separate one-shot reviewer, validates findings against added lines, and posts only actionable inline comments. Do not inspect the diff yourself or supply findings to the tool. It returns a clean result without posting when there are no actionable findings. Report its result; do not use it for routine coding tasks or unsolicited reviews.
+`;
+
 const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
 ## Sparky collaborative browser
@@ -145,6 +152,7 @@ Your active mode changes only when new developer instructions with a different \
 The \`request_user_input\` tool is unavailable in Default mode. If you call it while in Default mode, it will return an error.
 
 In Default mode, strongly prefer making reasonable assumptions and executing the user's request rather than stopping to ask questions. If you absolutely must ask a question because the answer cannot be discovered from local context and a reasonable assumption would be risky, ask the user directly with a concise plain-text question. Never write a multiple choice question as a textual assistant message.
+${T3_CODE_PULL_REQUEST_REVIEW_INSTRUCTIONS}
 ${T3_CODE_BROWSER_TOOL_INSTRUCTIONS}
 </collaboration_mode>`;
 

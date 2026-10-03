@@ -83,12 +83,16 @@ const mergeProviderModels = (
   previousModels: ReadonlyArray<ServerProvider["models"][number]>,
   nextModels: ReadonlyArray<ServerProvider["models"][number]>,
 ): ReadonlyArray<ServerProvider["models"][number]> => {
-  const retainedPreviousModels = previousModels.filter((model) => !model.slug.startsWith("opencode/"));
+  const retainedPreviousModels = previousModels.filter(
+    (model) => !model.slug.startsWith("opencode/"),
+  );
   if (nextModels.length === 0 && retainedPreviousModels.length > 0) {
     return retainedPreviousModels;
   }
 
-  const previousBySlug = new Map(retainedPreviousModels.map((model) => [model.slug, model] as const));
+  const previousBySlug = new Map(
+    retainedPreviousModels.map((model) => [model.slug, model] as const),
+  );
   const mergedModels = nextModels.map((model) => {
     const previousModel = previousBySlug.get(model.slug);
     if (!previousModel) {
@@ -111,7 +115,9 @@ export const mergeProviderSnapshot = (
   previousProvider: ServerProvider | undefined,
   nextProvider: ServerProvider,
 ): ServerProvider =>
-  !previousProvider || nextProvider.auth.status === "unauthenticated"
+  !previousProvider ||
+  nextProvider.auth.status === "unauthenticated" ||
+  nextProvider.driver === ProviderDriverKind.make("sparky")
     ? nextProvider
     : {
         ...nextProvider,

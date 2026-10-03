@@ -136,6 +136,10 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(first.captureOutput, true);
         assert.equal(first.env.ELECTRON_RUN_AS_NODE, "1");
         assert.equal(
+          first.env.SPARKY_CODEX_HOME,
+          environment.path.join(environment.stateDir, "chatgpt-auth"),
+        );
+        assert.equal(
           first.env.SPARKY_BINARY_PATH,
           environment.path.join(environment.resourcesPath, "sparky", "sparky"),
         );
@@ -223,7 +227,7 @@ describe("DesktopBackendConfiguration", () => {
 
       assert.equal(config.runningDistro, "Ubuntu");
       assert.deepEqual(config.args.slice(0, 2), ["-d", "Ubuntu"]);
-      assert.deepEqual(observedDistros, ["Ubuntu", "Ubuntu", "Ubuntu"]);
+      assert.deepEqual(observedDistros, ["Ubuntu", "Ubuntu", "Ubuntu", "Ubuntu"]);
       assert.isTrue(Option.isNone(config.preflightFailure));
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
@@ -451,10 +455,14 @@ describe("DesktopBackendConfiguration", () => {
       const previousWslEnv = process.env.WSLENV;
       const previousOpenAiKey = process.env.OPENAI_API_KEY;
       const previousAnthropicKey = process.env.ANTHROPIC_API_KEY;
+      const previousCerebrasKey = process.env.CEREBRAS_API_KEY;
+      const previousGroqKey = process.env.GROQ_API_KEY;
       try {
         process.env.WSLENV = "GOPATH/p:OPENAI_API_KEY/u:EMPTY::AZURE_DEVOPS_EXT_PAT/u";
         process.env.OPENAI_API_KEY = "openai-key";
         process.env.ANTHROPIC_API_KEY = "anthropic-key";
+        process.env.CEREBRAS_API_KEY = "cerebras-key";
+        process.env.GROQ_API_KEY = "groq-key";
 
         yield* Effect.gen(function* () {
           const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
@@ -472,13 +480,17 @@ describe("DesktopBackendConfiguration", () => {
           assert.equal(config.httpBaseUrl.href, "http://172.27.0.99:5050/");
           assert.equal(config.env.OPENAI_API_KEY, "openai-key");
           assert.equal(config.env.ANTHROPIC_API_KEY, "anthropic-key");
+          assert.equal(
+            config.env.SPARKY_CODEX_HOME,
+            "/mnt/c/sparky/chatgpt-auth",
+          );
           // The existing WSLENV is preserved byte-for-byte (note the empty
           // "::" segment survives — WSL ignores it, so we don't normalize
-          // it away) and ANTHROPIC_API_KEY is appended. OPENAI_API_KEY is
+          // it away) and the remaining supported API keys are appended. OPENAI_API_KEY is
           // already declared, so it isn't forwarded twice.
           assert.equal(
             config.env.WSLENV,
-            "GOPATH/p:OPENAI_API_KEY/u:EMPTY::AZURE_DEVOPS_EXT_PAT/u:ANTHROPIC_API_KEY",
+            "GOPATH/p:OPENAI_API_KEY/u:EMPTY::AZURE_DEVOPS_EXT_PAT/u:ANTHROPIC_API_KEY:CEREBRAS_API_KEY:GROQ_API_KEY:SPARKY_CODEX_HOME",
           );
         }).pipe(
           Effect.provide(
@@ -488,7 +500,12 @@ describe("DesktopBackendConfiguration", () => {
               Layer.provideMerge(
                 DesktopWslEnvironment.layerTest({
                   isAvailable: true,
-                  windowsToWslPath: () => Option.some("/mnt/c/repo/apps/server/src/index.ts"),
+                  windowsToWslPath: (_distro, windowsPath) =>
+                    Option.some(
+                      windowsPath.endsWith("chatgpt-auth")
+                        ? "/mnt/c/sparky/chatgpt-auth"
+                        : "/mnt/c/repo/apps/server/src/index.ts",
+                    ),
                   getDistroIp: () => Option.some("172.27.0.99"),
                 }),
               ),
@@ -500,6 +517,8 @@ describe("DesktopBackendConfiguration", () => {
         restoreEnv("WSLENV", previousWslEnv);
         restoreEnv("OPENAI_API_KEY", previousOpenAiKey);
         restoreEnv("ANTHROPIC_API_KEY", previousAnthropicKey);
+        restoreEnv("CEREBRAS_API_KEY", previousCerebrasKey);
+        restoreEnv("GROQ_API_KEY", previousGroqKey);
       }
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );

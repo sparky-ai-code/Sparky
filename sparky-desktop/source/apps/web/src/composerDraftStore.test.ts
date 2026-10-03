@@ -1238,6 +1238,31 @@ describe("composerDraftStore modelSelection", () => {
     );
   });
 
+  it("binds updated reasoning options to the current model instead of a previous model", () => {
+    const store = useComposerDraftStore.getState();
+    store.setModelSelection(
+      threadRef,
+      modelSelection(CODEX_DRIVER, "gpt-6-luna-low", { reasoningEffort: "low" }),
+    );
+    store.setStickyModelSelection(
+      modelSelection(CODEX_DRIVER, "gpt-6-luna-low", { reasoningEffort: "low" }),
+    );
+
+    store.setProviderModelOptions(
+      threadRef,
+      CODEX_DRIVER,
+      toSelections({ reasoningEffort: "high" }),
+      { instanceId: CODEX_INSTANCE, model: "gpt-6-luna", persistSticky: true },
+    );
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_INSTANCE]).toEqual(
+      modelSelection(CODEX_DRIVER, "gpt-6-luna", { reasoningEffort: "high" }),
+    );
+    expect(useComposerDraftStore.getState().stickyModelSelectionByProvider[CODEX_INSTANCE]).toEqual(
+      modelSelection(CODEX_DRIVER, "gpt-6-luna", { reasoningEffort: "high" }),
+    );
+  });
+
   it("keeps explicit default-state overrides on the selection", () => {
     const store = useComposerDraftStore.getState();
 

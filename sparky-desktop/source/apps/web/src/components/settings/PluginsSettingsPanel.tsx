@@ -1,6 +1,7 @@
 import { LoaderCircleIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useAccountState } from "../../account/AccountAuthProvider";
 import { PluginLogo } from "../plugins/PluginLogo";
 import {
   disconnectPlugin,
@@ -26,6 +27,17 @@ function metadataSummary(status: PluginStatus): string | null {
 }
 
 export function PluginsSettingsPanel() {
+  const account = useAccountState();
+  const hasPluginSession =
+    loadPluginSessionToken() !== null ||
+    ((account.status === "signed-in" || account.status === "signed-out") &&
+      account.pluginSessionReady);
+  const pluginError =
+    account.status === "signed-in" || account.status === "signed-out"
+      ? account.pluginError
+      : account.status === "error"
+        ? account.error
+        : null;
   const [statuses, setStatuses] = useState<PluginStatus[]>([]);
   const [busyPluginId, setBusyPluginId] = useState<PluginId | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +58,7 @@ export function PluginsSettingsPanel() {
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [hasPluginSession, refresh]);
 
   const installed = useMemo(
     () =>
@@ -87,9 +99,17 @@ export function PluginsSettingsPanel() {
         <div className="mb-6">
           <h1 className="text-lg font-semibold tracking-tight text-foreground">Plugins</h1>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            View and remove the plugins currently connected to your Sparky account.
+            View and remove the plugins connected to this installation.
           </p>
         </div>
+
+        {!hasPluginSession ? (
+          <div className="mb-6 rounded-xl border border-border/70 bg-card/45 px-4 py-3">
+            <p className="text-xs text-muted-foreground">
+              {pluginError ?? "Preparing your plugin session…"}
+            </p>
+          </div>
+        ) : null}
 
         <div className="overflow-hidden rounded-xl border border-border bg-card/45">
           {installed.length === 0 ? (

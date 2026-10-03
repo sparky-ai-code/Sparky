@@ -55,12 +55,13 @@ function makeSnapshot(input: {
   readonly discovery: SparkyModelDiscovery;
 }): ServerProvider {
   const { discovery } = input;
+  const displayName = input.displayName.trim() === "T3 Code" ? "OpenAI" : input.displayName;
   const hasModels = discovery.models.length > 0;
   const hasDiscoveryErrors = discovery.errors.length > 0;
   const message = !input.binaryInstalled
     ? `Sparky runtime was not found at ${input.binaryPath}.`
     : discovery.configuredProviderCount === 0
-      ? "Add an OpenAI, Anthropic, Google, Fireworks, or Ollama Cloud API key in Models."
+      ? "Add an OpenAI, Anthropic, Google, Fireworks, Ollama Cloud, Cerebras, or Groq API key in Models."
       : hasDiscoveryErrors
         ? `Model refresh failed for ${discovery.errors.join("; ")}. Check the API key and your connection.`
         : !hasModels
@@ -70,7 +71,7 @@ function makeSnapshot(input: {
   return {
     instanceId: input.instanceId,
     driver: DRIVER_KIND,
-    displayName: input.displayName,
+    displayName,
     ...(input.accentColor ? { accentColor: input.accentColor } : {}),
     continuation: { groupKey: input.continuationKey },
     showInteractionModeToggle: true,
@@ -158,6 +159,7 @@ function makeTextGeneration(input: {
     modelSelection: ModelSelection,
     prompt: string,
     workspaceContext: ProviderWorkspaceContext = "project",
+    systemPrompt?: string,
   ) =>
     runSparkyTextGeneration({
       binaryPath: input.binaryPath,
@@ -165,6 +167,7 @@ function makeTextGeneration(input: {
       prompt,
       model: modelSelection.model,
       ...(workspaceContext === "none" ? { workspaceContext } : {}),
+      ...(systemPrompt ? { customInstructions: systemPrompt } : {}),
       ...resolveSparkyTextGenerationRuntimeOptions({
         modelSelection,
         environment: input.environment,
@@ -213,6 +216,15 @@ function makeTextGeneration(input: {
           };
         }),
       ),
+    generatePullRequestReview: (request) =>
+      run(
+        "generatePullRequestReview",
+        request.cwd,
+        request.modelSelection,
+        request.prompt,
+        "none",
+        request.systemPrompt,
+      ).pipe(Effect.map((result) => ({ response: result.response }))),
     generateBranchName: (request) =>
       run(
         "generateBranchName",

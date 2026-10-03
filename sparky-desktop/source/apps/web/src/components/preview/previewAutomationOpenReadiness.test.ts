@@ -1,7 +1,12 @@
 import type { PreviewAutomationOpenInput, PreviewSessionSnapshot } from "@sparky/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { previewAutomationOpenNeedsOverlay } from "./previewAutomationOpenReadiness";
+import {
+  preparePreviewAutomationOpen,
+  previewAutomationOpenNeedsOverlay,
+  previewAutomationOpenRequiresVisibility,
+  previewAutomationOverlayReady,
+} from "./previewAutomationOpenReadiness";
 
 const snapshot = (navStatus: PreviewSessionSnapshot["navStatus"]): PreviewSessionSnapshot => ({
   threadId: "thread-1",
@@ -13,10 +18,46 @@ const snapshot = (navStatus: PreviewSessionSnapshot["navStatus"]): PreviewSessio
 });
 
 describe("preview automation open readiness", () => {
-  it("does not wait for a desktop overlay when opening an empty tab", () => {
+  it("waits for the browser surface to become visible unless explicitly hidden", () => {
+    expect(previewAutomationOpenRequiresVisibility({} as PreviewAutomationOpenInput)).toBe(true);
+    expect(
+      previewAutomationOpenRequiresVisibility({ show: false } as PreviewAutomationOpenInput),
+    ).toBe(false);
+  });
+
+  it("navigates before waiting for the visible surface", async () => {
+    const calls: string[] = [];
+    await preparePreviewAutomationOpen({
+      navigate: async () => {
+        calls.push("navigate");
+      },
+      waitForOverlay: async () => {
+        calls.push("visible");
+      },
+    });
+    expect(calls).toEqual(["navigate", "visible"]);
+  });
+
+  it("requires a visible surface when showing a browser tab", () => {
+    expect(previewAutomationOverlayReady(true, false, true)).toBe(false);
+    expect(previewAutomationOverlayReady(true, true, true)).toBe(true);
+    expect(previewAutomationOverlayReady(true, false, false)).toBe(true);
+    expect(previewAutomationOverlayReady(false, true, false)).toBe(false);
+  });
+
+  it("waits for a visible blank tab's webview to register", () => {
     expect(
       previewAutomationOpenNeedsOverlay(
         {} as PreviewAutomationOpenInput,
+        snapshot({ _tag: "Idle" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not wait for a hidden blank tab", () => {
+    expect(
+      previewAutomationOpenNeedsOverlay(
+        { show: false } as PreviewAutomationOpenInput,
         snapshot({ _tag: "Idle" }),
       ),
     ).toBe(false);

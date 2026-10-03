@@ -1,6 +1,7 @@
 import { SearchIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useAccountState } from "../../account/AccountAuthProvider";
 import { cn } from "../../lib/utils";
 import { Input } from "../ui/input";
 import { PluginLogo } from "./PluginLogo";
@@ -61,6 +62,17 @@ function PluginTile({
 }
 
 export function PluginsPage() {
+  const account = useAccountState();
+  const hasPluginSession =
+    loadPluginSessionToken() !== null ||
+    ((account.status === "signed-in" || account.status === "signed-out") &&
+      account.pluginSessionReady);
+  const pluginError =
+    account.status === "signed-in" || account.status === "signed-out"
+      ? account.pluginError
+      : account.status === "error"
+        ? account.error
+        : null;
   const [query, setQuery] = useState("");
   const [statuses, setStatuses] = useState<PluginStatus[]>([]);
   const [busyPluginId, setBusyPluginId] = useState<PluginId | null>(null);
@@ -82,7 +94,7 @@ export function PluginsPage() {
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [hasPluginSession, refresh]);
 
   const connectedIds = useMemo(
     () => new Set(statuses.filter((entry) => entry.connected).map((entry) => entry.pluginId)),
@@ -98,7 +110,11 @@ export function PluginsPage() {
   const connect = useCallback(
     async (pluginId: PluginId) => {
       const sessionToken = loadPluginSessionToken();
-      if (!sessionToken || busyPluginId) return;
+      if (!sessionToken) {
+        setError(pluginError ?? "Your plugin session is still starting. Please try again shortly.");
+        return;
+      }
+      if (busyPluginId) return;
       setBusyPluginId(pluginId);
       setError(null);
       try {
@@ -110,7 +126,7 @@ export function PluginsPage() {
         setBusyPluginId(null);
       }
     },
-    [busyPluginId, refresh],
+    [busyPluginId, pluginError, refresh],
   );
 
   const disconnect = useCallback(
@@ -148,6 +164,14 @@ export function PluginsPage() {
           />
           <SearchIcon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-foreground/70" />
         </div>
+
+        {!hasPluginSession ? (
+          <div className="mx-auto mt-6 max-w-[600px] rounded-xl border border-border/70 bg-card/45 px-4 py-3">
+            <p className="text-xs text-muted-foreground">
+              {pluginError ?? "Preparing your plugin session…"}
+            </p>
+          </div>
+        ) : null}
 
         {installed.length > 0 ? (
           <section className="mx-auto mt-10 max-w-[600px]">

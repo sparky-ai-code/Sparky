@@ -35,4 +35,31 @@ describe("ProviderStatusBanner", () => {
     expect(markup).toContain("provider status");
     expect(markup).toContain("The provider is unavailable.");
   });
+
+  it("shows the provider's specific error instead of a generic auth prompt", () => {
+    const markup = renderToStaticMarkup(
+      <ProviderStatusBanner
+        status={status({
+          status: "error",
+          auth: { status: "unauthenticated" },
+          message: "The Sparky runtime was not found.",
+        })}
+      />,
+    );
+
+    expect(markup).toContain("Sparky provider status");
+    expect(markup).toContain("The Sparky runtime was not found.");
+    expect(markup).not.toContain("Sign in via the CLI");
+  });
+
+  it("points unauthenticated providers to Models settings", () => {
+    const markup = renderToStaticMarkup(
+      <ProviderStatusBanner
+        status={status({ status: "error", auth: { status: "unauthenticated" } })}
+      />,
+    );
+
+    expect(markup).toContain("Sparky is unauthenticated");
+    expect(markup).toContain("Settings → Models");
+  });
 });

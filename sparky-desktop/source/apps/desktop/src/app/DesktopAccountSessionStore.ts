@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -43,28 +43,24 @@ const make = Effect.gen(function* () {
   let cachedInstallationId: string | null = null;
 
   const readDocument = fileSystem.readFileString(accountSessionPath).pipe(
-    Effect.catch((error) =>
-      error.reason._tag === "NotFound" ? Effect.succeed<string | null>(null) : Effect.fail(error),
-    ),
     Effect.flatMap((raw) =>
-      raw === null
-        ? Effect.succeed(OptionModule.none<AccountSessionDocument>())
-        : decodeDocument(raw).pipe(
-            Effect.map(OptionModule.some),
-            Effect.orElseSucceed(() => OptionModule.none()),
-          ),
+      decodeDocument(raw).pipe(
+        Effect.map(OptionModule.some),
+        Effect.orElseSucceed(() => OptionModule.none<AccountSessionDocument>()),
+      ),
     ),
+    Effect.orElseSucceed(() => OptionModule.none<AccountSessionDocument>()),
   );
 
   const get: DesktopAccountSessionStore["Service"]["get"] = Effect.gen(function* () {
     if (!(yield* safeStorage.isEncryptionAvailable.pipe(Effect.orElseSucceed(() => false)))) {
       return OptionModule.none<string>();
     }
-    const document = yield* readDocument.pipe(Effect.orElseSucceed(() => OptionModule.none()));
+    const document = yield* readDocument;
     if (OptionModule.isNone(document)) return OptionModule.none<string>();
-    const encrypted = yield* Encoding.decodeBase64(document.value.encryptedToken).pipe(
-      Effect.orElseSucceed(() => new Uint8Array()),
-    );
+    const encrypted = yield* Effect.fromResult(
+      Encoding.decodeBase64(document.value.encryptedToken),
+    ).pipe(Effect.orElseSucceed(() => new Uint8Array()));
     if (encrypted.byteLength === 0) return OptionModule.none<string>();
     return yield* safeStorage.decryptString(encrypted).pipe(
       Effect.map(OptionModule.some),
@@ -76,9 +72,9 @@ const make = Effect.gen(function* () {
     "desktop.accountSessionStore.set",
   )(function* (token) {
     if (token === null) {
-      yield* fileSystem.remove(accountSessionPath, { force: true }).pipe(
-        Effect.orElseSucceed(() => undefined),
-      );
+      yield* fileSystem
+        .remove(accountSessionPath, { force: true })
+        .pipe(Effect.orElseSucceed(() => undefined));
       return true;
     }
     if (!(yield* safeStorage.isEncryptionAvailable.pipe(Effect.orElseSucceed(() => false)))) {
@@ -92,11 +88,11 @@ const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => ""),
     );
     if (!encoded) return false;
-    yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true }).pipe(
-      Effect.orElseSucceed(() => undefined),
-    );
+    yield* fileSystem
+      .makeDirectory(environment.stateDir, { recursive: true })
+      .pipe(Effect.orElseSucceed(() => undefined));
     const temporaryPath = `${accountSessionPath}.${process.pid}.tmp`;
-    yield* fileSystem.writeFileString(temporaryPath, `${encoded}\n`).pipe(
+    const writeSucceeded = yield* fileSystem.writeFileString(temporaryPath, `${encoded}\n`).pipe(
       Effect.flatMap(() => fileSystem.chmod(temporaryPath, 0o600)),
       Effect.flatMap(() => fileSystem.rename(temporaryPath, accountSessionPath)),
       Effect.ensuring(
@@ -104,10 +100,11 @@ const make = Effect.gen(function* () {
           .remove(temporaryPath, { force: true })
           .pipe(Effect.orElseSucceed(() => undefined)),
       ),
+      Effect.as(true),
+      Effect.orElseSucceed(() => false),
     );
-    yield* fileSystem.chmod(accountSessionPath, 0o600).pipe(
-      Effect.orElseSucceed(() => undefined),
-    );
+    if (!writeSucceeded) return false;
+    yield* fileSystem.chmod(accountSessionPath, 0o600).pipe(Effect.orElseSucceed(() => undefined));
     return true;
   });
 
@@ -126,7 +123,7 @@ const make = Effect.gen(function* () {
       const installationId =
         candidate && INSTALLATION_ID_PATTERN.test(candidate)
           ? candidate.toLowerCase()
-          : randomUUID();
+          : NodeCrypto.randomUUID();
       yield* fileSystem
         .makeDirectory(environment.stateDir, { recursive: true })
         .pipe(Effect.orElseSucceed(() => undefined));

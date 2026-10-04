@@ -356,8 +356,8 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
     const layer = DesktopWindow.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
-          desktopAssetsLayer,
-          desktopEnvironmentLayer,
+          makeDesktopAssetsLayer(),
+          makeDesktopEnvironmentLayer(),
           DesktopAppSettings.layerTest(),
           desktopServerExposureLayer,
           electronMenuLayer,
@@ -569,9 +569,9 @@ describe("DesktopWindow", () => {
         readyToShow();
 
         assert.equal(fakeWindow.unmaximize.mock.calls.length, 1);
-        assert.deepEqual(fakeWindow.setBounds.mock.calls, [[
-          { x: 120, y: 80, width: 1320, height: 880 },
-        ]]);
+        assert.deepEqual(fakeWindow.setBounds.mock.calls, [
+          [{ x: 120, y: 80, width: 1320, height: 880 }],
+        ]);
       }).pipe(Effect.provide(layer));
     }),
   );

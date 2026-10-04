@@ -8,7 +8,6 @@ import {
   isPkceVerifier,
   isPluginId,
   PLUGIN_IDS,
-  sha256,
 } from "./index.js";
 
 const env = {
@@ -120,18 +119,18 @@ test("rejects anonymous plugin sessions without a valid installation ID", async 
   assert.match((await response.json()).error, /installation ID/i);
 });
 
-test("revokes the persisted plugin session on explicit logout", async () => {
+test("accepts explicit logout without accessing the plugin store", async () => {
   const token = "session-token-with-enough-length";
-  const key = `session:${await sha256(token)}`;
-  let deletedKey = null;
   const store = {
-    async get(requestedKey) {
-      return requestedKey === key ? { userId: "user-1", sessionId: "session-1" } : null;
+    async get() {
+      throw new Error("Logout must not read the plugin store.");
     },
-    async delete(requestedKey) {
-      deletedKey = requestedKey;
+    async delete() {
+      throw new Error("Logout must not write to the plugin store.");
     },
-    async put() {},
+    async put() {
+      throw new Error("Logout must not write to the plugin store.");
+    },
   };
   const response = await handleRequest(
     new Request("https://auth.example/v1/session", {
@@ -143,7 +142,6 @@ test("revokes the persisted plugin session on explicit logout", async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { revoked: true });
-  assert.equal(deletedKey, key);
 });
 
 test("rejects non-JSON token requests", async () => {

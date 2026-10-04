@@ -92,7 +92,7 @@ jobs:
           name: wsl-node-pty-x64
           path: wsl-prebuild
       - name: Build Windows installer
-        run: pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64 --output-dir release-windows --wsl-prebuild "$env:GITHUB_WORKSPACE/wsl-prebuild/pty.node"
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:win:x64 --output-dir release-windows --wsl-prebuild "$env:GITHUB_WORKSPACE/wsl-prebuild/pty.node" --verbose
       - name: Verify Windows installer output
         shell: pwsh
         run: |

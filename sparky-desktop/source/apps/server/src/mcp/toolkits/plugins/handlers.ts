@@ -5,16 +5,10 @@ import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 import { callPluginWorkerTool } from "../../../plugins/workerSession.ts";
 import { PluginToolkit } from "./tools.ts";
 
-const currentInvocation = McpInvocationContext.McpInvocationContext as unknown as Effect.Effect<
-  McpInvocationContext.McpInvocationScope,
-  never,
-  never
->;
-
 const handlers = {
   sparky_request_plugin_authorization: (input) =>
     Effect.gen(function* () {
-      const invocation = yield* currentInvocation;
+      const invocation = yield* McpInvocationContext.McpInvocationContext;
       return yield* callPluginWorkerTool(
         "sparky_request_plugin_authorization",
         input,
@@ -25,7 +19,7 @@ const handlers = {
     ),
   getPullRequestComments: (input) =>
     Effect.gen(function* () {
-      const invocation = yield* currentInvocation;
+      const invocation = yield* McpInvocationContext.McpInvocationContext;
       const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
       const result = yield* broker.invoke<{
         comments: unknown[];
@@ -37,12 +31,10 @@ const handlers = {
         timeoutMs: 30_000,
       });
       return result.error ? { comments: [], error: result.error } : result;
-    }).pipe(
-      Effect.catch((error) => Effect.succeed({ comments: [], error: error.message })),
-    ),
+    }).pipe(Effect.catch((error) => Effect.succeed({ comments: [], error: error.message }))),
   sparky_plugin_call: (input) =>
     Effect.gen(function* () {
-      const invocation = yield* currentInvocation;
+      const invocation = yield* McpInvocationContext.McpInvocationContext;
       return yield* callPluginWorkerTool(
         "sparky_plugin_call",
         input,

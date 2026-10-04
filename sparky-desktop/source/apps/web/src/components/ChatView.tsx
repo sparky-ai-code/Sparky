@@ -2568,12 +2568,9 @@ function ChatViewContent(props: ChatViewProps) {
   }, [focusComposer]);
   const addPluginToComposer = useCallback(
     (pluginId: PluginId) => {
-      composerRef.current?.insertTextAtEnd(
-        `${serializePluginToken(pluginId)} `,
-        {
-          ensureLeadingBoundary: true,
-        },
-      );
+      composerRef.current?.insertTextAtEnd(`${serializePluginToken(pluginId)} `, {
+        ensureLeadingBoundary: true,
+      });
     },
     [composerRef],
   );
@@ -5774,11 +5771,15 @@ function ChatViewContent(props: ChatViewProps) {
                           onChangeActivePendingUserInputCustomAnswer
                         }
                         onProviderModelSelect={onProviderModelSelect}
-                        onRefreshModelCatalog={
-                          routeKind === "server"
-                            ? (instanceId) => refreshServerProviders({ instanceId })
-                            : undefined
-                        }
+                        {...(routeKind === "server"
+                          ? {
+                              onRefreshModelCatalog: (instanceId) =>
+                                refreshServerProviders({
+                                  environmentId,
+                                  input: { instanceId },
+                                }),
+                            }
+                          : {})}
                         getModelDisabledReason={getModelDisabledReason}
                         toggleInteractionMode={toggleInteractionMode}
                         handleRuntimeModeChange={handleRuntimeModeChange}

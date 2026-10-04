@@ -14,8 +14,8 @@ export class ProviderExecutionContext extends Context.Service<
 
 // The provider execution context is optional for callers that issue anonymous sessions.
 export const currentAuthSessionId = Effect.gen(function* () {
-  const context = yield* Effect.context<ProviderExecutionContext>();
+  const context = yield* Effect.context<never>();
   return (
     Option.getOrNull(Context.getOption(context, ProviderExecutionContext))?.authSessionId ?? null
   );
-}) as Effect.Effect<AuthSessionId | null>;
+});

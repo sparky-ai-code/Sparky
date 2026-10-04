@@ -24,26 +24,25 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
 }: {
   status: ServerProvider | null;
 }) {
-  if (
-    isDemoRenderer() ||
-    !status ||
-    status.status === "ready" ||
-    status.status === "disabled"
-  ) {
+  if (isDemoRenderer() || !status || status.status === "ready" || status.status === "disabled") {
     return null;
   }
 
   const providerName = status.displayName?.trim() || formatProviderDriverKindLabel(status.driver);
-  const isUnauthenticated = status.status === "error" && status.auth.status === "unauthenticated";
+  const isUnauthenticated =
+    status.status === "error" &&
+    status.auth.status === "unauthenticated" &&
+    !status.message?.trim();
   const title = isUnauthenticated
     ? `${providerName} is unauthenticated`
     : `${providerName} provider status`;
-  const message = isUnauthenticated
-    ? "Sign in via the CLI to authenticate again."
-    : (status.message ??
-      (status.status === "error"
+  const message =
+    status.message ??
+    (isUnauthenticated
+      ? "Reconnect this provider in Settings → Models, or sign in again with its CLI."
+      : status.status === "error"
         ? `${providerName} provider is unavailable.`
-        : `${providerName} provider has limited availability.`));
+        : `${providerName} provider has limited availability.`);
 
   return (
     <div className="mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">

@@ -1,6 +1,15 @@
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
+import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
+
+const invocationDependencies = [McpInvocationContext.McpInvocationContext];
+const pullRequestCommentDependencies = [
+  McpInvocationContext.McpInvocationContext,
+  PreviewAutomationBroker.PreviewAutomationBroker,
+];
+
 const PluginId = Schema.Literals([
   "github",
   "jira",
@@ -19,6 +28,7 @@ export const RequestPluginAuthorizationTool = Tool.make("sparky_request_plugin_a
   }),
   success: Schema.Unknown,
   failure: Schema.Never,
+  dependencies: invocationDependencies,
 })
   .annotate(Tool.Title, "Authorize plugin")
   .annotate(Tool.OpenWorld, true)
@@ -34,6 +44,7 @@ export const PluginCallTool = Tool.make("sparky_plugin_call", {
   }),
   success: Schema.Unknown,
   failure: Schema.Never,
+  dependencies: invocationDependencies,
 })
   .annotate(Tool.Title, "Use plugin")
   .annotate(Tool.OpenWorld, true)
@@ -48,6 +59,7 @@ export const GetPullRequestCommentsTool = Tool.make("getPullRequestComments", {
   }),
   success: Schema.Unknown,
   failure: Schema.Never,
+  dependencies: pullRequestCommentDependencies,
 })
   .annotate(Tool.Title, "Get pull request comments")
   .annotate(Tool.OpenWorld, false)

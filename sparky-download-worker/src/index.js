@@ -113,6 +113,71 @@ function githubReleaseConfig(env, baseUrl) {
   return { schemaVersion: 0, id: version, version, name: `Sparky ${version}`, channel: "release", changelog: env.RELEASE_CHANGELOG?.trim() || "", publishedAt: env.RELEASE_PUBLISHED_AT?.trim() || null, files };
 }
 
+const GITHUB_RELEASE_ASSETS = new Map([
+  ["Sparky-x64.exe", "windows-x64"],
+  ["Sparky-x64.exe.blockmap", "windows-x64"],
+  ["latest.yml", "windows-x64"],
+  ["Sparky-arm64.zip", "macos-arm64"],
+  ["Sparky-arm64.dmg", "macos-arm64"],
+  ["Sparky-arm64.dmg.blockmap", "macos-arm64"],
+  ["latest-mac-arm64.yml", "macos-arm64"],
+  ["Sparky-x64.zip", "macos-x64"],
+  ["Sparky-x64.dmg", "macos-x64"],
+  ["Sparky-x64.dmg.blockmap", "macos-x64"],
+  ["latest-mac-x64.yml", "macos-x64"],
+  ["Sparky-x64.AppImage", "linux-x64"],
+  ["Sparky-x64.AppImage.asc", "linux-x64"],
+  ["Sparky-x64.AppImage.zsync", "linux-x64"],
+  ["Sparky-amd64.deb", "linux-x64"],
+  ["latest-linux.yml", "linux-x64"],
+]);
+
+const REQUIRED_GITHUB_RELEASE_ASSETS = [
+  "Sparky-x64.exe", "Sparky-x64.exe.blockmap", "latest.yml",
+  "Sparky-arm64.dmg", "Sparky-arm64.dmg.blockmap", "Sparky-arm64.zip", "latest-mac-arm64.yml",
+  "Sparky-x64.dmg", "Sparky-x64.dmg.blockmap", "Sparky-x64.zip", "latest-mac-x64.yml",
+  "Sparky-x64.AppImage", "Sparky-amd64.deb", "latest-linux.yml",
+];
+
+function githubLatestReleaseConfig(release) {
+  if (!release || typeof release !== "object" || release.draft || release.prerelease || typeof release.tag_name !== "string") {
+    throw new Error("GitHub latest release has an invalid shape.");
+  }
+  const version = release.tag_name.replace(/^v/u, "");
+  if (!version) throw new Error("GitHub latest release has no version.");
+  const assets = new Map((Array.isArray(release.assets) ? release.assets : []).map((asset) => [asset.name, asset]));
+  for (const name of REQUIRED_GITHUB_RELEASE_ASSETS) {
+    if (!assets.has(name)) throw new Error(`GitHub latest release is missing ${name}.`);
+  }
+  const files = [];
+  for (const [name, platform] of GITHUB_RELEASE_ASSETS) {
+    const asset = assets.get(name);
+    if (!asset) continue;
+    if (!Number.isSafeInteger(asset.size) || asset.size <= 0 || typeof asset.browser_download_url !== "string") {
+      throw new Error(`GitHub latest release contains invalid metadata for ${name}.`);
+    }
+    files.push({
+      name,
+      platform,
+      size: asset.size,
+      contentType: typeof asset.content_type === "string" ? asset.content_type : "application/octet-stream",
+      sha256: null,
+      url: requiredHttpsUrl(asset.browser_download_url, `URL for ${name}`),
+    });
+  }
+  return {
+    schemaVersion: 0,
+    id: String(release.id ?? version),
+    version,
+    name: release.name || `Sparky ${version}`,
+    channel: "release",
+    changelog: typeof release.body === "string" ? release.body : "",
+    publishedAt: release.published_at || null,
+    files,
+    githubLatestRelease: true,
+  };
+}
+
 function validateManifest(raw) {
   if (!raw || typeof raw !== "object" || typeof raw.version !== "string" || !Array.isArray(raw.files)) {
     throw new Error("Release manifest has an invalid shape.");
@@ -127,9 +192,26 @@ function validateManifest(raw) {
 }
 
 async function loadManifest(env) {
-  // A versioned public release URL is the authoritative source for the
-  // current desktop channel. Ignore stale dashboard-era manifest bindings so
-  // update routes cannot silently point at an older release.
+  const latestReleaseUrl = env.RELEASE_LATEST_API_URL?.trim();
+  if (latestReleaseUrl) {
+    try {
+      const response = await fetch(requiredHttpsUrl(latestReleaseUrl, "RELEASE_LATEST_API_URL"), {
+        headers: {
+          accept: "application/vnd.github+json",
+          "user-agent": "Sparky-download-worker",
+          "x-github-api-version": "2022-11-28",
+        },
+        cf: { cacheTtl: 60, cacheEverything: true },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return githubLatestReleaseConfig(await response.json());
+    } catch (error) {
+      console.error(JSON.stringify({ event: "github_latest_release_fetch_failed", message: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+  // A versioned public release remains a safe fallback if GitHub's API is
+  // temporarily unavailable. The latest-release API is authoritative when it
+  // responds, so future stable releases need no worker configuration update.
   if (env.RELEASE_PUBLIC_BASE_URL?.trim()) return releaseConfig(env);
   const manifestUrl = (env.RELEASE_MANIFEST_URL || env.AWS_RELEASE_MANIFEST_URL)?.trim();
   if (!manifestUrl) return releaseConfig(env);
@@ -154,7 +236,7 @@ function publicManifest(release) {
     channel: release.channel ?? "release",
     changelog: release.changelog ?? "",
     publishedAt: release.publishedAt ?? null,
-    files: release.files.filter((file) => /\.(?:exe|dmg|AppImage|asc)$/iu.test(file.name)).map(({ name, platform, size, contentType, sha256 }) => ({ name, platform, size, contentType, sha256: sha256 ?? null })),
+    files: release.files.filter((file) => /\.(?:exe|dmg|AppImage|asc|deb)$/iu.test(file.name)).map(({ name, platform, size, contentType, sha256 }) => ({ name, platform, size, contentType, sha256: sha256 ?? null })),
   };
 }
 
@@ -187,7 +269,7 @@ function updateRequest(path) {
   if (decoded[0] === "windows" && decoded[1] === "x64" && decoded.length === 3) {
     return { platform: "windows-x64", name: decoded[2] };
   }
-  if (decoded[0] === "linux" && decoded.length === 2 && (decoded[1] === "latest-linux.yml" || decoded[1].endsWith(".AppImage") || decoded[1].endsWith(".asc"))) return { platform: "linux-x64", name: decoded[1] };
+  if (decoded[0] === "linux" && decoded.length === 2 && (decoded[1] === "latest-linux.yml" || decoded[1].endsWith(".AppImage") || decoded[1].endsWith(".asc") || decoded[1].endsWith(".deb") || decoded[1].endsWith(".zsync"))) return { platform: "linux-x64", name: decoded[1] };
   if (decoded[0] === "macos" && decoded.length === 3 && (decoded[1] === "arm64" || decoded[1] === "x64")) {
     const name = decoded[2] === "latest-mac.yml" ? `latest-mac-${decoded[1]}.yml` : decoded[2];
     return { platform: `macos-${decoded[1]}`, name };
@@ -197,6 +279,25 @@ function updateRequest(path) {
 
 function redirect(url) {
   return new Response(null, { status: 302, headers: { ...publicHeaders(), Location: url } });
+}
+
+async function githubFeedResponse(request, release, feedFile) {
+  const response = await fetch(feedFile.url, { cf: { cacheTtl: 60, cacheEverything: true } });
+  if (!response.ok) throw new Error(`GitHub update feed returned HTTP ${response.status}.`);
+  const feed = await response.text();
+  let rewrittenUrls = 0;
+  const pinnedFeed = feed.replace(/^([\t ]*-\s*url:\s*)(["']?)([^"'\s]+)\2(\s*(?:#.*)?)$/gmu, (_line, prefix, quote, reference, suffix) => {
+    const assetName = decodeURIComponent(new URL(reference, feedFile.url).pathname.split("/").at(-1));
+    const asset = release.files.find((candidate) => candidate.name === assetName && candidate.platform === feedFile.platform);
+    if (!asset) throw new Error(`GitHub update feed references an unknown asset: ${assetName}.`);
+    rewrittenUrls += 1;
+    return `${prefix}${quote}${asset.url}${quote}${suffix}`;
+  });
+  if (rewrittenUrls === 0) throw new Error(`GitHub update feed ${feedFile.name} contains no downloadable files.`);
+  return new Response(request.method === "HEAD" ? null : pinnedFeed, {
+    status: 200,
+    headers: { ...publicHeaders(), "Content-Type": response.headers.get("content-type") || "text/yaml; charset=utf-8" },
+  });
 }
 
 function classifyUserAgent(userAgent) {
@@ -270,6 +371,7 @@ async function handleRequest(request, env, executionContext) {
     if (!requested) return errorResponse("Update asset not found.", 404);
     const file = release.files.find((candidate) => candidate.platform === requested.platform && candidate.name === requested.name);
     if (!file) return errorResponse("Update asset not found.", 404);
+    if (release.githubLatestRelease && requested.name.endsWith(".yml")) return githubFeedResponse(request, release, file);
     return redirect(file.url);
   }
   if (path !== "/get" && path !== "/") return errorResponse("Not found.", 404);

@@ -17,7 +17,20 @@ env:
   VITE_SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
 
 jobs:
+  test-update-feeds:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Test platform update routes
+        run: npm --prefix sparky-download-worker test
+
   build-macos-x64:
+    needs: test-update-feeds
     runs-on: macos-14
     defaults:
       run:
@@ -77,6 +90,16 @@ jobs:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
+      - name: Verify macOS x64 updater artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release/Sparky-x64.dmg
+          test -s release/Sparky-x64.dmg.blockmap
+          test -s release/Sparky-x64.zip
+          test -s release/latest-mac.yml
+          grep -q 'Sparky-x64.zip' release/latest-mac.yml
+
       - name: Upload DMG to release
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -102,6 +125,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   build-macos-arm64:
+    needs: test-update-feeds
     runs-on: macos-latest
     defaults:
       run:
@@ -161,6 +185,16 @@ jobs:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
+      - name: Verify macOS arm64 updater artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release/Sparky-arm64.dmg
+          test -s release/Sparky-arm64.dmg.blockmap
+          test -s release/Sparky-arm64.zip
+          test -s release/latest-mac.yml
+          grep -q 'Sparky-arm64.zip' release/latest-mac.yml
+
       - name: Upload DMG to release
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -186,6 +220,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   build-linux-x64:
+    needs: test-update-feeds
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -286,6 +321,8 @@ jobs:
           fi
           test -s release/Sparky-x64.AppImage
           test -s release/Sparky-amd64.deb
+          test -s release/latest-linux.yml
+          grep -q 'Sparky-x64.AppImage' release/latest-linux.yml
           find release -maxdepth 1 -type f -printf '%f\n' | sort
 
       - name: Sign Linux AppImage
@@ -344,6 +381,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   build-windows:
+    needs: test-update-feeds
     runs-on: windows-latest
     defaults:
       run:
@@ -396,6 +434,15 @@ jobs:
         env:
           NODE_ENV: production
           SPARKY_UPDATE_URL: https://sparky.llc/get/updates/windows
+
+      - name: Verify Windows updater artifacts
+        shell: pwsh
+        run: |
+          $requiredFiles = @('release/Sparky-x64.exe', 'release/Sparky-x64.exe.blockmap', 'release/latest.yml')
+          foreach ($file in $requiredFiles) {
+            if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing Windows updater artifact: $file" }
+          }
+          if ((Get-Content -Raw release/latest.yml) -notmatch 'Sparky-x64\.exe') { throw 'Windows update feed does not reference the installer.' }
 
       - name: Upload EXE to release
         if: startsWith(github.ref, 'refs/tags/v')

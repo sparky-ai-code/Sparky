@@ -45,7 +45,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
+          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: [process.cwd() + '/apps/server'] }))")"
           pty_dir="$(dirname "$pty_pkg")"
           (cd "$pty_dir" && npx --yes node-gyp rebuild)
           mkdir -p "$RUNNER_TEMP/wsl-prebuild"

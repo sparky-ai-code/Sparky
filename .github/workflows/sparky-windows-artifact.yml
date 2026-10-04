@@ -1,0 +1,108 @@
+name: Sparky Windows x64 installer artifact
+
+on:
+  push:
+    branches:
+      - ci/windows-installer-artifact-*
+
+permissions:
+  contents: read
+
+env:
+  SPARKY_GITHUB_CLIENT_ID: ${{ vars.SPARKY_GITHUB_CLIENT_ID }}
+  SPARKY_GITHUB_AUTH_BROKER_URL: ${{ vars.SPARKY_GITHUB_AUTH_BROKER_URL }}
+  SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
+  VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.SPARKY_CLERK_PUBLISHABLE_KEY }}
+  VITE_SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
+  SPARKY_UPDATE_URL: https://sparky.llc/get/updates/windows
+  T3CODE_DESKTOP_SIGNED: 'false'
+  NODE_ENV: production
+
+jobs:
+  build-wsl-node-pty:
+    name: Build Linux node-pty for WSL
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Build Linux node-pty prebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
+          pty_dir="$(dirname "$pty_pkg")"
+          (cd "$pty_dir" && npx --yes node-gyp rebuild)
+          mkdir -p "$RUNNER_TEMP/wsl-prebuild"
+          cp "$pty_dir/build/Release/pty.node" "$RUNNER_TEMP/wsl-prebuild/pty.node"
+          file "$RUNNER_TEMP/wsl-prebuild/pty.node"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wsl-node-pty-x64
+          path: ${{ runner.temp }}/wsl-prebuild/pty.node
+          if-no-files-found: error
+          retention-days: 1
+
+  build-windows-x64:
+    name: Build Windows x64 installer
+    needs: build-wsl-node-pty
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Build Sparky CLI
+        run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: wsl-node-pty-x64
+          path: wsl-prebuild
+      - name: Build Windows installer
+        run: pnpm --config.verify-deps-before-run=false exec node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64 --output-dir release-windows --wsl-prebuild "$env:GITHUB_WORKSPACE/wsl-prebuild/pty.node"
+      - name: Verify Windows installer output
+        shell: pwsh
+        run: |
+          $installer = Resolve-Path 'release-windows/Sparky-x64.exe'
+          $hash = Get-FileHash $installer -Algorithm SHA256
+          "SHA256: $($hash.Hash)"
+          Get-ChildItem 'release-windows' | Select-Object Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sparky-windows-x64-${{ github.sha }}
+          path: sparky-desktop/source/release-windows/*
+          if-no-files-found: error
+          retention-days: 14

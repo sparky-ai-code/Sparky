@@ -49,6 +49,7 @@ import {
 import {
   buildPullRequestReviewPrompt,
   buildPullRequestReviewSystemPrompt,
+  findPullRequestReviewWorkspace,
   splitPullRequestDiffForReview,
 } from "./pullRequestReview.ts";
 import {
@@ -528,25 +529,10 @@ export function PullRequestsPage() {
   const [commentsError, setCommentsError] = useState<string | null>(null);
   const [pullRequestActionBusy, setPullRequestActionBusy] = useState<PullRequestActionBusy>(null);
   const [pullRequestActionError, setPullRequestActionError] = useState<string | null>(null);
-  const reviewProject = useMemo(() => {
-    if (!selectedRepository || primaryEnvironmentId === null) return null;
-    const expectedRepository = selectedRepository.toLocaleLowerCase();
-    return (
-      projects.find((project) => {
-        if (project.environmentId !== primaryEnvironmentId || !project.repositoryIdentity)
-          return false;
-        const identity = project.repositoryIdentity;
-        const ownerAndName =
-          identity.owner && identity.name
-            ? `${identity.owner}/${identity.name}`.toLocaleLowerCase()
-            : null;
-        return (
-          ownerAndName === expectedRepository ||
-          identity.canonicalKey.toLocaleLowerCase().endsWith(`/${expectedRepository}`)
-        );
-      }) ?? null
-    );
-  }, [primaryEnvironmentId, projects, selectedRepository]);
+  const reviewProject = useMemo(
+    () => findPullRequestReviewWorkspace(projects, primaryEnvironmentId),
+    [primaryEnvironmentId, projects],
+  );
   const canPostPullRequestReview =
     typeof getGitHubBridge()?.postGitHubPullRequestReview === "function";
 
@@ -624,7 +610,14 @@ export function PullRequestsPage() {
     } finally {
       if (commentsRequestRef.current === requestId) setCommentsBusy(false);
     }
-  }, [commentsOpen, markAuthRequired, pullRequests, selectedNumber, selectedPullRequest, selectedRepository]);
+  }, [
+    commentsOpen,
+    markAuthRequired,
+    pullRequests,
+    selectedNumber,
+    selectedPullRequest,
+    selectedRepository,
+  ]);
 
   const refreshStatus = useCallback(
     async (showBusy = pageCache.status === null) => {
@@ -1625,7 +1618,7 @@ export function PullRequestsPage() {
                             }
                             title={
                               reviewProject === null
-                                ? "Open this repository in the primary workspace to enable AI reviews."
+                                ? "Open a workspace in the primary environment to enable AI reviews."
                                 : !canPostPullRequestReview
                                   ? "Update Sparky to enable AI pull request reviews."
                                   : undefined
@@ -1784,29 +1777,56 @@ export function PullRequestsPage() {
                           {commentsError}
                         </p>
                       ) : commentsBusy && comments.length === 0 ? null : comments.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No comments on this pull request yet.</p>
+                        <p className="text-sm text-muted-foreground">
+                          No comments on this pull request yet.
+                        </p>
                       ) : (
                         <ol className="space-y-3">
                           {comments.map((comment) => (
-                            <li key={comment.id} className="rounded-md border border-border/70 bg-background/70 p-3">
+                            <li
+                              key={comment.id}
+                              className="rounded-md border border-border/70 bg-background/70 p-3"
+                            >
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                                <span className="font-medium text-foreground">{comment.authorLogin ?? "Unknown author"}</span>
+                                <span className="font-medium text-foreground">
+                                  {comment.authorLogin ?? "Unknown author"}
+                                </span>
                                 <span>·</span>
-                                <span>{comment.kind === "inline" ? "Code comment" : comment.kind === "review" ? "Review" : "Conversation"}</span>
-                                {comment.createdAt ? <><span>·</span><span>{formatRelativeTimeLabel(comment.createdAt)}</span></> : null}
-                                {comment.path ? <span className="font-mono">{comment.path}{comment.line ? `:${comment.line}` : ""}</span> : null}
+                                <span>
+                                  {comment.kind === "inline"
+                                    ? "Code comment"
+                                    : comment.kind === "review"
+                                      ? "Review"
+                                      : "Conversation"}
+                                </span>
+                                {comment.createdAt ? (
+                                  <>
+                                    <span>·</span>
+                                    <span>{formatRelativeTimeLabel(comment.createdAt)}</span>
+                                  </>
+                                ) : null}
+                                {comment.path ? (
+                                  <span className="font-mono">
+                                    {comment.path}
+                                    {comment.line ? `:${comment.line}` : ""}
+                                  </span>
+                                ) : null}
                                 {comment.url ? (
                                   <Button
                                     variant="ghost"
                                     size="sm"
                                     className="ml-auto h-6 px-1.5 text-xs"
-                                    onClick={() => void getGitHubBridge()?.openExternal(comment.url!)}
+                                    onClick={() =>
+                                      void getGitHubBridge()?.openExternal(comment.url!)
+                                    }
                                   >
                                     <ExternalLinkIcon className="size-3" /> GitHub
                                   </Button>
                                 ) : null}
                               </div>
-                              <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{comment.body}</p>
+                              <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">
+                                {comment.body}
+                              </p>
                             </li>
                           ))}
                         </ol>

@@ -14,6 +14,14 @@ export interface PullRequestReviewContext {
   readonly diff: string;
 }
 
+export function findPullRequestReviewWorkspace<T extends { readonly environmentId: string | null }>(
+  projects: ReadonlyArray<T>,
+  primaryEnvironmentId: string | null,
+): T | null {
+  if (!primaryEnvironmentId) return null;
+  return projects.find((project) => project.environmentId === primaryEnvironmentId) ?? null;
+}
+
 const FOCUS_INSTRUCTIONS: Record<PullRequestReviewFocus, string> = {
   security: "Report only concrete security vulnerabilities introduced by this pull request.",
   all: "Report concrete correctness bugs and security vulnerabilities introduced by this pull request.",

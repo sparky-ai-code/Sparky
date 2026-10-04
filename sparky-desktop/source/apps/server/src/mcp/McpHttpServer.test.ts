@@ -42,6 +42,7 @@ const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provideMerge(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
 );
+const decodeUnknownJson = Schema.decodeUnknownEffect(Schema.UnknownFromJsonString);
 
 it("normalizes empty successful notification responses to accepted", () => {
   const notificationResponse = McpHttpServer.normalizeMcpHttpResponse(
@@ -105,7 +106,7 @@ it.effect("reviews a PR with the separate review agent before posting validated 
       Effect.sync(() => {
         reviewCalls.push(input);
         return {
-          response: JSON.stringify({
+          response: encodeJson({
             summary: "One issue found.",
             findings: [
               {
@@ -153,9 +154,7 @@ it.effect("reviews a PR with the separate review agent before posting validated 
       const postCall = calls.find((call) => call.args[0] === "api");
       expect(postCall?.command).toBe("gh");
       expect(postCall?.cwd).toBe("C:/workspace");
-      const postedReview = yield* Schema.decodeUnknownEffect(Schema.UnknownFromJsonString)(
-        postCall?.stdin ?? "{}",
-      );
+      const postedReview = yield* decodeUnknownJson(postCall?.stdin ?? "{}");
       expect(postedReview).toMatchObject({
         comments: [
           {

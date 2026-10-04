@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off globalTimers:off
+// @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalDate:off
 import type { ServerProviderModel } from "@sparky/contracts";
 import { createModelCapabilities } from "@sparky/shared/model";
 import * as NodeChildProcess from "node:child_process";
@@ -146,7 +146,7 @@ const CHATGPT_CODEX_MODELS = [
   { id: "gpt-5.6-terra", name: "GPT-5.6 Terra" },
   { id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
 ] as const satisfies ReadonlyArray<RemoteModel>;
-const CHATGPT_CODEX_MODEL_ORDER = new Map(
+const CHATGPT_CODEX_MODEL_ORDER = new Map<string, number>(
   CHATGPT_CODEX_MODELS.map((model, index) => [`openai-codex/${model.id}`, index] as const),
 );
 

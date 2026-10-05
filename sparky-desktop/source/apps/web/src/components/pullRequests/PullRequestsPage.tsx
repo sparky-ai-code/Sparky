@@ -43,6 +43,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import {
+  getPullRequestAddedLineMap,
   parsePullRequestReviewOutput,
   validatePullRequestReviewFindings,
 } from "@sparky/shared/pullRequestReview";
@@ -1173,7 +1174,10 @@ export function PullRequestsPage() {
           }
 
           report("validating", `Validating findings from change segment ${index + 1}…`);
-          const review = parsePullRequestReviewOutput(generated.value.response);
+          const chunkPaths = [...getPullRequestAddedLineMap(diffChunk).keys()];
+          const review = parsePullRequestReviewOutput(generated.value.response, {
+            ...(chunkPaths.length === 1 && chunkPaths[0] ? { pathFallback: chunkPaths[0] } : {}),
+          });
           generatedFindingCount += review.findings.length;
           summaries.push(review.summary);
           const chunkValidation = validatePullRequestReviewFindings(review.findings, diffChunk);

@@ -80,6 +80,34 @@ describe("pull request review output", () => {
     });
   });
 
+  it("uses the unique diff-file path when model findings omit or mis-shape their path", () => {
+    const responses = [
+      { line: finding.line, body: finding.body, severity: finding.severity, title: finding.title },
+      {
+        path: { unexpected: true },
+        line: finding.line,
+        body: finding.body,
+        severity: finding.severity,
+        title: finding.title,
+      },
+      {
+        path: { filePath: finding.path },
+        line: finding.line,
+        body: finding.body,
+        severity: finding.severity,
+        title: finding.title,
+      },
+    ];
+
+    for (const item of responses) {
+      expect(
+        parsePullRequestReviewOutput(JSON.stringify({ summary: "Review", findings: [item] }), {
+          pathFallback: finding.path,
+        }).findings,
+      ).toEqual([finding]);
+    }
+  });
+
   it("parses JSON embedded in explanatory text or a Markdown code block", () => {
     const response = JSON.stringify({
       summary: 'The review note includes braces: {"example": "value"}.',

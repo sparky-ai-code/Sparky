@@ -1,0 +1,397 @@
+name: Build all-platform installer artifacts
+
+on:
+  push:
+    branches:
+      - ci/windows-installer-artifact-073adc3
+
+permissions:
+  contents: read
+
+env:
+  SPARKY_GITHUB_CLIENT_ID: ${{ vars.SPARKY_GITHUB_CLIENT_ID }}
+  SPARKY_GITHUB_AUTH_BROKER_URL: ${{ vars.SPARKY_GITHUB_AUTH_BROKER_URL }}
+  SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
+  VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.SPARKY_CLERK_PUBLISHABLE_KEY }}
+  VITE_SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
+
+jobs:
+  test-update-feeds:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Test platform update routes
+        run: npm --prefix sparky-download-worker test
+
+  build-wsl-node-pty:
+    needs: test-update-feeds
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Build Linux node-pty prebuild for WSL
+        shell: bash
+        run: |
+          set -euo pipefail
+          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: [process.cwd() + '/apps/server'] }))")"
+          pty_dir="$(dirname "$pty_pkg")"
+          (cd "$pty_dir" && npx --yes node-gyp rebuild)
+          mkdir -p "$RUNNER_TEMP/wsl-prebuild"
+          cp "$pty_dir/build/Release/pty.node" "$RUNNER_TEMP/wsl-prebuild/pty.node"
+          file "$RUNNER_TEMP/wsl-prebuild/pty.node"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wsl-node-pty-x64
+          path: ${{ runner.temp }}/wsl-prebuild/pty.node
+          if-no-files-found: error
+          retention-days: 1
+
+  build-macos-x64:
+    needs: test-update-feeds
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-apple-darwin
+
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Build desktop application
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
+          NODE_ENV: production
+
+      - name: Verify GitHub OAuth bundle
+        run: node scripts/verify-github-oauth-build.mjs
+
+      - name: Build macOS x64 installer
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:x64
+        env:
+          NODE_ENV: production
+          SPARKY_UPDATE_URL: https://sparky.llc/get/updates/macos/x64
+
+      - name: Verify macOS x64 updater assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release/Sparky-x64.dmg
+          test -s release/Sparky-x64.dmg.blockmap
+          test -s release/Sparky-x64.zip
+          test -s release/latest-mac.yml
+          grep -q 'Sparky-x64.zip' release/latest-mac.yml
+          mv release/latest-mac.yml release/latest-mac-x64.yml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sparky-macos-x64
+          path: |
+            sparky-desktop/source/release/Sparky-x64.dmg
+            sparky-desktop/source/release/Sparky-x64.dmg.blockmap
+            sparky-desktop/source/release/Sparky-x64.zip
+            sparky-desktop/source/release/latest-mac-x64.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  build-macos-arm64:
+    needs: test-update-feeds
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-apple-darwin
+
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Build desktop application
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
+          NODE_ENV: production
+
+      - name: Verify GitHub OAuth bundle
+        run: node scripts/verify-github-oauth-build.mjs
+
+      - name: Build macOS arm64 installer
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:arm64
+        env:
+          NODE_ENV: production
+          SPARKY_UPDATE_URL: https://sparky.llc/get/updates/macos/arm64
+
+      - name: Verify macOS arm64 updater assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release/Sparky-arm64.dmg
+          test -s release/Sparky-arm64.dmg.blockmap
+          test -s release/Sparky-arm64.zip
+          test -s release/latest-mac.yml
+          grep -q 'Sparky-arm64.zip' release/latest-mac.yml
+          mv release/latest-mac.yml release/latest-mac-arm64.yml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sparky-macos-arm64
+          path: |
+            sparky-desktop/source/release/Sparky-arm64.dmg
+            sparky-desktop/source/release/Sparky-arm64.dmg.blockmap
+            sparky-desktop/source/release/Sparky-arm64.zip
+            sparky-desktop/source/release/latest-mac-arm64.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  build-linux-x64:
+    needs: test-update-feeds
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-unknown-linux-gnu
+
+      - name: Install Linux packaging tools
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Build desktop application
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
+          NODE_ENV: production
+
+      - name: Prepare Linux release directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf release release-appimage release-deb
+          mkdir -p release release-appimage release-deb
+
+      - name: Build Linux AppImage
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:linux
+        env:
+          NODE_ENV: production
+          SPARKY_UPDATE_URL: https://sparky.llc/get/updates/linux
+          T3CODE_DESKTOP_OUTPUT_DIR: release-appimage
+
+      - name: Build Linux deb package
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:linux:deb
+        env:
+          NODE_ENV: production
+          T3CODE_DESKTOP_OUTPUT_DIR: release-deb
+
+      - name: Assemble Linux installer assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          appimage="$(find release-appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          deb="$(find release-deb -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$appimage"
+          test -n "$deb"
+          cp "$appimage" release/Sparky-x64.AppImage
+          cp "$deb" release/Sparky-amd64.deb
+          if [[ -f release-appimage/latest-linux.yml ]]; then
+            cp release-appimage/latest-linux.yml release/latest-linux.yml
+            sed -i 's/Sparky-x86_64\.AppImage/Sparky-x64.AppImage/g' release/latest-linux.yml
+          fi
+          if [[ -f release-appimage/Sparky-x64.AppImage.zsync ]]; then
+            cp release-appimage/Sparky-x64.AppImage.zsync release/Sparky-x64.AppImage.zsync
+          elif [[ -f release-appimage/Sparky-x86_64.AppImage.zsync ]]; then
+            cp release-appimage/Sparky-x86_64.AppImage.zsync release/Sparky-x64.AppImage.zsync
+          fi
+
+      - name: Verify GitHub OAuth bundle
+        run: node scripts/verify-github-oauth-build.mjs
+
+      - name: Verify Linux updater assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -s release/Sparky-x86_64.AppImage && ! -e release/Sparky-x64.AppImage ]]; then
+            cp release/Sparky-x86_64.AppImage release/Sparky-x64.AppImage
+          fi
+          test -s release/Sparky-x64.AppImage
+          test -s release/Sparky-amd64.deb
+          test -s release/latest-linux.yml
+          grep -q 'Sparky-x64.AppImage' release/latest-linux.yml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sparky-linux-x64
+          path: |
+            sparky-desktop/source/release/Sparky-x64.AppImage
+            sparky-desktop/source/release/Sparky-amd64.deb
+            sparky-desktop/source/release/latest-linux.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  build-windows-x64:
+    needs: [test-update-feeds, build-wsl-node-pty]
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    env:
+      SPARKY_UPDATE_URL: https://sparky.llc/get/updates/windows
+      T3CODE_DESKTOP_SIGNED: 'false'
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build Sparky CLI
+        run: cargo build --release -p sparky_cli
+        working-directory: .
+
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wsl-node-pty-x64
+          path: wsl-prebuild
+
+      - name: Build desktop application
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+
+      - name: Verify GitHub OAuth bundle
+        run: node scripts/verify-github-oauth-build.mjs
+
+      - name: Build Windows installer
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:win:x64 --output-dir release --wsl-prebuild "$env:GITHUB_WORKSPACE/wsl-prebuild/pty.node" --verbose
+
+      - name: Verify Windows updater assets
+        shell: pwsh
+        run: |
+          $requiredFiles = @('release/Sparky-x64.exe', 'release/Sparky-x64.exe.blockmap', 'release/latest.yml')
+          foreach ($file in $requiredFiles) {
+            if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing Windows updater artifact: $file" }
+          }
+          if ((Get-Content -Raw release/latest.yml) -notmatch 'Sparky-x64\.exe') { throw 'Windows update feed does not reference the installer.' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sparky-windows-x64
+          path: |
+            sparky-desktop/source/release/Sparky-x64.exe
+            sparky-desktop/source/release/Sparky-x64.exe.blockmap
+            sparky-desktop/source/release/latest.yml
+          if-no-files-found: error
+          retention-days: 14

@@ -167,6 +167,91 @@ test("a versioned public release overrides stale external manifest bindings", as
   assert.equal(response.headers.get("location"), "https://github.com/darkness22s/Sparky-primary-related/releases/download/v1.1.2/latest-mac-x64.yml");
 });
 
+test("latest stable GitHub release serves pinned update feeds for every platform", async () => {
+  const releaseTag = "v1.1.22";
+  const releaseBase = `https://github.com/sparky-ai-code/Sparky/releases/download/${releaseTag}`;
+  const assetNames = [
+    "Sparky-x64.exe", "Sparky-x64.exe.blockmap", "latest.yml",
+    "Sparky-arm64.zip", "Sparky-arm64.dmg", "Sparky-arm64.dmg.blockmap", "latest-mac-arm64.yml",
+    "Sparky-x64.zip", "Sparky-x64.dmg", "Sparky-x64.dmg.blockmap", "latest-mac-x64.yml",
+    "Sparky-x64.AppImage", "Sparky-x64.AppImage.asc", "Sparky-x64.AppImage.zsync", "Sparky-amd64.deb", "latest-linux.yml",
+  ];
+  const release = {
+    id: 122,
+    tag_name: releaseTag,
+    name: "Sparky 1.1.22",
+    body: "Update all desktop platforms.",
+    published_at: "2026-10-04T00:00:00Z",
+    draft: false,
+    prerelease: false,
+    assets: assetNames.map((name) => ({
+      name,
+      size: 1024,
+      content_type: "application/octet-stream",
+      browser_download_url: `${releaseBase}/${name}`,
+    })),
+  };
+  const feeds = new Map([
+    ["latest.yml", `version: 1.1.22
+files:
+  - url: Sparky-x64.exe
+    sha512: windows-hash
+`],
+    ["latest-mac-arm64.yml", `version: 1.1.22
+files:
+  - url: Sparky-arm64.zip
+    sha512: arm64-hash
+`],
+    ["latest-mac-x64.yml", `version: 1.1.22
+files:
+  - url: Sparky-x64.zip
+    sha512: x64-hash
+`],
+    ["latest-linux.yml", `version: 1.1.22
+files:
+  - url: Sparky-x64.AppImage
+    sha512: linux-hash
+`],
+  ]);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const requestUrl = String(input);
+    if (requestUrl === "https://api.github.com/repos/sparky-ai-code/Sparky/releases/latest") return Response.json(release);
+    const assetName = decodeURIComponent(new URL(requestUrl).pathname.split("/").at(-1));
+    const feed = feeds.get(assetName);
+    return feed ? new Response(feed, { headers: { "content-type": "application/yaml" } }) : new Response("Not found", { status: 404 });
+  };
+
+  try {
+    const updateRoutes = [
+      ["/get/updates/windows/x64/latest.yml", "Sparky-x64.exe"],
+      ["/get/updates/macos/arm64/latest-mac.yml", "Sparky-arm64.zip"],
+      ["/get/updates/macos/x64/latest-mac.yml", "Sparky-x64.zip"],
+      ["/get/updates/linux/latest-linux.yml", "Sparky-x64.AppImage"],
+    ];
+    const updateEnv = {
+      RELEASE_LATEST_API_URL: "https://api.github.com/repos/sparky-ai-code/Sparky/releases/latest",
+      RELEASE_PUBLIC_BASE_URL: "https://github.com/sparky-ai-code/Sparky/releases/download/v1.1.15",
+      RELEASE_VERSION: "1.1.15",
+    };
+    for (const [path, assetName] of updateRoutes) {
+      const response = await handleRequest(new Request(`https://sparky.llc${path}`), updateEnv);
+      assert.equal(response.status, 200, path);
+      assert((await response.text()).includes(`${releaseBase}/${assetName}`), path);
+    }
+
+    const debResponse = await handleRequest(new Request("https://sparky.llc/get/updates/linux/Sparky-amd64.deb"), updateEnv);
+    assert.equal(debResponse.status, 302);
+    assert.equal(debResponse.headers.get("location"), `${releaseBase}/Sparky-amd64.deb`);
+    const manifestResponse = await handleRequest(new Request("https://sparky.llc/get/manifest"), updateEnv);
+    const publicRelease = await manifestResponse.json();
+    assert.equal(publicRelease.version, "1.1.22");
+    assert(publicRelease.files.some((file) => file.name === "Sparky-amd64.deb"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("beta never replaces the stable launch build", async () => {
   const response = await handleRequest(new Request("https://sparky.llc/get?channel=beta"), env);
   assert.equal(response.status, 404);

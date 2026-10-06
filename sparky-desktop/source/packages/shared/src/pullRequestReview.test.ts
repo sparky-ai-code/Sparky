@@ -80,6 +80,15 @@ describe("pull request review output", () => {
     });
   });
 
+  it("treats a readable summary without findings as an empty review", () => {
+    expect(
+      parsePullRequestReviewOutput(JSON.stringify({ summary: "No actionable defects found." })),
+    ).toEqual({
+      summary: "No actionable defects found.",
+      findings: [],
+    });
+  });
+
   it("uses the unique diff-file path when model findings omit or mis-shape their path", () => {
     const responses = [
       { line: finding.line, body: finding.body, severity: finding.severity, title: finding.title },
@@ -106,6 +115,43 @@ describe("pull request review output", () => {
         }).findings,
       ).toEqual([finding]);
     }
+  });
+
+  it("normalizes nested line anchors and uses a sole-added-line fallback", () => {
+    const responses = [
+      { ...finding, line: "line: 9" },
+      { ...finding, line: { start: { line: 9 } } },
+      { ...finding, line_range: { start: { line: 9 }, end: { line: 9 } } },
+      { ...finding, line: 0 },
+      { ...finding, line: null },
+    ];
+
+    for (const item of responses) {
+      expect(
+        parsePullRequestReviewOutput(JSON.stringify({ summary: "Review", findings: [item] }), {
+          pathFallback: finding.path,
+          lineFallback: finding.line,
+        }).findings,
+      ).toEqual([finding]);
+    }
+  });
+
+  it("uses the diff-file fallback for partial findings that bypass collection normalization", () => {
+    const response = JSON.stringify({
+      summary: "Review",
+      findings: [
+        {
+          path: { unexpected: true },
+          line: finding.line,
+          severity: finding.severity,
+          title: finding.title,
+        },
+      ],
+    });
+
+    expect(parsePullRequestReviewOutput(response, { pathFallback: finding.path }).findings).toEqual(
+      [{ ...finding, body: finding.title }],
+    );
   });
 
   it("parses JSON embedded in explanatory text or a Markdown code block", () => {

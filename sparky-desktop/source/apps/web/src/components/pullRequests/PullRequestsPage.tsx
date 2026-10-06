@@ -1143,6 +1143,26 @@ export function PullRequestsPage() {
         const summaries: string[] = [];
         let generatedFindingCount = 0;
         let skippedFindingCount = 0;
+        const reviewSystemPrompt = buildPullRequestReviewSystemPrompt({
+          focus: settings.pullRequestReviewFocus,
+          effort: settings.pullRequestReviewEffort,
+        });
+        const generateReviewResponse = async (reviewPrompt: string) => {
+          const generated = await reviewPullRequestCommand({
+            environmentId: reviewProject.environmentId,
+            input: {
+              cwd: reviewProject.workspaceRoot,
+              modelSelection: reviewModelSelection,
+              systemPrompt: reviewSystemPrompt,
+              prompt: reviewPrompt,
+            },
+          });
+          if (generated._tag === "Failure") {
+            if (isAtomCommandInterrupted(generated)) throw new Error("The review was interrupted.");
+            throw squashAtomCommandFailure(generated);
+          }
+          return generated.value.response;
+        };
         for (const [index, diffChunk] of reviewChunks.entries()) {
           const prompt = buildPullRequestReviewPrompt({
             title: currentPullRequest.title,
@@ -1156,28 +1176,37 @@ export function PullRequestsPage() {
             "reviewing",
             `Reviewing GitHub change segment ${index + 1} of ${reviewChunks.length}…`,
           );
-          const generated = await reviewPullRequestCommand({
-            environmentId: reviewProject.environmentId,
-            input: {
-              cwd: reviewProject.workspaceRoot,
-              modelSelection: reviewModelSelection,
-              systemPrompt: buildPullRequestReviewSystemPrompt({
-                focus: settings.pullRequestReviewFocus,
-                effort: settings.pullRequestReviewEffort,
-              }),
-              prompt,
-            },
-          });
-          if (generated._tag === "Failure") {
-            if (isAtomCommandInterrupted(generated)) throw new Error("The review was interrupted.");
-            throw squashAtomCommandFailure(generated);
-          }
+          let response = await generateReviewResponse(prompt);
 
           report("validating", `Validating findings from change segment ${index + 1}…`);
-          const chunkPaths = [...getPullRequestAddedLineMap(diffChunk).keys()];
-          const review = parsePullRequestReviewOutput(generated.value.response, {
+          const chunkAddedLines = getPullRequestAddedLineMap(diffChunk);
+          const chunkPaths = [...chunkAddedLines.keys()];
+          const onlyChunkPath = chunkPaths.length === 1 ? chunkPaths[0] : undefined;
+          const soleFileAddedLines = onlyChunkPath
+            ? [...(chunkAddedLines.get(onlyChunkPath) ?? [])]
+            : [];
+          const reviewOptions = {
             ...(chunkPaths.length === 1 && chunkPaths[0] ? { pathFallback: chunkPaths[0] } : {}),
-          });
+            ...(soleFileAddedLines.length === 1 ? { lineFallback: soleFileAddedLines[0] } : {}),
+          };
+          let review: ReturnType<typeof parsePullRequestReviewOutput>;
+          try {
+            review = parsePullRequestReviewOutput(response, reviewOptions);
+          } catch (error) {
+            if (!(error instanceof Error)) throw error;
+            report("reviewing", `Requesting corrected review output for segment ${index + 1}…`);
+            response = await generateReviewResponse(
+              `${prompt}\n\nCorrection: A prior attempt failed review-output validation. Start over and return exactly one JSON object with a string summary and a findings array. Every finding must have the keys path, line, severity, title, and body; use only a positive integer line copied exactly from the allowed 1-based added-line anchors above. Omit any finding that cannot be anchored precisely. Return an empty findings array if there are no actionable defects. Do not use zero-based positions, line ranges, extra wrappers, or Markdown.`,
+            );
+            try {
+              review = parsePullRequestReviewOutput(response, reviewOptions);
+            } catch (retryError) {
+              throw new Error(
+                "The model did not return a readable review in the required format after a retry. No review was posted; try another model.",
+                { cause: retryError },
+              );
+            }
+          }
           generatedFindingCount += review.findings.length;
           summaries.push(review.summary);
           const chunkValidation = validatePullRequestReviewFindings(review.findings, diffChunk);

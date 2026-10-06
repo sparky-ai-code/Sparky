@@ -202,9 +202,91 @@ function extractReviewPath(value: unknown, depth = 0): string | undefined {
   return undefined;
 }
 
+function extractReviewLine(value: unknown, depth = 0): number | undefined {
+  if (depth > 4) return undefined;
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  }
+  if (typeof value === "string") {
+    const match = value.trim().match(/^(?:line\s*:?\s*|l)?#?(\d+)(?:\s*[-–]\s*\d+)?$/iu);
+    if (!match) return undefined;
+    const line = Number(match[1]);
+    return Number.isSafeInteger(line) && line > 0 ? line : undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const line = extractReviewLine(item, depth + 1);
+      if (line !== undefined) return line;
+    }
+    return undefined;
+  }
+  if (!isRecord(value)) return undefined;
+
+  for (const key of [
+    "line",
+    "lineNumber",
+    "line_number",
+    "startLine",
+    "start_line",
+    "newLine",
+    "new_line",
+    "newFileLine",
+    "new_file_line",
+    "targetLine",
+    "target_line",
+    "lineStart",
+    "line_start",
+    "lineRange",
+    "line_range",
+    "start",
+    "new",
+    "location",
+    "range",
+    "anchor",
+    "value",
+    "text",
+    "content",
+  ]) {
+    if (key in value) {
+      const line = extractReviewLine(value[key], depth + 1);
+      if (line !== undefined) return line;
+    }
+  }
+  return undefined;
+}
+
+function extractFindingLine(value: unknown): number | undefined {
+  if (!isRecord(value)) return undefined;
+  const rawLines = [
+    value.line,
+    value.lineNumber,
+    value.line_number,
+    value.startLine,
+    value.start_line,
+    value.newLine,
+    value.new_line,
+    value.newFileLine,
+    value.new_file_line,
+    value.targetLine,
+    value.target_line,
+    value.lineStart,
+    value.line_start,
+    value.lineRange,
+    value.line_range,
+    value.location,
+    value.range,
+    value.anchor,
+    Object.entries(value).find(
+      ([key, item]) => typeof item === "number" && /line|position/iu.test(key),
+    )?.[1],
+  ];
+  return rawLines.map((item) => extractReviewLine(item)).find((line) => line !== undefined);
+}
+
 function normalizeFindingRecord(
   value: unknown,
   pathFallback?: string,
+  lineFallback?: number,
 ): Record<string, unknown> | null {
   if (!isRecord(value)) return null;
   const entries = Object.entries(value);
@@ -216,25 +298,12 @@ function normalizeFindingRecord(
       ([key, item]) => typeof item === "string" && /(?:path|file|filename)/iu.test(key),
     )?.[1] ??
     pathFallback;
-  const rawLine =
-    value.line ??
-    value.lineNumber ??
-    value.line_number ??
-    value.startLine ??
-    value.start_line ??
-    value.newLine ??
-    value.new_line ??
-    entries.find(([key, item]) => typeof item === "number" && /line|position/iu.test(key))?.[1];
   const location = typeof path === "string" ? path.match(/^(.*?)(?::(\d+))$/u) : null;
   const normalizedPath = location?.[1] ?? path;
   const normalizedLine =
-    typeof rawLine === "number"
-      ? rawLine
-      : typeof rawLine === "string" && /^\d+$/u.test(rawLine)
-        ? Number(rawLine)
-        : location?.[2] === undefined
-          ? undefined
-          : Number(location[2]);
+    extractFindingLine(value) ??
+    (location?.[2] === undefined ? undefined : Number(location[2])) ??
+    lineFallback;
   const body =
     value.body ??
     value.description ??
@@ -467,7 +536,7 @@ function parsePlainTextReviewOutput(raw: string): PullRequestReviewOutput {
 
 export function parsePullRequestReviewOutput(
   raw: string,
-  options: { readonly pathFallback?: string } = {},
+  options: { readonly pathFallback?: string; readonly lineFallback?: number } = {},
 ): PullRequestReviewOutput {
   const trimmed = raw.trim().replace(/^\uFEFF/u, "");
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]?.trim();
@@ -527,26 +596,36 @@ export function parsePullRequestReviewOutput(
     decoded.items;
   const normalizedFindings =
     normalizeFindingCollection(findingSource, 0, options.pathFallback) ??
-    normalizeFindingCollection(decoded, 0, options.pathFallback);
+    normalizeFindingCollection(decoded, 0, options.pathFallback) ??
+    (extractReviewSummaryText(decoded.summary) ? [] : null);
   if (!normalizedFindings) {
     return fail("the model response did not contain readable review findings.");
   }
   const findings = normalizedFindings.map((value, index): PullRequestReviewFinding => {
     if (!isRecord(value)) return fail(`finding ${index + 1} must be an object.`);
-    const path = requireTrimmedString(value.path, `finding ${index + 1} path`, 1_000);
-    if (typeof value.line !== "number" || !Number.isSafeInteger(value.line) || value.line < 1) {
+    // Re-apply normalization here as malformed-but-recognizable rows can pass
+    // through the collection parser unchanged when another field is missing.
+    const normalized =
+      normalizeFindingRecord(value, options.pathFallback, options.lineFallback) ?? value;
+    const path = requireTrimmedString(
+      extractReviewPath(normalized.path) ?? options.pathFallback,
+      `finding ${index + 1} path`,
+      1_000,
+    );
+    const line = extractFindingLine(normalized) ?? options.lineFallback;
+    if (line === undefined || !Number.isSafeInteger(line) || line < 1) {
       return fail(`finding ${index + 1} line must be a positive integer.`);
     }
     const body = requireTrimmedString(
-      value.body,
+      extractReviewSummaryText(normalized.body) ?? extractReviewSummaryText(normalized.title),
       `finding ${index + 1} body`,
       MAX_FINDING_BODY_LENGTH,
     );
     return {
       path,
-      line: value.line,
-      severity: normalizeReviewSeverity(value.severity),
-      title: normalizePullRequestReviewTitle(value.title, body),
+      line,
+      severity: normalizeReviewSeverity(normalized.severity),
+      title: normalizePullRequestReviewTitle(normalized.title, body),
       body,
     };
   });

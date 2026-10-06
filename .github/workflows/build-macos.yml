@@ -84,11 +84,12 @@ jobs:
         env:
           NODE_ENV: production
           SPARKY_UPDATE_URL: https://sparky.llc/get/updates/macos/x64
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ''
+          APPLE_ID_PASSWORD: ''
+          APPLE_TEAM_ID: ''
+          CSC_LINK: ''
+          CSC_KEY_PASSWORD: ''
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Verify macOS x64 updater artifacts
         shell: bash
@@ -111,19 +112,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Upload DMG to temp release (workflow_dispatch)
+      - name: Upload unsigned macOS x64 assets to v1.1.22
         if: github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
         run: |
-          RELEASE_TAG="preview-${GITHUB_RUN_ID}-x64"
-          gh release create "$RELEASE_TAG" release/Sparky-x64.dmg --title "Sparky macOS x64 (preview)" --notes "Preview build from workflow #${GITHUB_RUN_ID}" --prerelease || true
-          gh release upload "$RELEASE_TAG" release/Sparky-x64.dmg --clobber || true
-          gh release upload "$RELEASE_TAG" release/Sparky-x64.dmg.blockmap --clobber || true
-          gh release upload "$RELEASE_TAG" release/Sparky-x64.zip --clobber || true
+          set -euo pipefail
+          grep -q '^version: 1.1.22$' release/latest-mac.yml
+          gh release upload "v1.1.22" release/Sparky-x64.dmg --clobber
+          gh release upload "v1.1.22" release/Sparky-x64.dmg.blockmap --clobber
+          gh release upload "v1.1.22" release/Sparky-x64.zip --clobber
           mv release/latest-mac.yml release/latest-mac-x64.yml
-          gh release upload "$RELEASE_TAG" release/latest-mac-x64.yml --clobber || true
+          gh release upload "v1.1.22" release/latest-mac-x64.yml --clobber
         env:
           GH_TOKEN: ${{ github.token }}
-
   build-macos-arm64:
     needs: test-update-feeds
     runs-on: macos-latest
@@ -179,11 +179,12 @@ jobs:
         env:
           NODE_ENV: production
           SPARKY_UPDATE_URL: https://sparky.llc/get/updates/macos/arm64
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ''
+          APPLE_ID_PASSWORD: ''
+          APPLE_TEAM_ID: ''
+          CSC_LINK: ''
+          CSC_KEY_PASSWORD: ''
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Verify macOS arm64 updater artifacts
         shell: bash
@@ -206,19 +207,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Upload DMG to temp release (workflow_dispatch)
+      - name: Upload unsigned macOS arm64 assets to v1.1.22
         if: github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
         run: |
-          RELEASE_TAG="preview-${GITHUB_RUN_ID}-arm64"
-          gh release create "$RELEASE_TAG" release/Sparky-arm64.dmg --title "Sparky macOS arm64 (preview)" --notes "Preview build from workflow #${GITHUB_RUN_ID}" --prerelease || true
-          gh release upload "$RELEASE_TAG" release/Sparky-arm64.dmg --clobber || true
-          gh release upload "$RELEASE_TAG" release/Sparky-arm64.dmg.blockmap --clobber || true
-          gh release upload "$RELEASE_TAG" release/Sparky-arm64.zip --clobber || true
+          set -euo pipefail
+          grep -q '^version: 1.1.22$' release/latest-mac.yml
+          gh release upload "v1.1.22" release/Sparky-arm64.dmg --clobber
+          gh release upload "v1.1.22" release/Sparky-arm64.dmg.blockmap --clobber
+          gh release upload "v1.1.22" release/Sparky-arm64.zip --clobber
           mv release/latest-mac.yml release/latest-mac-arm64.yml
-          gh release upload "$RELEASE_TAG" release/latest-mac-arm64.yml --clobber || true
+          gh release upload "v1.1.22" release/latest-mac-arm64.yml --clobber
         env:
           GH_TOKEN: ${{ github.token }}
-
   build-linux-x64:
     needs: test-update-feeds
     runs-on: ubuntu-latest
@@ -365,21 +365,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Upload Linux artifacts to temp release (workflow_dispatch)
+      - name: Upload unsigned Linux assets to v1.1.22
         if: github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           set -euo pipefail
-          RELEASE_TAG="preview-${GITHUB_RUN_ID}-linux"
-          gh release create "$RELEASE_TAG" release/Sparky-x64.AppImage --title "Sparky Linux x64 (preview)" --notes "Preview build from workflow #${GITHUB_RUN_ID}" --prerelease || true
+          grep -q '^version: 1.1.22$' release/latest-linux.yml
           for artifact in release/Sparky-x86_64.AppImage release/Sparky-x64.AppImage release/Sparky-x86_64.AppImage.zsync release/Sparky-x64.AppImage.zsync release/Sparky-amd64.deb release/latest-linux.yml; do
             if [[ -f "$artifact" ]]; then
-              gh release upload "$RELEASE_TAG" "$artifact" --clobber || true
+              gh release upload "v1.1.22" "$artifact" --clobber
             fi
           done
         env:
           GH_TOKEN: ${{ github.token }}
-
   build-windows:
     needs: test-update-feeds
     runs-on: windows-latest
@@ -454,15 +452,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Upload EXE to temp release (workflow_dispatch)
+      - name: Upload unsigned Windows assets to v1.1.22
         if: github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $RELEASE_TAG = "preview-${env:GITHUB_RUN_ID}-win"
-          gh release create "$RELEASE_TAG" release/Sparky-x64.exe --title "Sparky Windows (preview)" --notes "Preview build from workflow #${env:GITHUB_RUN_ID}" --prerelease
+          $manifest = Get-Content -Raw release/latest.yml
+          if ($manifest -notmatch '(?m)^version:\s*1\.1\.22\s*$') { throw 'Expected Windows updater metadata version 1.1.22.' }
+          gh release upload "v1.1.22" release/Sparky-x64.exe --clobber
+          gh release upload "v1.1.22" release/Sparky-x64.exe.blockmap --clobber
+          gh release upload "v1.1.22" release/latest.yml --clobber
         env:
           GH_TOKEN: ${{ github.token }}
-
   release:
     needs: [build-macos-x64, build-macos-arm64, build-linux-x64, build-windows]
     if: startsWith(github.ref, 'refs/tags/v')

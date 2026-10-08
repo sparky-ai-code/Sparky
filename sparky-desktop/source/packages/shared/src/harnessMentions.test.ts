@@ -20,6 +20,11 @@ describe("ACP harness mentions", () => {
     });
   });
 
+  it("does not route mentions inside multi-backtick code spans", () => {
+    const prompt = "show ``@agent:codex`` and `@agent:claudeHarness` literally";
+    expect(parseHarnessMentions(prompt)).toEqual({ instanceId: null, prompt, error: null });
+  });
+
   it("rejects messages that tag multiple harnesses", () => {
     const parsed = parseHarnessMentions("@agent:codexHarness and @agent:claudeHarness help");
     expect(parsed.error).toContain("one harness");

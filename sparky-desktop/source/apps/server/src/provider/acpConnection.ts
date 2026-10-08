@@ -14,6 +14,7 @@ export class AcpConnection {
   readonly child: NodeChildProcess.ChildProcessWithoutNullStreams;
   private nextId = 0;
   private closed = false;
+  private terminating = false;
   private readonly pending = new Map<
     number,
     {
@@ -33,6 +34,7 @@ export class AcpConnection {
       cwd,
       env,
       shell: command.shell,
+      detached: process.platform !== "win32",
       windowsHide: true,
       stdio: "pipe",
     });
@@ -49,7 +51,6 @@ export class AcpConnection {
         this.receive(record(JSON.parse(line)));
       } catch {
         this.fail(new Error("Invalid JSON received from ACP harness."));
-        this.child.kill();
       }
     });
     this.child.on("close", () => lines.close());
@@ -124,6 +125,31 @@ export class AcpConnection {
     }
   }
 
+  private terminateProcessTree(): void {
+    if (this.terminating) return;
+    this.terminating = true;
+    const pid = this.child.pid;
+    if (pid === undefined) return;
+    if (process.platform === "win32") {
+      NodeChildProcess.execFile("taskkill", ["/PID", String(pid), "/T", "/F"], () => {});
+      return;
+    }
+    const signalGroup = (signal: NodeJS.Signals) => {
+      try {
+        process.kill(-pid, signal);
+      } catch {
+        try {
+          this.child.kill(signal);
+        } catch {
+          // The process may have exited between the signal attempts.
+        }
+      }
+    };
+    signalGroup("SIGTERM");
+    const forceKill = setTimeout(() => signalGroup("SIGKILL"), 1_000);
+    forceKill.unref();
+  }
+
   private fail(error: Error): void {
     if (this.closed) return;
     this.closed = true;
@@ -132,11 +158,11 @@ export class AcpConnection {
       pending.reject(error);
     }
     this.pending.clear();
+    this.terminateProcessTree();
     this.onExit(error);
   }
 
   close(): void {
     this.fail(new Error("ACP connection closed"));
-    this.child.kill();
   }
 }

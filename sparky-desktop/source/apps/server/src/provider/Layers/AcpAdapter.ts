@@ -454,15 +454,6 @@ export const makeAcpAdapter = (options: Options) =>
             },
             catch: (cause) => failure("session/prompt", cause),
           });
-          if (requestedMode)
-            yield* Effect.tryPromise({
-              try: () =>
-                state.connection.request("session/set_mode", {
-                  sessionId: state.sessionId,
-                  modeId: requestedMode,
-                }),
-              catch: (cause) => failure("session/set_mode", cause),
-            });
           const turnId = TurnId.make(`acp-${NodeCrypto.randomUUID()}`);
           state.tools.clear();
           state.active = {
@@ -471,6 +462,21 @@ export const makeAcpAdapter = (options: Options) =>
             text: "",
             started: false,
           };
+          if (requestedMode)
+            yield* Effect.tryPromise({
+              try: () =>
+                state.connection.request("session/set_mode", {
+                  sessionId: state.sessionId,
+                  modeId: requestedMode,
+                }),
+              catch: (cause) => failure("session/set_mode", cause),
+            }).pipe(
+              Effect.tapError(() =>
+                Effect.sync(() => {
+                  if (state.active?.turnId === turnId) state.active = undefined;
+                }),
+              ),
+            );
           state.session = {
             ...state.session,
             status: "running",

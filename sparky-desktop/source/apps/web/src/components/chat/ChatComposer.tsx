@@ -1726,6 +1726,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     const { trigger } = resolveActiveComposerTrigger();
     const menuIsActive = composerMenuOpenRef.current || trigger !== null;
+    const selectedItem = activeComposerMenuItemRef.current ?? composerMenuItemsRef.current[0];
     const bestHarness =
       trigger?.kind === "path"
         ? composerMenuItemsRef.current.find(
@@ -1737,6 +1738,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       trigger?.kind === "path" && trigger.query.trim().length > 0
         ? searchPlugins(trigger.query)[0]
         : undefined;
+    if ((key === "Enter" || key === "Tab") && menuIsActive && selectedItem) {
+      onSelectComposerItem(selectedItem);
+      return true;
+    }
     if ((key === "Enter" || key === "Tab") && bestHarness) {
       onSelectComposerItem(bestHarness);
       return true;
@@ -1747,7 +1752,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     if (menuIsActive) {
       const currentItems = composerMenuItemsRef.current;
-      const selectedItem = activeComposerMenuItemRef.current ?? currentItems[0];
       if (key === "ArrowDown" && currentItems.length > 0) {
         nudgeComposerMenuHighlight("ArrowDown");
         return true;

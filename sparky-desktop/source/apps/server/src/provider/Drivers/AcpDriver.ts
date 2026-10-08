@@ -13,13 +13,47 @@ import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMainte
 import { makeAcpAdapter } from "../Layers/AcpAdapter.ts";
 import type * as TextGeneration from "../../textGeneration/TextGeneration.ts";
 
-function parseArgs(value: string): string[] {
-  const tokens = [
-    ...value.matchAll(/(?:"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|(\S+))/gu),
-  ];
-  return tokens.map((token) =>
-    (token[1] ?? token[2] ?? token[3] ?? "").replace(/\\(["'\\])/g, "$1"),
-  );
+export function parseArgs(value: string): string[] {
+  const args: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+  let tokenStarted = false;
+
+  for (const character of value) {
+    if (escaped) {
+      current += character;
+      escaped = false;
+      tokenStarted = true;
+      continue;
+    }
+    if (character === "\\" && quote !== "'") {
+      escaped = true;
+      tokenStarted = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) quote = null;
+      else current += character;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      tokenStarted = true;
+    } else if (/\s/u.test(character)) {
+      if (tokenStarted) args.push(current);
+      current = "";
+      tokenStarted = false;
+    } else {
+      current += character;
+      tokenStarted = true;
+    }
+  }
+
+  if (escaped) current += "\\";
+  if (quote) throw new Error("Unterminated quote in ACP command arguments.");
+  if (tokenStarted) args.push(current);
+  return args;
 }
 
 function makeDriver(
@@ -64,7 +98,7 @@ function makeDriver(
         const resolve = yield* SpawnExecutableResolution;
         const platform = yield* HostProcessPlatform;
         const command = config.command.trim() || defaultCommand;
-        const args = parseArgs(config.args.trim() || defaultArgs);
+        const args = parseArgs(config.args);
         const installed = !!command && !!resolve(command, platform, env);
         const continuationIdentity = defaultProviderContinuationIdentity({
           driverKind,

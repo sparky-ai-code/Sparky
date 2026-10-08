@@ -8,10 +8,8 @@
  * as an `"unavailable"` shadow snapshot at runtime (see
  * `buildUnavailableProviderSnapshot`).
  *
- * The aggregated Sparky driver owns the OpenAI/Codex, Claude/Anthropic,
- * and Google/Gemini catalogs. Standalone native CLI drivers are
- * intentionally not registered here, so they cannot create duplicate
- * provider instances in the backend or picker.
+ * The aggregated Sparky driver owns the API catalogs. ACP harness drivers
+ * expose independent CLI conversations without replacing that runtime.
  *
  * Adding a new first-party driver means:
  *   1. implement `ProviderDriver` in a sibling `Drivers/<Name>Driver.ts`,
@@ -26,6 +24,7 @@
  * @module provider/builtInDrivers
  */
 import { SparkyDriver } from "./Drivers/SparkyDriver.ts";
+import { AcpDriver, CodexHarnessDriver, ClaudeHarnessDriver } from "./Drivers/AcpDriver.ts";
 import type { AnyProviderDriver } from "./ProviderDriver.ts";
 import type { ServerSettingsService } from "../serverSettings.ts";
 import type { ServerConfig } from "../config.ts";
@@ -36,12 +35,12 @@ import type { ProviderEventLoggers } from "./Layers/ProviderEventLoggers.ts";
  * driver. The registry layer declares `R = BuiltInDriversEnv`; the runtime
  * layer must provide every service in this union.
  */
-export type BuiltInDriversEnv =
-  | ServerSettingsService
-  | ServerConfig
-  | ProviderEventLoggers;
+export type BuiltInDriversEnv = ServerSettingsService | ServerConfig | ProviderEventLoggers;
 
-/** Only the aggregated Sparky runtime is exposed as a built-in provider. */
+/** Sparky plus independent ACP harness runtimes. */
 export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
   SparkyDriver,
+  CodexHarnessDriver,
+  ClaudeHarnessDriver,
+  AcpDriver,
 ];

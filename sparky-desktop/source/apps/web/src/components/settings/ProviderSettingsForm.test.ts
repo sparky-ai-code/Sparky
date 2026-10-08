@@ -13,7 +13,12 @@ describe("ProviderSettingsForm helpers", () => {
   it("exposes only the supported user-facing provider drivers", () => {
     expect(DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("cursor")]).toBeUndefined();
     expect(DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("grok")]).toBeUndefined();
-    expect(Object.values(DRIVER_OPTION_BY_VALUE).map((option) => option?.label)).toEqual(["Sparky"]);
+    expect(Object.values(DRIVER_OPTION_BY_VALUE).map((option) => option?.label)).toEqual([
+      "Sparky",
+      "Codex CLI",
+      "Claude Code",
+      "ACP harness",
+    ]);
   });
 
   it("derives visible provider config fields from the client definition schema", () => {
@@ -26,7 +31,9 @@ describe("ProviderSettingsForm helpers", () => {
   it("sources labels and descriptions from schema annotations", () => {
     const sparky = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("sparky")];
     expect(sparky).toBeDefined();
-    expect(deriveProviderSettingsFields(sparky!).map((field) => field.label)).toEqual(["Binary Path"]);
+    expect(deriveProviderSettingsFields(sparky!).map((field) => field.label)).toEqual([
+      "Binary Path",
+    ]);
   });
 
   it("preserves unknown config keys while omitting empty configurable fields", () => {

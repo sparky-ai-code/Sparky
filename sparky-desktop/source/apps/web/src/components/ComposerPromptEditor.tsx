@@ -79,6 +79,8 @@ import {
 import { FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { getPluginById, serializePluginToken, type PluginId } from "./plugins/pluginCatalog";
 import { PluginLogo } from "./plugins/PluginLogo";
+import { HarnessLogo } from "./chat/HarnessLogo";
+import { harnessLabel } from "~/harnesses";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
 import { formatProviderSkillDisplayName } from "~/providerSkillPresentation";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -147,6 +149,10 @@ const ComposerTerminalContextActionsContext = createContext<{
 
 function ComposerMentionDecorator(props: { path: string }) {
   const theme = resolvedThemeFromDocument();
+  const isHarness = props.path.startsWith("agent:");
+  const label = isHarness
+    ? harnessLabel(props.path.slice("agent:".length))
+    : basenameOfPath(props.path);
   const chip = (
     <span
       className={FILE_TAG_CHIP_CLASS_NAME}
@@ -154,7 +160,12 @@ function ComposerMentionDecorator(props: { path: string }) {
       spellCheck={false}
       data-composer-mention-chip="true"
     >
-      <FileTagChipContent path={props.path} label={basenameOfPath(props.path)} theme={theme} />
+      <span className="inline-flex items-center gap-1.5">
+        {isHarness ? (
+          <HarnessLogo id={props.path.slice("agent:".length)} className="size-3.5" />
+        ) : null}
+        {isHarness ? label : <FileTagChipContent path={props.path} label={label} theme={theme} />}
+      </span>
     </span>
   );
 
@@ -208,7 +219,9 @@ class ComposerMentionNode extends DecoratorNode<React.ReactElement> {
   }
 
   override getTextContent(): string {
-    return serializeComposerFileLink(this.__path);
+    return this.__path.startsWith("agent:")
+      ? `@${this.__path}`
+      : serializeComposerFileLink(this.__path);
   }
 
   override isInline(): true {

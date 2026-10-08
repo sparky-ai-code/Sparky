@@ -44,6 +44,14 @@ describe("splitPromptIntoComposerSegments", () => {
     ]);
   });
 
+  it("renders ACP agent tokens as inline mention chips", () => {
+    expect(splitPromptIntoComposerSegments("Review @agent:claudeHarness carefully")).toEqual([
+      { type: "text", text: "Review " },
+      { type: "mention", path: "agent:claudeHarness", source: "@agent:claudeHarness" },
+      { type: "text", text: " carefully" },
+    ]);
+  });
+
   it("does not convert an incomplete trailing mention token", () => {
     expect(splitPromptIntoComposerSegments("Inspect @AGENTS.md")).toEqual([
       { type: "text", text: "Inspect @AGENTS.md" },

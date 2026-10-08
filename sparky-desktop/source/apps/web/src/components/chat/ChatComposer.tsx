@@ -77,10 +77,12 @@ import { ProviderModelPicker } from "./ProviderModelPicker";
 import { ComposerAddMenu } from "./ComposerAddMenu";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import {
-  searchPlugins,
   serializePluginToken,
+  searchPlugins,
   type PluginDefinition,
 } from "../plugins/pluginCatalog";
+import { searchHarnesses } from "~/harnesses";
+import { serializeHarnessToken } from "@sparky/shared/harnessMentions";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
@@ -914,14 +916,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!activeComposerTrigger) return [];
     if (activeComposerTrigger.kind === "path") {
-      return workspaceEntries.entries.map((entry) => ({
-        id: `path:${entry.kind}:${entry.path}`,
-        type: "path",
-        path: entry.path,
-        pathKind: entry.kind,
-        label: basenameOfPath(entry.path),
-        description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
-      }));
+      return [
+        ...searchHarnesses(providerStatuses, activeComposerTrigger.query).map((provider) => ({
+          id: `harness:${provider.instanceId}`,
+          type: "harness" as const,
+          instanceId: provider.instanceId,
+          driver: provider.driver,
+          label: provider.displayName ?? provider.driver,
+          description: provider.installed
+            ? "Send to a separate ACP conversation"
+            : "Configure the ACP command to use this harness",
+        })),
+        ...workspaceEntries.entries.map((entry) => ({
+          id: `path:${entry.kind}:${entry.path}`,
+          type: "path" as const,
+          path: entry.path,
+          pathKind: entry.kind,
+          label: basenameOfPath(entry.path),
+          description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
+        })),
+      ];
     }
     if (activeComposerTrigger.kind === "slash-command") {
       const builtInSlashCommandItems = [
@@ -979,7 +993,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }));
     }
     return [];
-  }, [activeComposerTrigger, selectedProvider, selectedProviderStatus, workspaceEntries.entries]);
+  }, [
+    activeComposerTrigger,
+    providerStatuses,
+    selectedProvider,
+    selectedProviderStatus,
+    workspaceEntries.entries,
+  ]);
 
   const liveComposerTrigger = detectComposerTrigger(
     prompt,
@@ -1481,6 +1501,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       const { snapshot, trigger } = resolveActiveComposerTrigger();
       if (!trigger) return;
+      if (item.type === "harness") {
+        const replacement = `${serializeHarnessToken(item.instanceId)} `;
+        const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+          snapshot.value,
+          trigger.rangeEnd,
+          replacement,
+        );
+        if (
+          applyPromptReplacement(trigger.rangeStart, replacementRangeEnd, replacement, {
+            expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd),
+          })
+        ) {
+          setComposerHighlightedItemId(null);
+          setComposerTrigger(null);
+        }
+        return;
+      }
       if (item.type === "path") {
         const replacement = `${serializeComposerFileLink(item.path)} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
@@ -1689,10 +1726,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     const { trigger } = resolveActiveComposerTrigger();
     const menuIsActive = composerMenuOpenRef.current || trigger !== null;
+    const bestHarness =
+      trigger?.kind === "path"
+        ? composerMenuItemsRef.current.find(
+            (item): item is Extract<ComposerCommandItem, { type: "harness" }> =>
+              item.type === "harness",
+          )
+        : undefined;
     const bestPlugin =
       trigger?.kind === "path" && trigger.query.trim().length > 0
         ? searchPlugins(trigger.query)[0]
         : undefined;
+    if ((key === "Enter" || key === "Tab") && bestHarness) {
+      onSelectComposerItem(bestHarness);
+      return true;
+    }
     if ((key === "Enter" || key === "Tab") && bestPlugin) {
       onSelectComposerPlugin(bestPlugin);
       return true;

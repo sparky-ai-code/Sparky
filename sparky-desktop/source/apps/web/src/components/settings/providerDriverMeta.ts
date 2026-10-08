@@ -1,8 +1,6 @@
-import {
-  ProviderDriverKind,
-} from "@sparky/contracts";
+import { ProviderDriverKind } from "@sparky/contracts";
 import * as Schema from "effect/Schema";
-import { SparkyIcon, type Icon } from "../Icons";
+import { SparkyIcon, OpenAI, ClaudeAI, ACPRegistryIcon, type Icon } from "../Icons";
 type ProviderSettingsSchema = {
   readonly fields: Readonly<Record<string, Schema.Top>>;
 } & Schema.Top;
@@ -37,6 +35,44 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
       binaryPath: Schema.String,
     }),
   },
+  ...(
+    [
+      {
+        value: "codexHarness",
+        label: "Codex CLI",
+        icon: OpenAI,
+        command: "npx",
+        args: "-y @agentclientprotocol/codex-acp",
+      },
+      {
+        value: "claudeHarness",
+        label: "Claude Code",
+        icon: ClaudeAI,
+        command: "npx",
+        args: "-y @agentclientprotocol/claude-agent-acp",
+      },
+      { value: "acp", label: "ACP harness", icon: ACPRegistryIcon, command: "", args: "" },
+    ] as const
+  ).map(({ value, label, icon, command, args }) => ({
+    value: ProviderDriverKind.make(value),
+    label,
+    icon,
+    settingsSchema: Schema.Struct({
+      command: Schema.String.annotate({
+        title: "ACP command",
+        description: "Executable that starts your ACP harness.",
+        providerSettingsForm: {
+          placeholder: command || "e.g. my-agent-acp",
+          clearWhenEmpty: "persist",
+        },
+      }),
+      args: Schema.String.annotate({
+        title: "Command arguments",
+        description: "Optional arguments; quote values that contain spaces.",
+        providerSettingsForm: { placeholder: args || "--stdio", clearWhenEmpty: "persist" },
+      }),
+    }),
+  })),
 ];
 
 export const PROVIDER_CLIENT_DEFINITION_BY_VALUE: Partial<

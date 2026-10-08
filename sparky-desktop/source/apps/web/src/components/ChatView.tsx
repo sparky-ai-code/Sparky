@@ -40,6 +40,7 @@ import {
 import { CHAT_LIST_ANCHOR_OFFSET } from "@sparky/shared/chatList";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@sparky/shared/projectScripts";
 import { truncate } from "@sparky/shared/String";
+import { parseHarnessMentions, ACP_DRIVER_KINDS } from "@sparky/shared/harnessMentions";
 import { nextTerminalId, resolveTerminalSessionLabel } from "@sparky/shared/terminalLabels";
 import { Debouncer } from "@tanstack/react-pacer";
 import { useAtomValue } from "@effect/atom-react";
@@ -2568,12 +2569,9 @@ function ChatViewContent(props: ChatViewProps) {
   }, [focusComposer]);
   const addPluginToComposer = useCallback(
     (pluginId: PluginId) => {
-      composerRef.current?.insertTextAtEnd(
-        `${serializePluginToken(pluginId)} `,
-        {
-          ensureLeadingBoundary: true,
-        },
-      );
+      composerRef.current?.insertTextAtEnd(`${serializePluginToken(pluginId)} `, {
+        ensureLeadingBoundary: true,
+      });
     },
     [composerRef],
   );
@@ -4305,18 +4303,18 @@ function ChatViewContent(props: ChatViewProps) {
       elementContexts: rawComposerElementContexts,
       previewAnnotations: rawComposerPreviewAnnotations,
       reviewComments: rawComposerReviewComments,
-      selectedProvider: ctxSelectedProvider,
-      selectedModel: ctxSelectedModel,
-      selectedProviderModels: ctxSelectedProviderModels,
-      selectedPromptEffort: ctxSelectedPromptEffort,
-      selectedModelSelection: ctxSelectedModelSelection,
+      selectedProvider: composerSelectedProvider,
+      selectedModel: composerSelectedModel,
+      selectedProviderModels: composerSelectedProviderModels,
+      selectedPromptEffort: composerSelectedPromptEffort,
+      selectedModelSelection: composerSelectedModelSelection,
     } = sendCtx;
     const composerTerminalContexts = workspaceContextEnabled ? rawComposerTerminalContexts : [];
     const composerElementContexts = workspaceContextEnabled ? rawComposerElementContexts : [];
     const composerPreviewAnnotations = workspaceContextEnabled ? rawComposerPreviewAnnotations : [];
     const composerReviewComments = workspaceContextEnabled ? rawComposerReviewComments : [];
     const {
-      trimmedPrompt: trimmed,
+      trimmedPrompt: trimmedComposerPrompt,
       sendableTerminalContexts: sendableComposerTerminalContexts,
       expiredTerminalContextCount,
       hasSendableContent,
@@ -4329,6 +4327,65 @@ function ChatViewContent(props: ChatViewProps) {
         composerPreviewAnnotations.length +
         composerReviewComments.length,
     });
+    const harnessMention = parseHarnessMentions(promptForSend);
+    if (harnessMention.error) {
+      toastManager.add({
+        type: "warning",
+        title: "Choose one harness",
+        description: harnessMention.error,
+      });
+      return;
+    }
+    const routedHarness = harnessMention.instanceId
+      ? providerStatuses.find((provider) => provider.instanceId === harnessMention.instanceId)
+      : undefined;
+    if (
+      harnessMention.instanceId &&
+      (!routedHarness ||
+        !ACP_DRIVER_KINDS.has(routedHarness.driver) ||
+        !routedHarness.enabled ||
+        !routedHarness.installed)
+    ) {
+      toastManager.add({
+        type: "error",
+        title: "Harness is unavailable",
+        description: `Configure the ACP provider '${harnessMention.instanceId}' before using its mention.`,
+      });
+      return;
+    }
+    const routedModel = routedHarness?.models.find((model) => model.isDefault)?.slug ?? "default";
+    const ctxSelectedProvider = routedHarness?.driver ?? composerSelectedProvider;
+    const ctxSelectedModel = routedHarness ? routedModel : composerSelectedModel;
+    const ctxSelectedProviderModels = routedHarness?.models ?? composerSelectedProviderModels;
+    const ctxSelectedPromptEffort = routedHarness ? null : composerSelectedPromptEffort;
+    const ctxSelectedModelSelection: ModelSelection = routedHarness
+      ? createModelSelection(routedHarness.instanceId, routedModel)
+      : composerSelectedModelSelection;
+    const trimmed = routedHarness ? harnessMention.prompt.trim() : trimmedComposerPrompt;
+    if (
+      routedHarness &&
+      !trimmed &&
+      composerImages.length === 0 &&
+      sendableComposerTerminalContexts.length === 0 &&
+      composerElementContexts.length === 0 &&
+      composerPreviewAnnotations.length === 0 &&
+      composerReviewComments.length === 0
+    ) {
+      toastManager.add({
+        type: "warning",
+        title: "Add a message",
+        description: "Write a message to send to the selected harness.",
+      });
+      return;
+    }
+    if (showPlanFollowUpPrompt && activeProposedPlan && routedHarness) {
+      toastManager.add({
+        type: "warning",
+        title: "Start a harness conversation",
+        description: "Harness mentions are available in chat, not plan follow-ups.",
+      });
+      return;
+    }
     if (showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
         draftText: trimmed,
@@ -4466,7 +4523,7 @@ function ChatViewContent(props: ChatViewProps) {
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
     const messageTextWithContexts = appendElementContextsToPrompt(
-      appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
+      appendTerminalContextsToPrompt(harnessMention.prompt, composerTerminalContextsSnapshot),
       composerElementContextsSnapshot,
     );
     const messageTextWithPreviewAnnotations = composerPreviewAnnotationsSnapshot.reduce(
@@ -4495,6 +4552,95 @@ function ChatViewContent(props: ChatViewProps) {
         dataUrl: await readFileAsDataUrl(image.file),
       })),
     );
+    const routeToFreshHarnessThread = Boolean(
+      routedHarness &&
+      (isServerThread || activeThread.messages.length > 0) &&
+      (activeThread.session?.providerInstanceId ?? activeThread.modelSelection.instanceId) !==
+        routedHarness.instanceId,
+    );
+    if (routeToFreshHarnessThread && routedHarness) {
+      const finishHarnessDispatch = () => {
+        sendInFlightRef.current = false;
+        resetLocalDispatch();
+      };
+      const imageResult = await settlePromise(() => turnAttachmentsPromise);
+      if (imageResult._tag === "Failure") {
+        setThreadError(threadIdForSend, "Could not read an attachment for the selected harness.");
+        finishHarnessDispatch();
+        return;
+      }
+      const createdAt = new Date().toISOString();
+      const nextThreadId = newThreadId();
+      const harnessTitle = truncate(
+        replacePluginTokensWithNames(trimmed) ||
+          `${routedHarness.displayName ?? "Harness"} conversation`,
+      );
+      const createResult = await createThread({
+        environmentId,
+        input: {
+          threadId: nextThreadId,
+          projectId: activeProject?.id ?? UNSCOPED_CHAT_PROJECT_ID,
+          title: harnessTitle,
+          modelSelection: ctxSelectedModelSelection,
+          runtimeMode,
+          interactionMode,
+          branch: workspaceContextEnabled ? activeThreadBranch : null,
+          worktreePath: workspaceContextEnabled ? activeThread.worktreePath : null,
+          createdAt,
+        },
+      });
+      let failure: AtomCommandResult<unknown, unknown> | null =
+        createResult._tag === "Failure" ? createResult : null;
+      if (failure === null) {
+        const started = await startThreadTurn({
+          environmentId,
+          input: {
+            threadId: nextThreadId,
+            message: {
+              messageId: newMessageId(),
+              role: "user",
+              text: formatOutgoingPrompt({
+                provider: ctxSelectedProvider,
+                model: ctxSelectedModel,
+                models: ctxSelectedProviderModels,
+                effort: ctxSelectedPromptEffort,
+                text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+              }),
+              attachments: imageResult.value,
+            },
+            modelSelection: ctxSelectedModelSelection,
+            titleSeed: harnessTitle,
+            workspaceContext: workspaceContextEnabled ? "project" : "none",
+            runtimeMode,
+            interactionMode,
+            createdAt,
+          },
+        });
+        failure = started._tag === "Failure" ? started : null;
+      }
+      if (failure === null) {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: { environmentId, threadId: nextThreadId },
+        });
+        finishHarnessDispatch();
+        return;
+      }
+      await deleteThread({ environmentId, input: { threadId: nextThreadId } });
+      const error = squashAtomCommandFailure(failure);
+      toastManager.add({
+        type: "error",
+        title: "Could not start the harness conversation",
+        description:
+          error instanceof Error ? error.message : "The harness thread could not be started.",
+      });
+      finishHarnessDispatch();
+      return;
+    }
+
     const optimisticAttachments = composerImagesSnapshot.map((image) => ({
       type: "image" as const,
       id: image.id,
@@ -5774,11 +5920,15 @@ function ChatViewContent(props: ChatViewProps) {
                           onChangeActivePendingUserInputCustomAnswer
                         }
                         onProviderModelSelect={onProviderModelSelect}
-                        onRefreshModelCatalog={
-                          routeKind === "server"
-                            ? (instanceId) => refreshServerProviders({ instanceId })
-                            : undefined
-                        }
+                        {...(routeKind === "server"
+                          ? {
+                              onRefreshModelCatalog: (instanceId) =>
+                                refreshServerProviders({
+                                  environmentId,
+                                  input: { instanceId },
+                                }),
+                            }
+                          : {})}
                         getModelDisabledReason={getModelDisabledReason}
                         toggleInteractionMode={toggleInteractionMode}
                         handleRuntimeModeChange={handleRuntimeModeChange}

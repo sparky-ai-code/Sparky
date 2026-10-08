@@ -84,6 +84,8 @@ export const deriveProviderInstanceConfigMap = (
       continue;
     }
 
+    // Generic ACP instances require an explicit command; do not synthesize one.
+    if (driver.driverKind === "acp") continue;
     const legacyConfig = legacyProviders[String(driver.driverKind)] ?? driver.defaultConfig();
     const enabled =
       typeof legacyConfig === "object" &&

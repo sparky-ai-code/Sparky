@@ -20,10 +20,19 @@ import {
   CommandList,
   CommandSeparator,
 } from "../ui/command";
+import { HarnessLogo } from "./HarnessLogo";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import "./composerPlanModeChip.css";
 
 export type ComposerCommandItem =
+  | {
+      id: string;
+      type: "harness";
+      instanceId: string;
+      driver: string;
+      label: string;
+      description: string;
+    }
   | {
       id: string;
       type: "path";
@@ -277,6 +286,27 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
               </button>
             </CommandGroup>
 
+            {props.items.some((item) => item.type === "harness") ? (
+              <CommandGroup>
+                <CommandGroupLabel className="px-3 pb-1 pt-1.5 text-[12px] text-muted-foreground/70">
+                  Agents · separate harness conversations
+                </CommandGroupLabel>
+                {props.items
+                  .filter((item) => item.type === "harness")
+                  .map((item) => (
+                    <ComposerCommandMenuItem
+                      key={item.id}
+                      item={item}
+                      resolvedTheme={props.resolvedTheme}
+                      isActive={props.activeItemId === item.id}
+                      onHighlight={props.onHighlightedItemChange}
+                      onSelect={props.onSelect}
+                      compactPath
+                    />
+                  ))}
+              </CommandGroup>
+            ) : null}
+
             {pluginItems.length > 0 ? (
               <>
                 <CommandSeparator className="mx-2 my-1.5 w-auto bg-border/60" />
@@ -417,6 +447,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         props.onSelect(props.item);
       }}
     >
+      {props.item.type === "harness" ? (
+        <HarnessLogo id={props.item.driver} className="size-4 shrink-0" />
+      ) : null}
       {props.item.type === "path" ? (
         <PierreEntryIcon
           pathValue={props.item.path}

@@ -17,18 +17,23 @@ export function parseArgs(value: string): string[] {
   const args: string[] = [];
   let current = "";
   let quote: "'" | '"' | null = null;
-  let escaped = false;
   let tokenStarted = false;
 
-  for (const character of value) {
-    if (escaped) {
-      current += character;
-      escaped = false;
-      tokenStarted = true;
-      continue;
-    }
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index]!;
     if (character === "\\" && quote !== "'") {
-      escaped = true;
+      const next = value[index + 1];
+      const escapesNext =
+        next !== undefined &&
+        (quote === '"'
+          ? next === '"' || next === "\\"
+          : /\s/u.test(next) || next === "'" || next === '"' || next === "\\");
+      if (escapesNext) {
+        current += next;
+        index += 1;
+      } else {
+        current += "\\";
+      }
       tokenStarted = true;
       continue;
     }
@@ -50,7 +55,6 @@ export function parseArgs(value: string): string[] {
     }
   }
 
-  if (escaped) current += "\\";
   if (quote) throw new Error("Unterminated quote in ACP command arguments.");
   if (tokenStarted) args.push(current);
   return args;

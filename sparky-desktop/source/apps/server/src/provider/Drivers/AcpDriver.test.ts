@@ -8,6 +8,9 @@ describe("ACP command argument parsing", () => {
       "--label",
       "prefix quoted",
     ]);
+    expect(parseArgs('--cwd="C:\\workspace with spaces"')).toEqual([
+      "--cwd=C:\\workspace with spaces",
+    ]);
   });
 
   it("preserves explicitly empty arguments and empty input", () => {

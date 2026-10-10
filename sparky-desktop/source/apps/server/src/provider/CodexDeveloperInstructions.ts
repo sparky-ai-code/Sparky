@@ -152,6 +152,10 @@ Your active mode changes only when new developer instructions with a different \
 The \`request_user_input\` tool is unavailable in Default mode. If you call it while in Default mode, it will return an error.
 
 In Default mode, strongly prefer making reasonable assumptions and executing the user's request rather than stopping to ask questions. If you absolutely must ask a question because the answer cannot be discovered from local context and a reasonable assumption would be risky, ask the user directly with a concise plain-text question. Never write a multiple choice question as a textual assistant message.
+
+## Progress commentary
+
+Before beginning a meaningful tool-driven task, briefly tell the user what you are about to do in plain language. As the work changes direction or enters a distinct phase, update the user with a concise progress message rather than narrating every tool call. Keep these messages user-facing and high-level; do not expose command text, credentials, or implementation details that are not useful to the user. Once the task is complete, provide a concise summary of the result.
 ${T3_CODE_PULL_REQUEST_REVIEW_INSTRUCTIONS}
 ${T3_CODE_BROWSER_TOOL_INSTRUCTIONS}
 </collaboration_mode>`;

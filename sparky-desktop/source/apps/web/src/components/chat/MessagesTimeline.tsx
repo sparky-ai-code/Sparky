@@ -2459,8 +2459,12 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
     (workEntry.toolLifecycleStatus === "inProgress" ||
       (!workEntry.toolLifecycleStatus && activity.activeTurnInProgress));
   const entryIconName = showWarningIndicator ? "x" : workEntryIconName(workEntry);
-  const heading = toolWorkEntryHeading(workEntry);
-  const rawPreview = isWebSearch ? null : workEntryPreview(workEntry, workspaceRoot);
+  const isRunningCommand =
+    workEntry.toolLifecycleStatus === "inProgress" &&
+    (workEntry.itemType === "command_execution" || Boolean(workEntry.command));
+  const heading = isRunningCommand ? "Running command" : toolWorkEntryHeading(workEntry);
+  const rawPreview =
+    isWebSearch || isRunningCommand ? null : workEntryPreview(workEntry, workspaceRoot);
   const preview =
     rawPreview &&
     normalizeCompactToolLabel(rawPreview).toLowerCase() ===
@@ -2489,6 +2493,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
     (workEntry.sourceActivityKind === "runtime.error" || !workLogEntryIsToolLike(workEntry));
   const iconWrapperClass = cn(
     "flex size-5 shrink-0 items-center justify-center",
+    isRunningCommand && "activity-glint",
     showWarningIndicator
       ? "text-destructive"
       : showDestructiveRowStyle
@@ -2509,55 +2514,56 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const showSuccessIndicator =
     workEntryIndicatesToolSuccess(workEntry) ||
     (turnSettled && workEntryIndicatesToolNeutralStatus(workEntry));
-  const statusIndicator = isWebSearch ? null : (
-    <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/55">
-      {showRunningIndicator ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
-            <LoaderCircleIcon
-              className="block size-3 shrink-0 animate-spin opacity-70"
-              aria-hidden
-            />
-          </TooltipTrigger>
-          <TooltipPopup>Running</TooltipPopup>
-        </Tooltip>
-      ) : showFailedIndicator ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span
-                className="flex size-4 items-center justify-center"
-                aria-label="Tool call failed"
-              />
-            }
-          >
-            <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
-          </TooltipTrigger>
-          <TooltipPopup>Failed</TooltipPopup>
-        </Tooltip>
-      ) : showSuccessIndicator ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
-            <span className="inline-flex size-4 items-center justify-center">
-              <CheckIcon
-                className="block size-3 shrink-0 stroke-current"
-                stroke="currentColor"
+  const statusIndicator =
+    isWebSearch || isRunningCommand ? null : (
+      <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/55">
+        {showRunningIndicator ? (
+          <Tooltip>
+            <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
+              <LoaderCircleIcon
+                className="block size-3 shrink-0 animate-spin opacity-70"
                 aria-hidden
               />
-            </span>
-          </TooltipTrigger>
-          <TooltipPopup>Completed</TooltipPopup>
-        </Tooltip>
-      ) : showNeutralIndicator ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
-            <MinusIcon className="block size-3 shrink-0 opacity-70" aria-hidden />
-          </TooltipTrigger>
-          <TooltipPopup>Empty</TooltipPopup>
-        </Tooltip>
-      ) : null}
-    </span>
-  );
+            </TooltipTrigger>
+            <TooltipPopup>Running</TooltipPopup>
+          </Tooltip>
+        ) : showFailedIndicator ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  className="flex size-4 items-center justify-center"
+                  aria-label="Tool call failed"
+                />
+              }
+            >
+              <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
+            </TooltipTrigger>
+            <TooltipPopup>Failed</TooltipPopup>
+          </Tooltip>
+        ) : showSuccessIndicator ? (
+          <Tooltip>
+            <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
+              <span className="inline-flex size-4 items-center justify-center">
+                <CheckIcon
+                  className="block size-3 shrink-0 stroke-current"
+                  stroke="currentColor"
+                  aria-hidden
+                />
+              </span>
+            </TooltipTrigger>
+            <TooltipPopup>Completed</TooltipPopup>
+          </Tooltip>
+        ) : showNeutralIndicator ? (
+          <Tooltip>
+            <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
+              <MinusIcon className="block size-3 shrink-0 opacity-70" aria-hidden />
+            </TooltipTrigger>
+            <TooltipPopup>Empty</TooltipPopup>
+          </Tooltip>
+        ) : null}
+      </span>
+    );
   const rowToggleProps = canExpand
     ? {
         role: "button" as const,
@@ -2592,7 +2598,10 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           ) : (
             <WorkEntryIconSvg
               name={entryIconName}
-              className="block size-3.5 shrink-0 stroke-[1.8] opacity-80"
+              className={cn(
+                "block size-3.5 shrink-0 stroke-[1.8] opacity-80",
+                isRunningCommand && "activity-glint-icon",
+              )}
             />
           )}
         </span>
@@ -2600,7 +2609,15 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <div className="min-w-0 flex-1 overflow-hidden">
             <p className="flex min-w-0 w-full items-baseline gap-1.5 text-[12px] leading-5">
-              <span className={cn("min-w-0 shrink truncate", headingClass)}>{heading}</span>
+              <span
+                className={cn(
+                  "min-w-0 shrink truncate",
+                  headingClass,
+                  isRunningCommand && "activity-glint",
+                )}
+              >
+                {heading}
+              </span>
               {preview && (
                 <span className="min-w-0 flex-1 truncate text-muted-foreground/55">{preview}</span>
               )}

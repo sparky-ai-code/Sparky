@@ -76,6 +76,55 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+.activity-glint {
+  background-image: linear-gradient(
+    105deg,
+    currentColor 35%,
+    color-mix(in srgb, currentColor 35%, white) 50%,
+    currentColor 65%
+  );
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: activity-glint 1.8s ease-in-out infinite;
+}
+
+@keyframes activity-glint {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+.activity-glint-icon {
+  animation: activity-glint-icon 1.8s ease-in-out infinite;
+}
+
+@keyframes activity-glint-icon {
+  0%,
+  100% {
+    opacity: 0.65;
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 3px currentColor);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-glint {
+    animation: none;
+    -webkit-text-fill-color: currentColor;
+  }
+  .activity-glint-icon {
+    animation: none;
+    filter: none;
+  }
+}
+
 :root {
   --app-scrollbar-width: 6px;
   --desktop-window-right-resize-inset: 0px;

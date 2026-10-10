@@ -76,8 +76,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
-.activity-glint,
-.activity-glint-message :is(p, li) {
+.activity-glint {
   background-image: linear-gradient(
     105deg,
     currentColor 35%,
@@ -116,8 +115,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .activity-glint,
-  .activity-glint-message :is(p, li) {
+  .activity-glint {
     animation: none;
     -webkit-text-fill-color: currentColor;
   }

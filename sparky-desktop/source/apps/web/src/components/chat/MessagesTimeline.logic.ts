@@ -149,6 +149,14 @@ export type MessagesTimelineRow =
       groupedEntries: WorkLogEntry[];
     }
   | {
+      kind: "activity-summary";
+      id: string;
+      createdAt: string;
+      groupId: string;
+      groupedEntries: WorkLogEntry[];
+      activityText?: string;
+    }
+  | {
       kind: "work-toggle";
       id: string;
       createdAt: string;
@@ -481,7 +489,35 @@ export function deriveMessagesTimelineRows(input: {
     latestTurn: input.latestTurn ?? null,
     unsettledTurnId: effectiveUnsettledTurnId,
   });
+  const activeWorkEntryIndex = input.timelineEntries.findIndex(
+    (entry) => entry.kind === "work" && entry.entry.toolLifecycleStatus === "inProgress",
+  );
+  let activeWorkGroupId: string | null = null;
+  if (activeWorkEntryIndex >= 0) {
+    let groupStartIndex = activeWorkEntryIndex;
+    while (groupStartIndex > 0 && input.timelineEntries[groupStartIndex - 1]?.kind === "work") {
+      groupStartIndex -= 1;
+    }
+    const groupStartEntry = input.timelineEntries[groupStartIndex];
+    if (groupStartEntry?.kind === "work") {
+      activeWorkGroupId = `work-group:${groupStartEntry.id}`;
+    }
+  }
+  const activeProgressEntry = input.timelineEntries
+    .slice(0, activeWorkEntryIndex < 0 ? undefined : activeWorkEntryIndex)
+    .toReversed()
+    .find(
+      (entry) =>
+        effectiveUnsettledTurnId !== null &&
+        entry.kind === "message" &&
+        entry.message.role === "assistant" &&
+        entry.message.turnId === effectiveUnsettledTurnId &&
+        Boolean(entry.message.text?.trim()),
+    );
+  const activeProgressText =
+    activeProgressEntry?.kind === "message" ? activeProgressEntry.message.text?.trim() : undefined;
   const collapsedEntryIds = new Set<string>();
+  let hasActiveWorkGroup = activeWorkGroupId !== null;
   for (const fold of foldsByAnchorEntryId.values()) {
     if (!input.expandedTurnIds?.has(fold.turnId)) {
       for (const entryId of fold.hiddenEntryIds) {
@@ -533,7 +569,26 @@ export function deriveMessagesTimelineRows(input: {
           !workEntryIndicatesToolNeutralStatus(entry) || entry.toolLifecycleStatus === "inProgress",
       );
       if (visibleGroupedEntries.length > 0) {
-        if (visibleGroupedEntries.length <= MAX_VISIBLE_WORK_LOG_ENTRIES) {
+        const groupId = `work-group:${timelineEntry.id}`;
+        const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
+        const hasInProgressTool = visibleGroupedEntries.some(
+          (entry) => entry.toolLifecycleStatus === "inProgress",
+        );
+
+        if (hasInProgressTool) {
+          hasActiveWorkGroup = true;
+        }
+
+        if (hasInProgressTool && !expanded) {
+          nextRows.push({
+            kind: "activity-summary",
+            id: `activity-summary:${timelineEntry.id}`,
+            createdAt: timelineEntry.createdAt,
+            groupId,
+            groupedEntries: visibleGroupedEntries,
+            ...(activeProgressText ? { activityText: activeProgressText } : {}),
+          });
+        } else if (visibleGroupedEntries.length <= MAX_VISIBLE_WORK_LOG_ENTRIES) {
           nextRows.push({
             kind: "work",
             id: timelineEntry.id,
@@ -541,8 +596,6 @@ export function deriveMessagesTimelineRows(input: {
             groupedEntries: visibleGroupedEntries,
           });
         } else {
-          const groupId = `work-group:${timelineEntry.id}`;
-          const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
           const hiddenEntries = visibleGroupedEntries.slice(0, -MAX_VISIBLE_WORK_LOG_ENTRIES);
           const visibleEntries = visibleGroupedEntries.slice(-MAX_VISIBLE_WORK_LOG_ENTRIES);
           const renderedEntries = expanded ? [...hiddenEntries, ...visibleEntries] : visibleEntries;
@@ -586,6 +639,10 @@ export function deriveMessagesTimelineRows(input: {
       effectiveUnsettledTurnId !== null &&
       timelineEntry.message.turnId === effectiveUnsettledTurnId;
 
+    if (assistantTurnStillInProgress && activeWorkGroupId !== null) {
+      continue;
+    }
+
     const durationStart =
       durationStartByMessageId.get(timelineEntry.message.id) ?? timelineEntry.message.createdAt;
 
@@ -617,7 +674,12 @@ export function deriveMessagesTimelineRows(input: {
     });
   }
 
-  if (input.isWorking && !completedAssistantTail && !hasVisibleStreamingAssistant) {
+  if (
+    input.isWorking &&
+    !completedAssistantTail &&
+    !hasVisibleStreamingAssistant &&
+    !hasActiveWorkGroup
+  ) {
     nextRows.push({
       kind: "working",
       id: "working-indicator-row",
@@ -666,6 +728,16 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
     case "work":
       return Equal.equals(a.groupedEntries, (b as typeof a).groupedEntries);
+
+    case "activity-summary": {
+      const bs = b as typeof a;
+      return (
+        a.createdAt === bs.createdAt &&
+        a.groupId === bs.groupId &&
+        a.activityText === bs.activityText &&
+        Equal.equals(a.groupedEntries, bs.groupedEntries)
+      );
+    }
 
     case "work-toggle": {
       const bw = b as typeof a;

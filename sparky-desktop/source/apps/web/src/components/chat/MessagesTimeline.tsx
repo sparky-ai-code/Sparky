@@ -886,6 +886,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       data-message-role={row.kind === "message" ? row.message.role : undefined}
     >
       {row.kind === "work" ? <WorkGroupSection groupedEntries={row.groupedEntries} /> : null}
+      {row.kind === "activity-summary" ? <ActivitySummaryTimelineRow row={row} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
@@ -1054,9 +1055,6 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const activity = use(TimelineRowActivityCtx);
-  const isProgressCommentary =
-    activity.activeTurnInProgress && !row.message.streaming && !row.showAssistantMeta;
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
   const displayedMessageText = usePacedStreamingText(messageText, row.message.streaming);
   const streamingTailStart = useStreamingTailStart(displayedMessageText, row.message.streaming);
@@ -1072,7 +1070,6 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           streamingTailStart={streamingTailStart}
           streamingTextAnimation={ctx.streamingTextAnimation}
           skills={ctx.skills}
-          className={isProgressCommentary ? "activity-glint-message" : undefined}
         />
         <AssistantChangedFilesSection
           turnSummary={ctx.workspaceContextEnabled ? row.assistantTurnDiffSummary : undefined}
@@ -1292,6 +1289,50 @@ const WorkGroupSection = memo(function WorkGroupSection({
         ))}
       </div>
     </section>
+  );
+});
+
+const ActivitySummaryTimelineRow = memo(function ActivitySummaryTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "activity-summary" }>;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const activeWorkEntry =
+    row.groupedEntries.toReversed().find((entry) => entry.toolLifecycleStatus === "inProgress") ??
+    row.groupedEntries[row.groupedEntries.length - 1];
+
+  if (!activeWorkEntry) return null;
+
+  const isRunningCommand =
+    activeWorkEntry.toolLifecycleStatus === "inProgress" &&
+    (activeWorkEntry.itemType === "command_execution" || Boolean(activeWorkEntry.command));
+  const label =
+    row.activityText ||
+    (isRunningCommand ? "Running command" : toolWorkEntryHeading(activeWorkEntry));
+
+  return (
+    <button
+      type="button"
+      className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-1 py-1 text-left text-[12px] leading-5 text-muted-foreground/75 transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+      aria-label={`Show tool calls: ${label}`}
+      aria-expanded={false}
+      onClick={(event) => {
+        const anchorElement =
+          event.currentTarget.closest<HTMLElement>("[data-timeline-row-id]") ?? event.currentTarget;
+        ctx.onToggleWorkGroup(row.groupId, anchorElement);
+      }}
+    >
+      {isRunningCommand ? (
+        <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/70">
+          <WorkEntryIconSvg
+            name="terminal"
+            className="activity-glint-icon block size-3.5 shrink-0 stroke-[1.8]"
+          />
+        </span>
+      ) : null}
+      <span className="activity-glint min-w-0 truncate">{label}</span>
+    </button>
   );
 });
 

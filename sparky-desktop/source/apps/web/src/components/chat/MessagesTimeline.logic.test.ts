@@ -1099,7 +1099,80 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.id)).toEqual(["running-edit"]);
+    expect(rows.map((row) => row.id)).toEqual(["activity-summary:running-edit"]);
+    expect(rows[0]).toMatchObject({
+      kind: "activity-summary",
+      groupId: "work-group:running-edit",
+    });
+  });
+
+  it("shows active progress commentary as a clickable summary of tool calls", () => {
+    const timelineEntries = [
+      {
+        id: "assistant-progress-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:01Z",
+        message: {
+          id: "assistant-progress" as never,
+          role: "assistant" as const,
+          text: "Checking ignore rules",
+          turnId: "turn-1" as never,
+          createdAt: "2026-01-01T00:00:01Z",
+          updatedAt: "2026-01-01T00:00:02Z",
+          streaming: false,
+        },
+      },
+      ...["read", "search", "command"].map((label, index) => ({
+        id: `work-entry-${index + 1}`,
+        kind: "work" as const,
+        createdAt: `2026-01-01T00:00:0${index + 3}Z`,
+        entry: {
+          id: `work-${index + 1}`,
+          createdAt: `2026-01-01T00:00:0${index + 3}Z`,
+          turnId: "turn-1" as never,
+          label,
+          tone: "tool" as const,
+          ...(index === 2 ? { toolLifecycleStatus: "inProgress" as const } : {}),
+        },
+      })),
+    ];
+    const baseInput = {
+      timelineEntries,
+      latestTurn: {
+        turnId: "turn-1" as never,
+        state: "running" as const,
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      },
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    };
+
+    const collapsedRows = deriveMessagesTimelineRows(baseInput);
+    expect(collapsedRows).toHaveLength(1);
+    expect(collapsedRows[0]).toMatchObject({
+      kind: "activity-summary",
+      activityText: "Checking ignore rules",
+      groupId: "work-group:work-entry-1",
+      groupedEntries: [
+        expect.objectContaining({ id: "work-1" }),
+        expect.objectContaining({ id: "work-2" }),
+        expect.objectContaining({ id: "work-3" }),
+      ],
+    });
+
+    const expandedRows = deriveMessagesTimelineRows({
+      ...baseInput,
+      expandedWorkGroupIds: new Set(["work-group:work-entry-1"]),
+    });
+    expect(expandedRows.map((row) => row.id)).toEqual([
+      "work-1",
+      "work-2",
+      "work-3",
+      "work-toggle:work-entry-1",
+    ]);
   });
 
   it("models work log overflow expansion as inserted list rows", () => {

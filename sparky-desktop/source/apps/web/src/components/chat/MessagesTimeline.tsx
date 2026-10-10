@@ -1054,6 +1054,9 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const activity = use(TimelineRowActivityCtx);
+  const isProgressCommentary =
+    activity.activeTurnInProgress && !row.message.streaming && !row.showAssistantMeta;
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
   const displayedMessageText = usePacedStreamingText(messageText, row.message.streaming);
   const streamingTailStart = useStreamingTailStart(displayedMessageText, row.message.streaming);
@@ -1069,6 +1072,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           streamingTailStart={streamingTailStart}
           streamingTextAnimation={ctx.streamingTextAnimation}
           skills={ctx.skills}
+          className={isProgressCommentary ? "activity-glint-message" : undefined}
         />
         <AssistantChangedFilesSection
           turnSummary={ctx.workspaceContextEnabled ? row.assistantTurnDiffSummary : undefined}

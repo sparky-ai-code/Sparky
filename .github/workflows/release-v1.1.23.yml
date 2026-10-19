@@ -1,0 +1,411 @@
+name: Release Sparky 1.1.23 (all installers)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-v1.1.23
+  cancel-in-progress: false
+
+env:
+  RELEASE_VERSION: 1.1.23
+  SPARKY_GITHUB_CLIENT_ID: ${{ vars.SPARKY_GITHUB_CLIENT_ID }}
+  SPARKY_GITHUB_AUTH_BROKER_URL: ${{ vars.SPARKY_GITHUB_AUTH_BROKER_URL }}
+  SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
+  VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.SPARKY_CLERK_PUBLISHABLE_KEY }}
+  VITE_SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
+
+jobs:
+  test-update-feeds:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.1.23
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Test platform update routes
+        run: npm --prefix sparky-download-worker test
+
+  build-wsl-node-pty:
+    needs: test-update-feeds
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.1.23
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Build WSL node-pty prebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: [process.cwd() + '/apps/server'] }))")"
+          pty_dir="$(dirname "$pty_pkg")"
+          (cd "$pty_dir" && npx --yes node-gyp rebuild)
+          mkdir -p "$RUNNER_TEMP/wsl-prebuild"
+          cp "$pty_dir/build/Release/pty.node" "$RUNNER_TEMP/wsl-prebuild/pty.node"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wsl-node-pty-x64
+          path: ${{ runner.temp }}/wsl-prebuild/pty.node
+          if-no-files-found: error
+          retention-days: 1
+
+  build-macos-x64:
+    needs: test-update-feeds
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.1.23
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-apple-darwin
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Set release metadata
+        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+      - name: Build desktop application
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
+          NODE_ENV: production
+      - name: Build Intel macOS installer
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:x64
+        env:
+          NODE_ENV: production
+          SPARKY_UPDATE_URL: https://sparky.llc/get/updates/macos/x64
+      - name: Install and boot the DMG app; capture screenshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mount="$RUNNER_TEMP/sparky-dmg"
+          mkdir -p "$mount"
+          hdiutil attach release/Sparky-x64.dmg -nobrowse -mountpoint "$mount"
+          app="$(find "$mount" -maxdepth 2 -name '*.app' -print -quit)"
+          test -n "$app"
+          open "$app"
+          sleep 20
+          screencapture -x "$RUNNER_TEMP/sparky-macos-x64.png"
+          cp "$RUNNER_TEMP/sparky-macos-x64.png" release/sparky-macos-x64.png
+          pgrep -f 'Sparky.app/Contents/MacOS' >/dev/null
+          hdiutil detach "$mount"
+      - name: Verify macOS updater feed and asset metadata
+        run: |
+          test -s release/Sparky-x64.dmg
+          test -s release/Sparky-x64.dmg.blockmap
+          test -s release/Sparky-x64.zip
+          grep -q 'Sparky-x64.zip' release/latest-mac.yml
+          grep -q '1.1.23' release/latest-mac.yml
+          mv release/latest-mac.yml release/latest-mac-x64.yml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-macos-x64
+          path: |
+            sparky-desktop/source/release/Sparky-x64.dmg
+            sparky-desktop/source/release/Sparky-x64.dmg.blockmap
+            sparky-desktop/source/release/Sparky-x64.zip
+            sparky-desktop/source/release/latest-mac-x64.yml
+            sparky-desktop/source/release/sparky-macos-x64.png
+          if-no-files-found: error
+          retention-days: 14
+
+  build-macos-arm64:
+    needs: test-update-feeds
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.1.23
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-apple-darwin
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Set release metadata
+        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+      - name: Build desktop application
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
+          NODE_ENV: production
+      - name: Build Apple Silicon macOS installer
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:arm64
+        env:
+          NODE_ENV: production
+          SPARKY_UPDATE_URL: https://sparky.llc/get/updates/macos/arm64
+      - name: Install and boot the DMG app; capture screenshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mount="$RUNNER_TEMP/sparky-dmg"
+          mkdir -p "$mount"
+          hdiutil attach release/Sparky-arm64.dmg -nobrowse -mountpoint "$mount"
+          app="$(find "$mount" -maxdepth 2 -name '*.app' -print -quit)"
+          test -n "$app"
+          open "$app"
+          sleep 20
+          screencapture -x "$RUNNER_TEMP/sparky-macos-arm64.png"
+          cp "$RUNNER_TEMP/sparky-macos-arm64.png" release/sparky-macos-arm64.png
+          pgrep -f 'Sparky.app/Contents/MacOS' >/dev/null
+          hdiutil detach "$mount"
+      - name: Verify macOS updater feed and asset metadata
+        run: |
+          test -s release/Sparky-arm64.dmg
+          test -s release/Sparky-arm64.dmg.blockmap
+          test -s release/Sparky-arm64.zip
+          grep -q 'Sparky-arm64.zip' release/latest-mac.yml
+          grep -q '1.1.23' release/latest-mac.yml
+          mv release/latest-mac.yml release/latest-mac-arm64.yml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-macos-arm64
+          path: |
+            sparky-desktop/source/release/Sparky-arm64.dmg
+            sparky-desktop/source/release/Sparky-arm64.dmg.blockmap
+            sparky-desktop/source/release/Sparky-arm64.zip
+            sparky-desktop/source/release/latest-mac-arm64.yml
+            sparky-desktop/source/release/sparky-macos-arm64.png
+          if-no-files-found: error
+          retention-days: 14
+
+  build-linux-x64:
+    needs: test-update-feeds
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.1.23
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-unknown-linux-gnu
+      - name: Install Linux build and test tools
+        run: sudo apt-get update && sudo apt-get install -y imagemagick xvfb
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Set release metadata
+        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+      - name: Build desktop application
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
+          NODE_ENV: production
+      - name: Build Linux AppImage and deb installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-appimage release-deb release
+          T3CODE_DESKTOP_OUTPUT_DIR=release-appimage SPARKY_UPDATE_URL=https://sparky.llc/get/updates/linux pnpm --config.verify-deps-before-run=false dist:desktop:linux
+          T3CODE_DESKTOP_OUTPUT_DIR=release-deb pnpm --config.verify-deps-before-run=false dist:desktop:linux:deb
+          appimage="$(find release-appimage -maxdepth 1 -name '*.AppImage' -print -quit)"
+          deb="$(find release-deb -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$appimage" && test -n "$deb"
+          cp "$appimage" release/Sparky-x64.AppImage
+          cp "$deb" release/Sparky-amd64.deb
+          cp release-appimage/latest-linux.yml release/latest-linux.yml
+          sed -i 's/Sparky-x86_64\.AppImage/Sparky-x64.AppImage/g' release/latest-linux.yml
+          test -s release/latest-linux.yml
+          grep -q 'Sparky-x64.AppImage' release/latest-linux.yml
+          grep -q '1.1.23' release/latest-linux.yml
+      - name: Boot AppImage and deb-installed app; capture screenshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x release/Sparky-x64.AppImage
+          timeout 25s xvfb-run -a bash -c 'release/Sparky-x64.AppImage --appimage-extract-and-run --no-sandbox & pid=$!; sleep 15; kill -0 "$pid"; import -window root "$RUNNER_TEMP/sparky-linux-appimage.png"; kill "$pid"; wait "$pid" || true'
+          sudo apt-get install -y ./release/Sparky-amd64.deb
+          timeout 25s xvfb-run -a bash -c 't3code --no-sandbox & pid=$!; sleep 15; kill -0 "$pid"; import -window root "$RUNNER_TEMP/sparky-linux-deb.png"; kill "$pid"; wait "$pid" || true'
+          test -s "$RUNNER_TEMP/sparky-linux-appimage.png"
+          test -s "$RUNNER_TEMP/sparky-linux-deb.png"
+          cp "$RUNNER_TEMP/sparky-linux-appimage.png" release/sparky-linux-appimage.png
+          cp "$RUNNER_TEMP/sparky-linux-deb.png" release/sparky-linux-deb.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-linux-x64
+          path: |
+            sparky-desktop/source/release/Sparky-x64.AppImage
+            sparky-desktop/source/release/Sparky-amd64.deb
+            sparky-desktop/source/release/latest-linux.yml
+            sparky-desktop/source/release/sparky-linux-appimage.png
+            sparky-desktop/source/release/sparky-linux-deb.png
+          if-no-files-found: error
+          retention-days: 14
+
+  build-windows-x64:
+    needs: [test-update-feeds, build-wsl-node-pty]
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    env:
+      SPARKY_UPDATE_URL: https://sparky.llc/get/updates/windows
+      T3CODE_DESKTOP_SIGNED: 'false'
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.1.23
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Build Sparky CLI
+        run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Set release metadata
+        run: node scripts/update-release-package-versions.ts "$env:RELEASE_VERSION"
+      - uses: actions/download-artifact@v4
+        with:
+          name: wsl-node-pty-x64
+          path: wsl-prebuild
+      - name: Build desktop application
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+      - name: Build Windows installer
+        run: pnpm --config.verify-deps-before-run=false dist:desktop:win:x64 --output-dir release --wsl-prebuild "$env:GITHUB_WORKSPACE/wsl-prebuild/pty.node" --verbose
+      - name: Install and boot installer app; capture screenshot
+        shell: pwsh
+        run: |
+          $installer = (Resolve-Path 'release/Sparky-x64.exe').Path
+          $installDir = Join-Path $env:RUNNER_TEMP 'SparkyInstalled'
+          Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installDir") -Wait
+          $app = Join-Path $installDir 'Sparky.exe'
+          if (!(Test-Path $app)) { throw "Installed app not found: $app" }
+          $process = Start-Process -FilePath $app -PassThru
+          Start-Sleep -Seconds 20
+          if ($process.HasExited) { throw 'Installed Sparky app exited during boot verification.' }
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
+          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $bitmap.Save((Join-Path $env:RUNNER_TEMP 'sparky-windows-x64.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose(); $bitmap.Dispose()
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'sparky-windows-x64.png') 'release/sparky-windows-x64.png'
+          Stop-Process -Id $process.Id -Force
+      - name: Verify Windows updater metadata
+        shell: pwsh
+        run: |
+          foreach ($file in @('release/Sparky-x64.exe.blockmap', 'release/latest.yml')) {
+            if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing updater asset: $file" }
+          }
+          $feed = Get-Content -Raw release/latest.yml
+          if ($feed -notmatch 'Sparky-x64\.exe' -or $feed -notmatch '1\.1\.23') { throw 'Windows update feed has incorrect asset or version metadata.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-windows-x64
+          path: |
+            sparky-desktop/source/release/Sparky-x64.exe
+            sparky-desktop/source/release/Sparky-x64.exe.blockmap
+            sparky-desktop/source/release/latest.yml
+            sparky-desktop/source/release/sparky-windows-x64.png
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-release:
+    needs: [build-macos-x64, build-macos-arm64, build-linux-x64, build-windows-x64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.1.23
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify installers and boot screenshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in Sparky-x64.dmg Sparky-x64.dmg.blockmap Sparky-x64.zip latest-mac-x64.yml Sparky-arm64.dmg Sparky-arm64.dmg.blockmap Sparky-arm64.zip latest-mac-arm64.yml Sparky-x64.AppImage Sparky-amd64.deb latest-linux.yml Sparky-x64.exe Sparky-x64.exe.blockmap latest.yml sparky-macos-x64.png sparky-macos-arm64.png sparky-linux-appimage.png sparky-linux-deb.png sparky-windows-x64.png; do
+            test -s "release-assets/$file" || { echo "Missing release asset: $file"; exit 1; }
+          done
+      - name: Upload installers and screenshots to the draft release, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release view v1.1.23 >/dev/null
+          gh release upload v1.1.23 release-assets/* --clobber
+          gh release edit v1.1.23 --title 'Sparky 1.1.23' --draft=false --latest

@@ -79,18 +79,27 @@ export function AppearanceSettingsPanel() {
 
   return (
     <SettingsPageContainer className="max-w-2xl gap-5">
+      <header className="flex items-end justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold tracking-tight">Appearance</h1>
+          <p className="text-sm text-muted-foreground">Colors, interaction, and spacing.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => { setMode("system"); update({ ...DEFAULT_APPEARANCE }); }}>
+          <RotateCcwIcon className="size-3.5" />Reset
+        </Button>
+      </header>
       <SettingsSection title="Color theme" className="space-y-2">
-        <SettingsRow title="Choose a palette" description="Change the accent color used throughout Sparky. Your choice is saved on this device." className="pt-2 pb-0">
-          <div className="grid grid-cols-2 gap-2 py-3 sm:grid-cols-3">
+        <SettingsRow title="Accent palette" description="Choose the highlight color used across the interface." className="pt-2 pb-0">
+          <div className="grid grid-cols-3 gap-1 py-2 sm:grid-cols-6">
             {THEMES.map((item) => {
               const selected = appearance.theme === item.id;
               return (
                 <button key={item.id} type="button" aria-pressed={selected} onClick={() => update({ theme: item.id, customColor: null })}
-                  className={`flex items-center gap-2.5 rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50 ${selected ? "border-primary bg-accent/30" : "border-border"}`}>
-                  <span className="grid size-7 place-items-center rounded-full" style={{ backgroundColor: item.accent }}>
-                    {selected ? <CheckIcon className="size-3.5" style={{ color: item.id === "default" ? "#111" : "#fff" }} /> : null}
+                  className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs transition-colors hover:bg-muted/60 ${selected ? "bg-accent/30 text-foreground" : "text-muted-foreground"}`}>
+                  <span className={`grid size-6 place-items-center rounded-full ring-1 ring-border/60 ${selected ? "ring-2 ring-primary/70 ring-offset-2 ring-offset-card" : ""}`} style={{ backgroundColor: item.accent }}>
+                    {selected ? <CheckIcon className="size-3" style={{ color: "#111" }} /> : null}
                   </span>
-                  <span className="text-sm font-medium">{item.name}</span>
+                  <span className="font-medium">{item.name}</span>
                 </button>
               );
             })}

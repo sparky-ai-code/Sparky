@@ -13,13 +13,6 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
-import {
-  APPEARANCE_THEMES as THEMES,
-  applyAppearance,
-  DEFAULT_APPEARANCE,
-  readAppearance,
-} from "../../appearance";
-
 const COLOR_MODE_OPTIONS = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },

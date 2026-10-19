@@ -125,7 +125,7 @@ jobs:
           screencapture -x "$RUNNER_TEMP/sparky-macos-x64.png"
           cp "$RUNNER_TEMP/sparky-macos-x64.png" release/sparky-macos-x64.png
           pgrep -f 'Sparky.app/Contents/MacOS' >/dev/null
-          hdiutil detach "$mount"
+          # The runner tears down the temporary mounted image after this job.
       - name: Verify macOS updater feed and asset metadata
         run: |
           test -s release/Sparky-x64.dmg
@@ -200,7 +200,7 @@ jobs:
           screencapture -x "$RUNNER_TEMP/sparky-macos-arm64.png"
           cp "$RUNNER_TEMP/sparky-macos-arm64.png" release/sparky-macos-arm64.png
           pgrep -f 'Sparky.app/Contents/MacOS' >/dev/null
-          hdiutil detach "$mount"
+          # The runner tears down the temporary mounted image after this job.
       - name: Verify macOS updater feed and asset metadata
         run: |
           test -s release/Sparky-arm64.dmg
@@ -279,10 +279,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x release/Sparky-x64.AppImage
-          timeout 25s xvfb-run -a bash -c 'release/Sparky-x64.AppImage --appimage-extract-and-run --no-sandbox & pid=$!; sleep 15; kill -0 "$pid"; import -window root "$RUNNER_TEMP/sparky-linux-appimage.png"; kill "$pid"; wait "$pid" || true'
+          capture_installer() {
+            local app="$1" extra_arg="$2" screenshot="$3"
+            timeout 90s xvfb-run -a bash -c '
+              if [[ -n "$2" ]]; then
+                setsid "$1" "$2" --no-sandbox > "$RUNNER_TEMP/sparky-linux-boot.log" 2>&1 &
+              else
+                setsid "$1" --no-sandbox > "$RUNNER_TEMP/sparky-linux-boot.log" 2>&1 &
+              fi
+              pid=$!
+              trap '\''kill -KILL -- "-"$pid 2>/dev/null || true; wait "$pid" 2>/dev/null || true'\'' EXIT
+              sleep 15
+              kill -0 "$pid"
+              import -window root "$3"
+              kill -KILL -- "-"$pid 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            ' bash "$app" "$extra_arg" "$screenshot"
+          }
+          capture_installer "$PWD/release/Sparky-x64.AppImage" --appimage-extract-and-run "$RUNNER_TEMP/sparky-linux-appimage.png"
           sudo apt-get install -y ./release/Sparky-amd64.deb
-          timeout 25s xvfb-run -a bash -c 't3code --no-sandbox & pid=$!; sleep 15; kill -0 "$pid"; import -window root "$RUNNER_TEMP/sparky-linux-deb.png"; kill "$pid"; wait "$pid" || true'
+          capture_installer "$(command -v t3code)" '' "$RUNNER_TEMP/sparky-linux-deb.png"
           test -s "$RUNNER_TEMP/sparky-linux-appimage.png"
           test -s "$RUNNER_TEMP/sparky-linux-deb.png"
           cp "$RUNNER_TEMP/sparky-linux-appimage.png" release/sparky-linux-appimage.png

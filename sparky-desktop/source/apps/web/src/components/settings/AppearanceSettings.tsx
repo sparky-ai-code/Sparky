@@ -65,9 +65,17 @@ function applyAppearance(preferences: AppearancePreferences) {
   const selected = THEMES.find((item) => item.id === preferences.theme) ?? THEMES[0];
   const color = preferences.customColor ?? `hsl(${selected.hue})`;
   const root = document.documentElement;
-  root.style.setProperty("--primary", color);
-  root.style.setProperty("--ring", color);
-  root.style.setProperty("--accent", `color-mix(in srgb, ${color} ${preferences.hoverStyle === "colorful" ? "18%" : "7%"}, transparent)`);
+  const isDefaultTheme = !preferences.customColor && preferences.theme === "default";
+  if (isDefaultTheme) {
+    // Let the base theme resolve primary to foreground so black/white controls follow color mode.
+    root.style.removeProperty("--primary");
+    root.style.removeProperty("--ring");
+    root.style.setProperty("--accent", `color-mix(in srgb, var(--foreground) ${preferences.hoverStyle === "colorful" ? "18%" : "7%"}, transparent)`);
+  } else {
+    root.style.setProperty("--primary", color);
+    root.style.setProperty("--ring", color);
+    root.style.setProperty("--accent", `color-mix(in srgb, ${color} ${preferences.hoverStyle === "colorful" ? "18%" : "7%"}, transparent)`);
+  }
   root.style.setProperty("--radius", preferences.roundedness === "soft" ? "0.9rem" : preferences.roundedness === "sharp" ? "0.35rem" : "0.625rem");
   root.dataset.appearance = preferences.customColor ? "custom" : preferences.theme;
   root.dataset.density = preferences.compact ? "compact" : "comfortable";

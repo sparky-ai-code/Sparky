@@ -94,16 +94,17 @@ jobs:
           target: x86_64-apple-darwin
       - run: cargo build --release -p sparky_cli
         working-directory: .
-      - name: Set release metadata
-        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
-      - name: Install and build desktop
-        run: |
-          pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
-          pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
           PUPPETEER_SKIP_DOWNLOAD: 'true'
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Set release metadata
+        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+      - name: Build desktop application
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
           NODE_ENV: production
       - name: Build Intel macOS installer
         run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:x64
@@ -168,16 +169,17 @@ jobs:
           target: aarch64-apple-darwin
       - run: cargo build --release -p sparky_cli
         working-directory: .
-      - name: Set release metadata
-        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
-      - name: Install and build desktop
-        run: |
-          pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
-          pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
           PUPPETEER_SKIP_DOWNLOAD: 'true'
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Set release metadata
+        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+      - name: Build desktop application
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
           NODE_ENV: production
       - name: Build Apple Silicon macOS installer
         run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:arm64
@@ -244,16 +246,17 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y imagemagick xvfb
       - run: cargo build --release -p sparky_cli
         working-directory: .
-      - name: Set release metadata
-        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
-      - name: Install and build desktop
-        run: |
-          pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
-          pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
           PUPPETEER_SKIP_DOWNLOAD: 'true'
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Set release metadata
+        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+      - name: Build desktop application
+        run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+        env:
           NODE_ENV: production
       - name: Build Linux AppImage and deb installers
         shell: bash
@@ -322,14 +325,14 @@ jobs:
       - name: Build Sparky CLI
         run: cargo build --release -p sparky_cli
         working-directory: .
-      - name: Set release metadata
-        run: node scripts/update-release-package-versions.ts "$env:RELEASE_VERSION"
       - name: Install desktop dependencies
         run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
           PUPPETEER_SKIP_DOWNLOAD: 'true'
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Set release metadata
+        run: node scripts/update-release-package-versions.ts "$env:RELEASE_VERSION"
       - uses: actions/download-artifact@v4
         with:
           name: wsl-node-pty-x64

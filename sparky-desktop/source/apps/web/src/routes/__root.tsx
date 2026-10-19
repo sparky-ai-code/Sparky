@@ -31,6 +31,7 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { useUiStateStore } from "../uiStateStore";
+import { syncSavedAppearance } from "../components/settings/AppearanceSettings";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import { configureClientTracing } from "../observability/clientTracing";
 import { resolveInitialServerAuthGateState } from "../environments/primary";
@@ -85,6 +86,10 @@ function RootRouteView() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
+
+  useEffect(() => {
+    syncSavedAppearance();
+  }, []);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {

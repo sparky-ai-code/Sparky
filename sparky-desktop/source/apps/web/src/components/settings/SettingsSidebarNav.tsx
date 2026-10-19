@@ -4,6 +4,7 @@ import {
   ArrowLeftIcon,
   BoxesIcon,
   SlidersHorizontalIcon,
+  PaletteIcon,
   BrainIcon,
   KeyboardIcon,
   PlugZapIcon,
@@ -25,6 +26,7 @@ import {
 export type SettingsSectionPath =
   | "/settings/general"
   | "/settings/personalize"
+  | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/models"
   | "/settings/plugins"
@@ -38,6 +40,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 }> = [
   { label: "General", to: "/settings/general", icon: Settings2Icon },
   { label: "Personalize", to: "/settings/personalize", icon: SlidersHorizontalIcon },
+  { label: "Appearance", to: "/settings/appearance", icon: PaletteIcon },
   { label: "Keybindings", to: "/settings/keybindings", icon: KeyboardIcon },
   { label: "Models", to: "/settings/models", icon: BoxesIcon },
   { label: "Plugins", to: "/settings/plugins", icon: PlugZapIcon },

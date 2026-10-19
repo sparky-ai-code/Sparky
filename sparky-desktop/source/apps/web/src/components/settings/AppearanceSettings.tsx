@@ -3,6 +3,8 @@ import { CheckIcon, RotateCcwIcon } from "lucide-react";
 
 import { useTheme } from "../../hooks/useTheme";
 import { Button } from "../ui/button";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 const STORAGE_KEY = "sparky-appearance";
@@ -15,39 +17,61 @@ const THEMES = [
   { id: "amber", name: "Amber", accent: "#fbbf24", hue: "43 96% 56%" },
 ] as const;
 type ThemeId = (typeof THEMES)[number]["id"];
+type AppearancePreferences = {
+  theme: ThemeId;
+  compact: boolean;
+  customColor: string | null;
+  hoverStyle: "subtle" | "colorful";
+  roundedness: "soft" | "rounded" | "sharp";
+};
+const DEFAULT_APPEARANCE: AppearancePreferences = {
+  theme: "default",
+  compact: false,
+  customColor: null,
+  hoverStyle: "colorful",
+  roundedness: "rounded",
+};
 
-function readAppearance(): { theme: ThemeId; compact: boolean; customColor: string | null } {
+function readAppearance(): AppearancePreferences {
   try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as { theme?: string; compact?: boolean } | null;
+    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as Partial<AppearancePreferences> | null;
     return {
       theme: THEMES.some((item) => item.id === value?.theme) ? (value!.theme as ThemeId) : "default",
       compact: value?.compact === true,
-      customColor: typeof (value as { customColor?: unknown } | null)?.customColor === "string" ? (value as { customColor: string }).customColor : null,
+      customColor: typeof value?.customColor === "string" && /^#[0-9a-f]{6}$/i.test(value.customColor) ? value.customColor : null,
+      hoverStyle: value?.hoverStyle === "subtle" ? "subtle" : "colorful",
+      roundedness: value?.roundedness === "soft" || value?.roundedness === "sharp" ? value.roundedness : "rounded",
     };
   } catch {
-    return { theme: "default", compact: false, customColor: null };
+    return { ...DEFAULT_APPEARANCE };
   }
 }
 
-function applyAppearance(theme: ThemeId, compact: boolean, customColor: string | null) {
-  const selected = THEMES.find((item) => item.id === theme) ?? THEMES[0];
-  const color = customColor ?? `hsl(${selected.hue})`;
-  document.documentElement.style.setProperty("--primary", color);
-  document.documentElement.style.setProperty("--ring", color);
-  document.documentElement.dataset.appearance = customColor ? "custom" : theme;
-  document.documentElement.dataset.density = compact ? "compact" : "comfortable";
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme, compact, customColor }));
+function applyAppearance(preferences: AppearancePreferences) {
+  const selected = THEMES.find((item) => item.id === preferences.theme) ?? THEMES[0];
+  const color = preferences.customColor ?? `hsl(${selected.hue})`;
+  const root = document.documentElement;
+  root.style.setProperty("--primary", color);
+  root.style.setProperty("--ring", color);
+  root.style.setProperty("--accent", `color-mix(in srgb, ${color} ${preferences.hoverStyle === "colorful" ? "18%" : "7%"}, transparent)`);
+  root.style.setProperty("--radius", preferences.roundedness === "soft" ? "0.9rem" : preferences.roundedness === "sharp" ? "0.35rem" : "0.625rem");
+  root.dataset.appearance = preferences.customColor ? "custom" : preferences.theme;
+  root.dataset.density = preferences.compact ? "compact" : "comfortable";
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+  } catch {
+    // The active appearance still applies for this session when storage is unavailable.
+  }
 }
 
 export function syncSavedAppearance() {
-  const saved = readAppearance();
-  applyAppearance(saved.theme, saved.compact, saved.customColor);
+  applyAppearance(readAppearance());
 }
 
 export function AppearanceSettingsPanel() {
   const { theme: mode, setTheme: setMode } = useTheme();
   const [appearance, setAppearance] = useState(readAppearance);
-  useEffect(() => applyAppearance(appearance.theme, appearance.compact, appearance.customColor), [appearance]);
+  useEffect(() => applyAppearance(appearance), [appearance]);
 
   const update = (next: Partial<typeof appearance>) => {
     setAppearance((current) => ({ ...current, ...next }));
@@ -75,15 +99,55 @@ export function AppearanceSettingsPanel() {
         <SettingsRow title="Custom accent color" description="Pick any accent color to personalize buttons and highlights."
           control={<input aria-label="Custom accent color" type="color" value={appearance.customColor ?? (THEMES.find((item) => item.id === appearance.theme)?.accent ?? "#a78bfa")} onChange={(event) => update({ customColor: event.currentTarget.value })} className="size-10 cursor-pointer rounded-md border-0 bg-transparent" />} />
       </SettingsSection>
-      <SettingsSection title="Display">
+      <SettingsSection title="Display and interaction">
         <SettingsRow title="Color mode" description="Use light or dark colors, or follow your system preference."
-          control={<select aria-label="Color mode" value={mode} onChange={(event) => setMode(event.currentTarget.value as "light" | "dark" | "system")} className="h-9 rounded-md border border-border bg-background px-3 text-sm">
-            <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
-          </select>} />
-        <SettingsRow title="Compact layout" description="Tighten spacing in lists and settings for a denser workspace."
-          control={<input aria-label="Compact layout" type="checkbox" checked={appearance.compact} onChange={(event) => update({ compact: event.currentTarget.checked })} className="size-4 accent-primary" />} />
+          control={
+            <Select value={mode} onValueChange={(value) => {
+              if (value === "light" || value === "dark" || value === "system") setMode(value);
+            }}>
+              <SelectTrigger className="w-full sm:w-48" aria-label="Color mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup align="end">
+                <SelectItem value="system">System</SelectItem>
+                <SelectItem value="light">Light</SelectItem>
+                <SelectItem value="dark">Dark</SelectItem>
+              </SelectPopup>
+            </Select>
+          } />
+        <SettingsRow title="Hover highlight" description="Use your selected theme color for hover, focus, and highlighted menu states."
+          control={
+            <Select value={appearance.hoverStyle} onValueChange={(value) => {
+              if (value === "subtle" || value === "colorful") update({ hoverStyle: value });
+            }}>
+              <SelectTrigger className="w-full sm:w-48" aria-label="Hover highlight style">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup align="end">
+                <SelectItem value="colorful">Colorful</SelectItem>
+                <SelectItem value="subtle">Subtle</SelectItem>
+              </SelectPopup>
+            </Select>
+          } />
+        <SettingsRow title="Interface corners" description="Adjust the shape of buttons, menus, and panels across Sparky."
+          control={
+            <Select value={appearance.roundedness} onValueChange={(value) => {
+              if (value === "soft" || value === "rounded" || value === "sharp") update({ roundedness: value });
+            }}>
+              <SelectTrigger className="w-full sm:w-48" aria-label="Interface corner style">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup align="end">
+                <SelectItem value="soft">Extra rounded</SelectItem>
+                <SelectItem value="rounded">Rounded</SelectItem>
+                <SelectItem value="sharp">Square</SelectItem>
+              </SelectPopup>
+            </Select>
+          } />
+        <SettingsRow title="Compact layout" description="Reduce spacing in settings and navigation for a denser workspace."
+          control={<Switch aria-label="Compact layout" checked={appearance.compact} onCheckedChange={(checked) => update({ compact: checked })} />} />
       </SettingsSection>
-      <div className="flex justify-end pb-6"><Button variant="outline" size="sm" onClick={() => { setMode("system"); update({ theme: "default", compact: false, customColor: null }); }}><RotateCcwIcon className="size-3.5" />Reset appearance</Button></div>
+      <div className="flex justify-end pb-6"><Button variant="outline" size="sm" onClick={() => { setMode("system"); update({ ...DEFAULT_APPEARANCE }); }}><RotateCcwIcon className="size-3.5" />Reset appearance</Button></div>
     </SettingsPageContainer>
   );
 }

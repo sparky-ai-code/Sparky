@@ -458,6 +458,27 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+html[data-density="compact"] [data-slot="settings-row"] {
+  padding-block: 0.5rem;
+}
+
+html[data-density="compact"] [data-slot="settings-row"] > div {
+  gap: 0.5rem;
+}
+
+html[data-density="compact"] [data-slot="sidebar-menu-button"] {
+  min-height: 2rem;
+  padding-block: 0.375rem;
+}
+
+html[data-appearance] [data-slot="sidebar-menu-button"]:hover,
+html[data-appearance] [data-slot="sidebar-menu-button"][data-active="true"],
+html[data-appearance] [data-slot="sidebar-menu-sub-button"]:hover,
+html[data-appearance] [data-slot="sidebar-menu-sub-button"][data-active="true"] {
+  background-color: var(--accent);
+  color: var(--foreground);
+}
+
 body {
   font-family:
     "DM Sans Variable",

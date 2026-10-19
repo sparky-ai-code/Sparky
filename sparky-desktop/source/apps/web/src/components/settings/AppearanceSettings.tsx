@@ -31,6 +31,20 @@ const DEFAULT_APPEARANCE: AppearancePreferences = {
   hoverStyle: "colorful",
   roundedness: "rounded",
 };
+const COLOR_MODE_OPTIONS = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
+const HOVER_STYLE_OPTIONS = [
+  { value: "colorful", label: "Colorful" },
+  { value: "subtle", label: "Subtle" },
+];
+const CORNER_STYLE_OPTIONS = [
+  { value: "soft", label: "Extra rounded" },
+  { value: "rounded", label: "Rounded" },
+  { value: "sharp", label: "Square" },
+];
 
 function readAppearance(): AppearancePreferences {
   try {
@@ -111,7 +125,7 @@ export function AppearanceSettingsPanel() {
       <SettingsSection title="Display and interaction" className="space-y-2">
         <SettingsRow title="Color mode" description="Use light or dark colors, or follow your system preference." className="py-2.5"
           control={
-            <Select value={mode} onValueChange={(value) => {
+            <Select value={mode} items={COLOR_MODE_OPTIONS} onValueChange={(value) => {
               if (value === "light" || value === "dark" || value === "system") setMode(value);
             }}>
               <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Color mode">
@@ -126,7 +140,7 @@ export function AppearanceSettingsPanel() {
           } />
         <SettingsRow title="Hover highlight" description="Use your selected theme color for hover, focus, and highlighted menu states." className="py-2.5"
           control={
-            <Select value={appearance.hoverStyle} onValueChange={(value) => {
+            <Select value={appearance.hoverStyle} items={HOVER_STYLE_OPTIONS} onValueChange={(value) => {
               if (value === "subtle" || value === "colorful") update({ hoverStyle: value });
             }}>
               <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Hover highlight style">
@@ -140,7 +154,7 @@ export function AppearanceSettingsPanel() {
           } />
         <SettingsRow title="Interface corners" description="Adjust the shape of buttons, menus, and panels across Sparky." className="py-2.5"
           control={
-            <Select value={appearance.roundedness} onValueChange={(value) => {
+            <Select value={appearance.roundedness} items={CORNER_STYLE_OPTIONS} onValueChange={(value) => {
               if (value === "soft" || value === "rounded" || value === "sharp") update({ roundedness: value });
             }}>
               <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Interface corner style">

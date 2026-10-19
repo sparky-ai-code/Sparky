@@ -31,7 +31,7 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { useUiStateStore } from "../uiStateStore";
-import { syncSavedAppearance } from "../components/settings/AppearanceSettings";
+import { syncSavedAppearance } from "../appearance";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import { configureClientTracing } from "../observability/clientTracing";
 import { resolveInitialServerAuthGateState } from "../environments/primary";

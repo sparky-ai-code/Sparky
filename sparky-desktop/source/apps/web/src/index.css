@@ -476,7 +476,7 @@ html[data-appearance] [data-slot="sidebar-menu-button"][data-active="true"],
 html[data-appearance] [data-slot="sidebar-menu-sub-button"]:hover,
 html[data-appearance] [data-slot="sidebar-menu-sub-button"][data-active="true"] {
   background-color: var(--accent);
-  color: var(--foreground);
+  color: var(--accent-foreground);
 }
 
 body {

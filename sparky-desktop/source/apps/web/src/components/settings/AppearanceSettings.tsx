@@ -78,17 +78,17 @@ export function AppearanceSettingsPanel() {
   };
 
   return (
-    <SettingsPageContainer>
-      <SettingsSection title="Color theme">
-        <SettingsRow title="Choose a palette" description="Change the accent color used throughout Sparky. Your choice is saved on this device.">
-          <div className="grid grid-cols-2 gap-3 py-4 sm:grid-cols-3">
+    <SettingsPageContainer className="max-w-2xl gap-5">
+      <SettingsSection title="Color theme" className="space-y-2">
+        <SettingsRow title="Choose a palette" description="Change the accent color used throughout Sparky. Your choice is saved on this device." className="pt-2 pb-0">
+          <div className="grid grid-cols-2 gap-2 py-3 sm:grid-cols-3">
             {THEMES.map((item) => {
               const selected = appearance.theme === item.id;
               return (
                 <button key={item.id} type="button" aria-pressed={selected} onClick={() => update({ theme: item.id, customColor: null })}
-                  className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-accent/50 ${selected ? "border-primary bg-accent/30" : "border-border"}`}>
-                  <span className="grid size-9 place-items-center rounded-full" style={{ backgroundColor: item.accent }}>
-                    {selected ? <CheckIcon className="size-4" style={{ color: item.id === "default" ? "#111" : "#fff" }} /> : null}
+                  className={`flex items-center gap-2.5 rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50 ${selected ? "border-primary bg-accent/30" : "border-border"}`}>
+                  <span className="grid size-7 place-items-center rounded-full" style={{ backgroundColor: item.accent }}>
+                    {selected ? <CheckIcon className="size-3.5" style={{ color: item.id === "default" ? "#111" : "#fff" }} /> : null}
                   </span>
                   <span className="text-sm font-medium">{item.name}</span>
                 </button>
@@ -96,16 +96,16 @@ export function AppearanceSettingsPanel() {
             })}
           </div>
         </SettingsRow>
-        <SettingsRow title="Custom accent color" description="Pick any accent color to personalize buttons and highlights."
-          control={<input aria-label="Custom accent color" type="color" value={appearance.customColor ?? (THEMES.find((item) => item.id === appearance.theme)?.accent ?? "#a78bfa")} onChange={(event) => update({ customColor: event.currentTarget.value })} className="size-10 cursor-pointer rounded-md border-0 bg-transparent" />} />
+        <SettingsRow title="Custom accent color" description="Pick any accent color to personalize buttons and highlights." className="py-2.5"
+          control={<input aria-label="Custom accent color" type="color" value={appearance.customColor ?? (THEMES.find((item) => item.id === appearance.theme)?.accent ?? "#a78bfa")} onChange={(event) => update({ customColor: event.currentTarget.value })} className="size-8 cursor-pointer rounded-md border-0 bg-transparent" />} />
       </SettingsSection>
-      <SettingsSection title="Display and interaction">
-        <SettingsRow title="Color mode" description="Use light or dark colors, or follow your system preference."
+      <SettingsSection title="Display and interaction" className="space-y-2">
+        <SettingsRow title="Color mode" description="Use light or dark colors, or follow your system preference." className="py-2.5"
           control={
             <Select value={mode} onValueChange={(value) => {
               if (value === "light" || value === "dark" || value === "system") setMode(value);
             }}>
-              <SelectTrigger className="w-full sm:w-48" aria-label="Color mode">
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Color mode">
                 <SelectValue />
               </SelectTrigger>
               <SelectPopup align="end">
@@ -115,12 +115,12 @@ export function AppearanceSettingsPanel() {
               </SelectPopup>
             </Select>
           } />
-        <SettingsRow title="Hover highlight" description="Use your selected theme color for hover, focus, and highlighted menu states."
+        <SettingsRow title="Hover highlight" description="Use your selected theme color for hover, focus, and highlighted menu states." className="py-2.5"
           control={
             <Select value={appearance.hoverStyle} onValueChange={(value) => {
               if (value === "subtle" || value === "colorful") update({ hoverStyle: value });
             }}>
-              <SelectTrigger className="w-full sm:w-48" aria-label="Hover highlight style">
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Hover highlight style">
                 <SelectValue />
               </SelectTrigger>
               <SelectPopup align="end">
@@ -129,12 +129,12 @@ export function AppearanceSettingsPanel() {
               </SelectPopup>
             </Select>
           } />
-        <SettingsRow title="Interface corners" description="Adjust the shape of buttons, menus, and panels across Sparky."
+        <SettingsRow title="Interface corners" description="Adjust the shape of buttons, menus, and panels across Sparky." className="py-2.5"
           control={
             <Select value={appearance.roundedness} onValueChange={(value) => {
               if (value === "soft" || value === "rounded" || value === "sharp") update({ roundedness: value });
             }}>
-              <SelectTrigger className="w-full sm:w-48" aria-label="Interface corner style">
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Interface corner style">
                 <SelectValue />
               </SelectTrigger>
               <SelectPopup align="end">
@@ -144,7 +144,7 @@ export function AppearanceSettingsPanel() {
               </SelectPopup>
             </Select>
           } />
-        <SettingsRow title="Compact layout" description="Reduce spacing in settings and navigation for a denser workspace."
+        <SettingsRow title="Compact layout" description="Reduce spacing in settings and navigation for a denser workspace." className="py-2.5"
           control={<Switch aria-label="Compact layout" checked={appearance.compact} onCheckedChange={(checked) => update({ compact: checked })} />} />
       </SettingsSection>
       <div className="flex justify-end pb-6"><Button variant="outline" size="sm" onClick={() => { setMode("system"); update({ ...DEFAULT_APPEARANCE }); }}><RotateCcwIcon className="size-3.5" />Reset appearance</Button></div>

@@ -37,7 +37,12 @@ import { TraitsPicker } from "../chat/TraitsPicker";
 import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
 import { useTheme } from "../../hooks/useTheme";
-import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import {
+  useClientSettings,
+  usePrimarySettings,
+  useUpdateClientSettings,
+  useUpdatePrimarySettings,
+} from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import {
@@ -468,6 +473,10 @@ export function GeneralSettingsPanel() {
   const { theme, setTheme } = useTheme();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
+  const sidebarThreadsGroupedByProject = useClientSettings(
+    (clientSettings) => clientSettings.sidebarThreadsGroupedByProject,
+  );
+  const updateClientSettings = useUpdateClientSettings();
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const diagnosticsDescription = formatDiagnosticsDescription({
@@ -553,6 +562,20 @@ export function GeneralSettingsPanel() {
                 ))}
               </SelectPopup>
             </Select>
+          }
+        />
+
+        <SettingsRow
+          title="Group threads by project"
+          description="Organize the thread list under project folders instead of listing threads together by recent activity."
+          control={
+            <Switch
+              checked={sidebarThreadsGroupedByProject}
+              onCheckedChange={(checked) =>
+                updateClientSettings({ sidebarThreadsGroupedByProject: Boolean(checked) })
+              }
+              aria-label="Group threads by project"
+            />
           }
         />
 

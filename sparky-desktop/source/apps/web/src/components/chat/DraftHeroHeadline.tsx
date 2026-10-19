@@ -1,6 +1,6 @@
-import type { ScopedProjectRef } from "@sparky/contracts";
+import { EnvironmentId, UNSCOPED_CHAT_PROJECT_ID, type ScopedProjectRef } from "@sparky/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@sparky/client-runtime/environment";
-import { FolderPlusIcon } from "lucide-react";
+import { FolderMinusIcon, FolderPlusIcon } from "lucide-react";
 import { useMemo } from "react";
 
 import { useOpenAddProjectCommandPalette } from "~/commandPaletteContext";
@@ -87,6 +87,20 @@ export function DraftHeroHeadline({
         <MenuItem onClick={openAddProject}>
           <FolderPlusIcon />
           New project
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            const environmentId =
+              activeProjectRef?.environmentId ??
+              orderedProjects[0]?.environmentId ??
+              EnvironmentId.make("local");
+            void handleNewThread(scopeProjectRef(environmentId, UNSCOPED_CHAT_PROJECT_ID), {
+              replace: true,
+            });
+          }}
+        >
+          <FolderMinusIcon />
+          Work with no Project
         </MenuItem>
       </MenuPopup>
     </Menu>

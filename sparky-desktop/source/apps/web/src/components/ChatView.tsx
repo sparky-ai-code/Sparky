@@ -1233,6 +1233,7 @@ function ChatViewContent(props: ChatViewProps) {
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
   optimisticUserMessagesRef.current = optimisticUserMessages;
+  const optimisticUserMessageThreadIdsRef = useRef(new Map<string, string>());
   const [localDraftErrorsByDraftId, setLocalDraftErrorsByDraftId] = useState<
     Record<string, LocalThreadErrorEntry>
   >({});
@@ -2318,12 +2319,21 @@ function ChatViewContent(props: ChatViewProps) {
       return serverMessagesWithPreviewHandoff;
     }
     const serverIds = new Set(serverMessagesWithPreviewHandoff.map((message) => message.id));
-    const pendingMessages = optimisticUserMessages.filter((message) => !serverIds.has(message.id));
+    const pendingMessages = optimisticUserMessages.filter(
+      (message) =>
+        !serverIds.has(message.id) &&
+        optimisticUserMessageThreadIdsRef.current.get(message.id) === activeThread?.id,
+    );
     if (pendingMessages.length === 0) {
       return serverMessagesWithPreviewHandoff;
     }
     return [...serverMessagesWithPreviewHandoff, ...pendingMessages];
-  }, [attachmentPreviewHandoffByMessageId, displayServerMessages, optimisticUserMessages]);
+  }, [
+    activeThread?.id,
+    attachmentPreviewHandoffByMessageId,
+    displayServerMessages,
+    optimisticUserMessages,
+  ]);
   const timelineEntries = useMemo(
     () =>
       deriveTimelineEntries(timelineMessages, activeThread?.proposedPlans ?? [], workLogEntries),
@@ -3940,6 +3950,7 @@ function ChatViewContent(props: ChatViewProps) {
       );
     }, 0);
     for (const removedMessage of removedMessages) {
+      optimisticUserMessageThreadIdsRef.current.delete(removedMessage.id);
       const previewUrls = collectUserMessageBlobPreviewUrls(removedMessage);
       if (previewUrls.length > 0) {
         handoffAttachmentPreviews(removedMessage.id, previewUrls);
@@ -3953,12 +3964,6 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThread?.id, activeThread?.messages, handoffAttachmentPreviews, optimisticUserMessages]);
 
   useEffect(() => {
-    setOptimisticUserMessages((existing) => {
-      for (const message of existing) {
-        revokeUserMessagePreviewUrls(message);
-      }
-      return [];
-    });
     resetLocalDispatch();
     setExpandedImage(null);
   }, [draftId, resetLocalDispatch, threadId]);
@@ -4389,6 +4394,8 @@ function ChatViewContent(props: ChatViewProps) {
       const createdAt = new Date().toISOString();
       const demoUserMessageId = newMessageId();
       const demoAssistantMessageId = newMessageId();
+      optimisticUserMessageThreadIdsRef.current.set(demoUserMessageId, threadIdForSend);
+      optimisticUserMessageThreadIdsRef.current.set(demoAssistantMessageId, threadIdForSend);
       setOptimisticUserMessages((existing) => [
         ...existing,
         {
@@ -4517,6 +4524,7 @@ function ChatViewContent(props: ChatViewProps) {
       threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
       messageId: messageIdForSend,
     });
+    optimisticUserMessageThreadIdsRef.current.set(messageIdForSend, threadIdForSend);
     setOptimisticUserMessages((existing) => [
       ...existing,
       {
@@ -4575,32 +4583,32 @@ function ChatViewContent(props: ChatViewProps) {
     );
 
     let failure: AtomCommandResult<unknown, unknown> | null = null;
-    // Auto-title from first message
+    const threadPreparation: Array<Promise<AtomCommandResult<unknown, unknown>>> = [];
+    // These writes are independent; wait for both without serializing network/RPC latency.
     if (isFirstMessage && isServerThread) {
-      const titleResult = await updateThreadMetadata({
-        environmentId,
-        input: {
+      threadPreparation.push(
+        updateThreadMetadata({
+          environmentId,
+          input: {
+            threadId: threadIdForSend,
+            title,
+          },
+        }),
+      );
+    }
+    if (isServerThread) {
+      threadPreparation.push(
+        persistThreadSettingsForNextTurn({
           threadId: threadIdForSend,
-          title,
-        },
-      });
-      if (titleResult._tag === "Failure") {
-        failure = titleResult;
-      }
+          createdAt: messageCreatedAt,
+          ...(ctxSelectedModel ? { modelSelection: ctxSelectedModelSelection } : {}),
+          runtimeMode,
+          interactionMode,
+        }),
+      );
     }
-
-    if (failure === null && isServerThread) {
-      const settingsResult = await persistThreadSettingsForNextTurn({
-        threadId: threadIdForSend,
-        createdAt: messageCreatedAt,
-        ...(ctxSelectedModel ? { modelSelection: ctxSelectedModelSelection } : {}),
-        runtimeMode,
-        interactionMode,
-      });
-      if (settingsResult._tag === "Failure") {
-        failure = settingsResult;
-      }
-    }
+    const preparationResults = await Promise.all(threadPreparation);
+    failure = preparationResults.find((result) => result._tag === "Failure") ?? null;
 
     const turnAttachmentsResult = await settlePromise(() => turnAttachmentsPromise);
     if (failure === null && turnAttachmentsResult._tag === "Failure") {
@@ -4677,6 +4685,7 @@ function ChatViewContent(props: ChatViewProps) {
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
           .length ?? 0) === 0
       ) {
+        optimisticUserMessageThreadIdsRef.current.delete(messageIdForSend);
         setOptimisticUserMessages((existing) => {
           const removed = existing.filter((message) => message.id === messageIdForSend);
           for (const message of removed) {

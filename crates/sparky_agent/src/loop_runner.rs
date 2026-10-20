@@ -995,6 +995,15 @@ impl AgentLoop {
         }
     }
 
+    pub fn set_turn_context(
+        &mut self,
+        interaction_mode: InteractionMode,
+        memory_context: Option<String>,
+    ) {
+        self.options.interaction_mode = interaction_mode;
+        self.options.memory_context = memory_context;
+    }
+
     pub async fn run_turn(
         &self,
         user_prompt: &str,

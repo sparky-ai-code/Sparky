@@ -12,11 +12,12 @@ use sparky_extensions::{EventBus, JsExtensionRunner, SparkyEvent};
 use sparky_memory::MemoryStore;
 use sparky_session::SessionManager;
 use sparky_tools::{is_hidden_control_tool, register_http_mcp_tools_with_header, ToolRegistry};
+use serde::Deserialize;
 use std::env;
 use std::io::{self, Write};
 use std::path::Path;
 use std::sync::Arc;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
@@ -108,6 +109,14 @@ struct Cli {
 
     #[arg(long, help = "Write newline-delimited JSON token events to stdout")]
     json_stream: bool,
+
+    #[arg(
+        long,
+        hide = true,
+        requires = "json_stream",
+        help = "Keep a JSON-stream provider process alive for multiple turns"
+    )]
+    persistent_json_stream: bool,
 
     #[arg(
         long,
@@ -376,6 +385,89 @@ async fn run_prompt(
         progress.finish().await;
     }
     result
+}
+
+#[derive(Deserialize)]
+struct PersistentTurnRequest {
+    prompt: String,
+    #[serde(default, rename = "imagePaths")]
+    image_paths: Vec<String>,
+    #[serde(default, rename = "imageMimeTypes")]
+    image_mime_types: Vec<String>,
+    #[serde(default, rename = "interactionMode")]
+    interaction_mode: Option<String>,
+}
+
+async fn run_persistent_json_stream(
+    cli: &Cli,
+    agent_loop: &mut AgentLoop,
+    session: &mut SessionManager,
+    memory_store: &Arc<tokio::sync::Mutex<MemoryStore>>,
+) -> anyhow::Result<()> {
+    let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+    while let Some(line) = lines.next_line().await? {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let request = match serde_json::from_str::<PersistentTurnRequest>(&line) {
+            Ok(request) => request,
+            Err(error) => {
+                write_json_line(serde_json::json!({
+                    "type": "error",
+                    "message": format!("Invalid persistent turn request: {error}"),
+                }));
+                continue;
+            }
+        };
+        if request.prompt.trim().is_empty() {
+            write_json_line(serde_json::json!({
+                "type": "error",
+                "message": "Prompt was empty",
+            }));
+            continue;
+        }
+        let interaction_mode = match request.interaction_mode.as_deref() {
+            Some("plan") => InteractionMode::Plan,
+            _ => InteractionMode::Build,
+        };
+        let memory_context = if cli.no_workspace_context {
+            None
+        } else {
+            let context = memory_store.lock().await.render_context(&request.prompt);
+            (!context.is_empty()).then_some(context)
+        };
+        agent_loop.set_turn_context(interaction_mode, memory_context);
+        let result = if request.prompt.trim().eq_ignore_ascii_case("/compact") {
+            agent_loop.compact_session(session).await.map(|compacted| {
+                if compacted {
+                    "Context compacted.".to_string()
+                } else {
+                    "Context was already compact.".to_string()
+                }
+            })
+        } else {
+            match load_image_parts(&request.image_paths, &request.image_mime_types).await {
+                Ok(images) => {
+                    run_prompt(agent_loop, session, &request.prompt, images, true, false).await
+                }
+                Err(error) => Err(error),
+            }
+        };
+        session.save().await?;
+        match result {
+            Ok(response) => write_result(cli, &response, session.session_id()),
+            Err(error) => {
+                tracing::error!("Persistent Sparky turn failed: {error:#}");
+                write_json_line(serde_json::json!({
+                    "type": "error",
+                    "message": "Sparky could not complete this turn. Check the server logs for details.",
+                    "sessionId": session.session_id(),
+                }));
+            }
+        }
+    }
+    session.save().await?;
+    Ok(())
 }
 
 async fn load_image_parts(
@@ -759,7 +851,12 @@ async fn main() -> anyhow::Result<()> {
         interaction_mode,
     };
 
-    let agent_loop = AgentLoop::new(provider, tool_registry, event_bus, loop_options);
+    let mut agent_loop = AgentLoop::new(provider, tool_registry, event_bus, loop_options);
+
+    if cli.persistent_json_stream {
+        run_persistent_json_stream(&cli, &mut agent_loop, &mut session, &memory_store).await?;
+        return Ok(());
+    }
 
     let image_parts = load_image_parts(&cli.image_paths, &cli.image_mime_types).await?;
     if !cli.json && !cli.json_stream {

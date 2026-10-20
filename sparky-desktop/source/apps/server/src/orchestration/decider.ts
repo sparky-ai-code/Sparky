@@ -440,6 +440,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `Proposed plan '${sourceProposedPlan?.planId}' belongs to thread '${sourceThread.id}' in a different project.`,
         });
       }
+      const existingUserMessage = targetThread.messages.some(
+        (message) => message.id === command.message.messageId,
+      );
       const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -467,7 +470,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           occurredAt: command.createdAt,
           commandId: command.commandId,
         })),
-        causationEventId: userMessageEvent.eventId,
+        ...(existingUserMessage ? {} : { causationEventId: userMessageEvent.eventId }),
         type: "thread.turn-start-requested",
         payload: {
           threadId: command.threadId,
@@ -482,7 +485,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           createdAt: command.createdAt,
         },
       };
-      return [userMessageEvent, turnStartRequestedEvent];
+      return existingUserMessage
+        ? [turnStartRequestedEvent]
+        : [userMessageEvent, turnStartRequestedEvent];
     }
 
     case "thread.turn.interrupt": {
@@ -743,6 +748,34 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           turnCount: command.turnCount,
+        },
+      };
+    }
+
+    case "thread.message.record": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.message-sent",
+        payload: {
+          threadId: command.threadId,
+          messageId: command.message.messageId,
+          role: "user",
+          text: command.message.text,
+          attachments: command.message.attachments,
+          turnId: null,
+          streaming: false,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
         },
       };
     }

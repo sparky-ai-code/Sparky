@@ -112,7 +112,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
           if (sectionItems.length === 0) return null;
           return (
             <SidebarGroup key={section} className="px-2 py-1.5">
-              <SidebarGroupLabel className="h-7 px-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">
+              <SidebarGroupLabel className="h-7 px-2.5 text-[11px] font-medium text-muted-foreground/75">
                 {section}
               </SidebarGroupLabel>
               <SidebarMenu className="gap-1">

@@ -19,12 +19,13 @@ env:
   VITE_SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
 
 jobs:
+  # v1.1.23's tag predates PRs #30/#31; use the dispatched main commit for every job.
   test-update-feeds:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v1.1.23
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -40,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v1.1.23
+          ref: ${{ github.sha }}
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0
@@ -80,7 +81,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v1.1.23
+          ref: ${{ github.sha }}
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0
@@ -155,7 +156,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v1.1.23
+          ref: ${{ github.sha }}
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0
@@ -230,7 +231,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v1.1.23
+          ref: ${{ github.sha }}
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0
@@ -328,7 +329,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v1.1.23
+          ref: ${{ github.sha }}
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0
@@ -403,7 +404,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v1.1.23
+          ref: ${{ github.sha }}
       - uses: actions/download-artifact@v4
         with:
           pattern: installers-*
@@ -424,4 +425,4 @@ jobs:
           set -euo pipefail
           gh release view v1.1.23 >/dev/null
           gh release upload v1.1.23 release-assets/* --clobber
-          gh release edit v1.1.23 --title 'Sparky 1.1.23' --draft=false --latest
+          gh release edit v1.1.23 --title 'Sparky 1.1.23' --notes 'Includes project-selection and sidebar-settings improvements, new appearance settings and color themes, and desktop release reliability fixes.' --draft=false --latest

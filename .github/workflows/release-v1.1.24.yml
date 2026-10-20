@@ -1,4 +1,4 @@
-name: Release Sparky 1.1.23 (all installers)
+name: Release Sparky 1.1.24 (all installers)
 
 on:
   workflow_dispatch:
@@ -7,11 +7,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-v1.1.23
+  group: release-v1.1.24
   cancel-in-progress: false
 
 env:
-  RELEASE_VERSION: 1.1.23
+  RELEASE_VERSION: 1.1.24
   SPARKY_GITHUB_CLIENT_ID: ${{ vars.SPARKY_GITHUB_CLIENT_ID }}
   SPARKY_GITHUB_AUTH_BROKER_URL: ${{ vars.SPARKY_GITHUB_AUTH_BROKER_URL }}
   SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
@@ -19,7 +19,7 @@ env:
   VITE_SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
 
 jobs:
-  # v1.1.23's tag predates PRs #30/#31; use the dispatched main commit for every job.
+  # Build every platform from the dispatched main commit with 1.1.24 release metadata.
   test-update-feeds:
     runs-on: ubuntu-latest
     steps:
@@ -133,7 +133,7 @@ jobs:
           test -s release/Sparky-x64.dmg.blockmap
           test -s release/Sparky-x64.zip
           grep -q 'Sparky-x64.zip' release/latest-mac.yml
-          grep -q '1.1.23' release/latest-mac.yml
+          grep -q '1.1.24' release/latest-mac.yml
           mv release/latest-mac.yml release/latest-mac-x64.yml
       - uses: actions/upload-artifact@v4
         with:
@@ -208,7 +208,7 @@ jobs:
           test -s release/Sparky-arm64.dmg.blockmap
           test -s release/Sparky-arm64.zip
           grep -q 'Sparky-arm64.zip' release/latest-mac.yml
-          grep -q '1.1.23' release/latest-mac.yml
+          grep -q '1.1.24' release/latest-mac.yml
           mv release/latest-mac.yml release/latest-mac-arm64.yml
       - uses: actions/upload-artifact@v4
         with:
@@ -275,7 +275,7 @@ jobs:
           sed -i 's/Sparky-x86_64\.AppImage/Sparky-x64.AppImage/g' release/latest-linux.yml
           test -s release/latest-linux.yml
           grep -q 'Sparky-x64.AppImage' release/latest-linux.yml
-          grep -q '1.1.23' release/latest-linux.yml
+          grep -q '1.1.24' release/latest-linux.yml
       - name: Boot AppImage and deb-installed app; capture screenshots
         shell: bash
         run: |
@@ -386,7 +386,7 @@ jobs:
             if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing updater asset: $file" }
           }
           $feed = Get-Content -Raw release/latest.yml
-          if ($feed -notmatch 'Sparky-x64\.exe' -or $feed -notmatch '1\.1\.23') { throw 'Windows update feed has incorrect asset or version metadata.' }
+          if ($feed -notmatch 'Sparky-x64\.exe' -or $feed -notmatch '1\.1\.24') { throw 'Windows update feed has incorrect asset or version metadata.' }
       - uses: actions/upload-artifact@v4
         with:
           name: installers-windows-x64
@@ -423,6 +423,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh release view v1.1.23 >/dev/null
-          gh release upload v1.1.23 release-assets/* --clobber
-          gh release edit v1.1.23 --title 'Sparky 1.1.23' --notes 'Includes project-selection and sidebar-settings improvements, new appearance settings and color themes, and desktop release reliability fixes.' --draft=false --latest
+          gh release view v1.1.24 >/dev/null
+          gh release upload v1.1.24 release-assets/* --clobber
+          gh release edit v1.1.24 --title 'Sparky 1.1.24' --notes 'Sparky 1.1.24 release built from the latest main source.' --draft=false --latest

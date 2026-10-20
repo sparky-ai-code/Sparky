@@ -261,8 +261,10 @@ async fn oauth_login() -> anyhow::Result<()> {
     let existing = codex_auth_path()
         .ok()
         .and_then(|path| read_managed_credentials(&path).ok());
-    let callback_port = if existing.is_some() { 0 } else { OAUTH_CALLBACK_PORT };
-    let listener = TcpListener::bind(("127.0.0.1", callback_port)).await
+    // The redirect URI is bound to the registered OAuth client. Reusing the
+    // client ID with an ephemeral port causes the token exchange to fail because
+    // the redirect_uri no longer matches the one used during registration.
+    let listener = TcpListener::bind(("127.0.0.1", OAUTH_CALLBACK_PORT)).await
         .map_err(|error| anyhow::anyhow!("Could not open the Sign in with ChatGPT loopback callback: {error}"))?;
     let port = listener.local_addr()?.port();
     let redirect_uri = format!("http://127.0.0.1:{port}{OAUTH_CALLBACK_PATH}");

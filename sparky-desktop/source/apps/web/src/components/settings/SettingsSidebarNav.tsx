@@ -1,4 +1,4 @@
-import { useCallback, type ComponentType } from "react";
+import { useCallback, useState, type ComponentType } from "react";
 import {
   ArchiveIcon,
   ArrowLeftIcon,
@@ -8,6 +8,7 @@ import {
   BrainIcon,
   KeyboardIcon,
   PlugZapIcon,
+  SearchIcon,
   Settings2Icon,
 } from "lucide-react";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
@@ -52,6 +53,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const { isMobile, setOpenMobile } = useSidebar();
+  const [search, setSearch] = useState("");
+  const filteredItems = SETTINGS_NAV_ITEMS.filter((item) =>
+    item.label.toLowerCase().includes(search.trim().toLowerCase()),
+  );
   const handleSectionClick = useCallback(
     (to: SettingsSectionPath) => {
       if (isMobile) {
@@ -75,9 +80,22 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   return (
     <>
       <SidebarContent className="overflow-x-hidden">
+        <div className="px-3 pt-3">
+          <label className="flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-background px-2.5 text-muted-foreground focus-within:ring-1 focus-within:ring-ring">
+            <SearchIcon className="size-4 shrink-0" aria-hidden="true" />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.currentTarget.value)}
+              placeholder="Search settings"
+              aria-label="Search settings sections"
+              className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+            />
+          </label>
+        </div>
         <SidebarGroup className="px-2 py-3">
           <SidebarMenu>
-            {SETTINGS_NAV_ITEMS.map((item) => {
+            {filteredItems.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.to;
               return (

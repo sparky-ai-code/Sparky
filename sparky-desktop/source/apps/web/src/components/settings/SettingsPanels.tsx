@@ -531,7 +531,7 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection title="General">
+      <SettingsSection title="Workspace">
         <SettingsRow
           title="Theme"
           description="Choose how Sparky looks across the app."
@@ -578,7 +578,9 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+      </SettingsSection>
 
+      <SettingsSection title="Interaction & display">
         <SettingsRow
           title="Focus Mode"
           description="Dim working and inactive threads so completed work stays easy to scan."
@@ -759,7 +761,9 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
+      </SettingsSection>
 
+      <SettingsSection title="Project & generation">
         <SettingsRow
           title="Add project starts in"
           description='Leave empty to use "~/" when the Add Project browser opens.'

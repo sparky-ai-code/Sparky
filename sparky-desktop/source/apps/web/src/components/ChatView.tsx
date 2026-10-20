@@ -4575,32 +4575,32 @@ function ChatViewContent(props: ChatViewProps) {
     );
 
     let failure: AtomCommandResult<unknown, unknown> | null = null;
-    // Auto-title from first message
+    const threadPreparation: Array<Promise<AtomCommandResult<unknown, unknown>>> = [];
+    // These writes are independent; wait for both without serializing network/RPC latency.
     if (isFirstMessage && isServerThread) {
-      const titleResult = await updateThreadMetadata({
-        environmentId,
-        input: {
+      threadPreparation.push(
+        updateThreadMetadata({
+          environmentId,
+          input: {
+            threadId: threadIdForSend,
+            title,
+          },
+        }),
+      );
+    }
+    if (isServerThread) {
+      threadPreparation.push(
+        persistThreadSettingsForNextTurn({
           threadId: threadIdForSend,
-          title,
-        },
-      });
-      if (titleResult._tag === "Failure") {
-        failure = titleResult;
-      }
+          createdAt: messageCreatedAt,
+          ...(ctxSelectedModel ? { modelSelection: ctxSelectedModelSelection } : {}),
+          runtimeMode,
+          interactionMode,
+        }),
+      );
     }
-
-    if (failure === null && isServerThread) {
-      const settingsResult = await persistThreadSettingsForNextTurn({
-        threadId: threadIdForSend,
-        createdAt: messageCreatedAt,
-        ...(ctxSelectedModel ? { modelSelection: ctxSelectedModelSelection } : {}),
-        runtimeMode,
-        interactionMode,
-      });
-      if (settingsResult._tag === "Failure") {
-        failure = settingsResult;
-      }
-    }
+    const preparationResults = await Promise.all(threadPreparation);
+    failure = preparationResults.find((result) => result._tag === "Failure") ?? null;
 
     const turnAttachmentsResult = await settlePromise(() => turnAttachmentsPromise);
     if (failure === null && turnAttachmentsResult._tag === "Failure") {

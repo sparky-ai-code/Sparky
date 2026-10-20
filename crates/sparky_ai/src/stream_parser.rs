@@ -7,7 +7,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 
 #[derive(Default)]
 struct SseDecoder {
-    buffer: String,
+    buffer: Vec<u8>,
 }
 
 fn token_count(value: &Value, field: &str) -> u32 {
@@ -54,17 +54,25 @@ fn gemini_usage(value: &Value) -> Option<UsageStats> {
 
 impl SseDecoder {
     fn push(&mut self, bytes: &[u8]) -> Vec<String> {
-        self.buffer.push_str(&String::from_utf8_lossy(bytes));
+        self.buffer.extend_from_slice(bytes);
         let mut payloads = Vec::new();
+        let mut consumed = 0;
 
-        while let Some(line_end) = self.buffer.find('\n') {
-            let line = self.buffer[..line_end].trim().to_string();
-            self.buffer.drain(..=line_end);
-            if let Some(data) = line.strip_prefix("data: ") {
+        while let Some(relative_end) = self.buffer[consumed..].iter().position(|byte| *byte == b'\n') {
+            let line_end = consumed + relative_end;
+            let line = self.buffer[consumed..line_end].strip_suffix(b"\r").unwrap_or(
+                &self.buffer[consumed..line_end],
+            );
+            let line = String::from_utf8_lossy(line);
+            if let Some(data) = line.trim().strip_prefix("data: ") {
                 payloads.push(data.to_string());
             }
+            consumed = line_end + 1;
         }
 
+        if consumed > 0 {
+            self.buffer.drain(..consumed);
+        }
         payloads
     }
 }
@@ -301,6 +309,13 @@ mod tests {
             decoder.push(b"1}\n\ndata: [DONE]\n"),
             vec!["{\"part\":1}", "[DONE]"]
         );
+    }
+
+    #[test]
+    fn decoder_preserves_utf8_characters_split_across_chunks() {
+        let mut decoder = SseDecoder::default();
+        assert!(decoder.push(b"data: {\"text\":\"caf\xC3").is_empty());
+        assert_eq!(decoder.push(b"\xA9\"}\n"), vec!["{\"text\":\"café\"}"]);
     }
 
     #[test]

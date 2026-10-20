@@ -10,6 +10,7 @@ export type PullRequestReviewProgress = {
   readonly key: string;
   readonly phase: PullRequestReviewProgressPhase;
   readonly message: string;
+  readonly reviewSummary?: string;
 };
 
 export type PullRequestReviewProgressSnapshot = {
@@ -20,6 +21,7 @@ export type PullRequestReviewProgressSnapshot = {
 export type PullRequestReviewProgressReporter = (
   phase: PullRequestReviewProgressPhase,
   message: string,
+  reviewSummary?: string,
 ) => void;
 
 const MAX_PROGRESS_ENTRIES = 80;
@@ -71,9 +73,19 @@ export function startPullRequestReviewProgress(
 ): Promise<void> | null {
   if (snapshot.activeKey !== null) return null;
 
-  const report: PullRequestReviewProgressReporter = (phase, message) => {
+  const report: PullRequestReviewProgressReporter = (phase, message, reviewSummary) => {
     if (snapshot.activeKey !== key) return;
-    publish({ key, phase, message }, key);
+    const current = snapshot.progressByKey.get(key);
+    const summary = reviewSummary ?? current?.reviewSummary;
+    publish(
+      {
+        key,
+        phase,
+        message,
+        ...(summary ? { reviewSummary: summary } : {}),
+      },
+      key,
+    );
   };
 
   publish(

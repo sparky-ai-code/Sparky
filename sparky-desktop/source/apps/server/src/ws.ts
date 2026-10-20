@@ -607,13 +607,21 @@ const makeWsRpcLayer = (
           ),
         );
 
-      const appendSetupScriptActivity = (input: {
+      const appendThreadActivity = (input: {
         readonly threadId: ThreadId;
-        readonly kind: "setup-script.requested" | "setup-script.started" | "setup-script.failed";
+        readonly kind:
+          | "setup-script.requested"
+          | "setup-script.started"
+          | "setup-script.failed"
+          | "tool.started"
+          | "tool.updated"
+          | "tool.completed"
+          | "worktree.preparing"
+          | "worktree.ready";
         readonly summary: string;
         readonly createdAt: string;
         readonly payload: Record<string, unknown>;
-        readonly tone: "info" | "error";
+        readonly tone: "info" | "tool" | "error";
       }) =>
         Effect.all({
           commandId: serverCommandId("setup-script-activity"),
@@ -914,12 +922,13 @@ const makeWsRpcLayer = (
           const bootstrap = command.bootstrap;
           const { bootstrap: _bootstrap, ...finalTurnStartCommand } = command;
           let createdThread = false;
+          let recordedUserMessage = false;
           let targetProjectId = bootstrap?.createThread?.projectId;
           let targetProjectCwd = bootstrap?.prepareWorktree?.projectCwd;
           let targetWorktreePath = bootstrap?.createThread?.worktreePath ?? null;
 
           const cleanupCreatedThread = () =>
-            createdThread
+            createdThread && !recordedUserMessage
               ? serverCommandId("bootstrap-thread-delete").pipe(
                   Effect.flatMap((commandId) =>
                     dispatchAsCurrentSession({
@@ -938,7 +947,7 @@ const makeWsRpcLayer = (
             readonly worktreePath: string;
           }) => {
             const detail = projectSetupScriptCompatibilityDetail(input.error);
-            return appendSetupScriptActivity({
+            return appendThreadActivity({
               threadId: command.threadId,
               kind: "setup-script.failed",
               summary: "Setup script failed to start",
@@ -976,7 +985,7 @@ const makeWsRpcLayer = (
                 worktreePath: input.worktreePath,
               };
               yield* Effect.all([
-                appendSetupScriptActivity({
+                appendThreadActivity({
                   threadId: command.threadId,
                   kind: "setup-script.requested",
                   summary: "Starting setup script",
@@ -984,7 +993,7 @@ const makeWsRpcLayer = (
                   payload,
                   tone: "info",
                 }),
-                appendSetupScriptActivity({
+                appendThreadActivity({
                   threadId: command.threadId,
                   kind: "setup-script.started",
                   summary: "Setup script started",
@@ -1066,6 +1075,33 @@ const makeWsRpcLayer = (
             }
 
             if (bootstrap?.prepareWorktree) {
+              yield* dispatchAsCurrentSession({
+                type: "thread.message.record",
+                commandId: yield* serverCommandId("bootstrap-thread-message"),
+                threadId: command.threadId,
+                message: command.message,
+                createdAt: command.createdAt,
+              });
+              recordedUserMessage = true;
+              const worktreeToolCallId = yield* serverEventId;
+              const preparingAt = yield* nowIso;
+              yield* appendThreadActivity({
+                threadId: command.threadId,
+                kind: "tool.started",
+                summary: "Creating worktree",
+                createdAt: preparingAt,
+                payload: {
+                  toolName: "create_worktree",
+                  toolCallId: worktreeToolCallId,
+                  title: "Creating worktree",
+                  status: "inProgress",
+                  data: {
+                    baseBranch: bootstrap.prepareWorktree.baseBranch,
+                    branch: bootstrap.prepareWorktree.branch ?? null,
+                  },
+                },
+                tone: "tool",
+              });
               let worktreeBaseRef = bootstrap.prepareWorktree.baseBranch;
               if (bootstrap.prepareWorktree.startFromOrigin) {
                 yield* gitWorkflow.fetchRemote({
@@ -1095,6 +1131,23 @@ const makeWsRpcLayer = (
                 worktreePath: targetWorktreePath,
               });
               yield* refreshGitStatus(targetWorktreePath);
+              yield* appendThreadActivity({
+                threadId: command.threadId,
+                kind: "tool.completed",
+                summary: "Worktree ready",
+                createdAt: yield* nowIso,
+                payload: {
+                  toolName: "create_worktree",
+                  toolCallId: worktreeToolCallId,
+                  title: "Creating worktree",
+                  status: "completed",
+                  data: {
+                    branch: worktree.worktree.refName,
+                    worktreePath: targetWorktreePath,
+                  },
+                },
+                tone: "tool",
+              });
             }
 
             yield* runSetupProgram();

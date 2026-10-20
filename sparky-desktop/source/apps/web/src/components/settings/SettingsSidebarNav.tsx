@@ -93,7 +93,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
 
   return (
     <>
-      <SidebarContent className="overflow-x-hidden">
+      <SidebarContent className="gap-0 overflow-x-hidden">
         <div className="px-3 pt-3">
           <label className="flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-background px-2.5 text-muted-foreground focus-within:ring-1 focus-within:ring-ring">
             <SearchIcon className="size-4 shrink-0" aria-hidden="true" />
@@ -111,7 +111,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
           const sectionItems = filteredItems.filter((item) => item.section === section);
           if (sectionItems.length === 0) return null;
           return (
-            <SidebarGroup key={section} className="px-2 py-1.5">
+            <SidebarGroup key={section} className="px-2 py-0.5">
               <SidebarGroupLabel className="h-7 px-2.5 text-[11px] font-medium text-muted-foreground/75">
                 {section}
               </SidebarGroupLabel>

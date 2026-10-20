@@ -26,7 +26,7 @@ describe("pull request review progress", () => {
     });
 
     expect(task).not.toBeNull();
-    expect(getPullRequestReviewProgressSnapshot().activeKey).toBe(key);
+    expect(getPullRequestReviewProgressSnapshot().activeKeys.has(key)).toBe(true);
     expect(getPullRequestReviewProgressSnapshot().progressByKey.get(key)).toMatchObject({
       phase: "fetching",
       message: "Fetching the latest pull-request changes from GitHub…",
@@ -44,7 +44,7 @@ describe("pull request review progress", () => {
     const unsubscribeReturningSubscriber = subscribeToPullRequestReviewProgress(() => {
       returningNotifications += 1;
     });
-    expect(getPullRequestReviewProgressSnapshot().activeKey).toBe(key);
+    expect(getPullRequestReviewProgressSnapshot().activeKeys.has(key)).toBe(true);
     expect(getPullRequestReviewProgressSnapshot().progressByKey.get(key)?.message).toBe(
       "Analyzing changed code for review findings…",
     );
@@ -52,7 +52,7 @@ describe("pull request review progress", () => {
     releaseReview();
     await task;
 
-    expect(getPullRequestReviewProgressSnapshot().activeKey).toBeNull();
+    expect(getPullRequestReviewProgressSnapshot().activeKeys.size).toBe(0);
     expect(getPullRequestReviewProgressSnapshot().progressByKey.get(key)).toMatchObject({
       phase: "success",
       message: "Review posted.",
@@ -71,7 +71,7 @@ describe("pull request review progress", () => {
     expect(task).not.toBeNull();
     await task;
 
-    expect(getPullRequestReviewProgressSnapshot().activeKey).toBeNull();
+    expect(getPullRequestReviewProgressSnapshot().activeKeys.size).toBe(0);
     expect(getPullRequestReviewProgressSnapshot().progressByKey.get(key)).toMatchObject({
       phase: "error",
       message: "The review request failed.",

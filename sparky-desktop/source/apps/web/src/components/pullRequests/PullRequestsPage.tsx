@@ -1045,7 +1045,7 @@ export function PullRequestsPage() {
         !selectedRepository ||
         !currentPullRequest ||
         pullRequestActionBusy !== null ||
-        pullRequestReviewSnapshot.activeKey !== null
+        pullRequestReviewSnapshot.activeKeys.size > 0
       )
         return;
       setPullRequestActionBusy(action);
@@ -1080,7 +1080,7 @@ export function PullRequestsPage() {
     [
       loadPullRequests,
       pullRequestActionBusy,
-      pullRequestReviewSnapshot.activeKey,
+      pullRequestReviewSnapshot.activeKeys,
       pullRequests,
       scope,
       selectedNumber,
@@ -1100,8 +1100,7 @@ export function PullRequestsPage() {
       !selectedRepository ||
       !currentPullRequest ||
       !reviewProject ||
-      pullRequestActionBusy !== null ||
-      pullRequestReviewSnapshot.activeKey !== null
+      (pullRequestActionBusy !== null && pullRequestActionBusy !== "review")
     ) {
       return;
     }
@@ -1289,14 +1288,12 @@ export function PullRequestsPage() {
     });
     if (!reviewTask) return;
 
-    setPullRequestActionBusy("review");
     setPullRequestActionError(null);
-    void reviewTask.finally(() => setPullRequestActionBusy(null));
   }, [
     loadPullRequests,
     markAuthRequired,
     pullRequestActionBusy,
-    pullRequestReviewSnapshot.activeKey,
+    pullRequestReviewSnapshot.activeKeys,
     pullRequests,
     reviewModelSelection,
     reviewProject,
@@ -1334,8 +1331,6 @@ export function PullRequestsPage() {
   const reviewProgressForSelectedPullRequest = selectedReviewKey
     ? (pullRequestReviewSnapshot.progressByKey.get(selectedReviewKey) ?? null)
     : null;
-  const activePullRequestActionBusy =
-    pullRequestActionBusy ?? (pullRequestReviewSnapshot.activeKey !== null ? "review" : null);
 
   if (!isElectron || getGitHubBridge() === null) {
     return (
@@ -1645,7 +1640,9 @@ export function PullRequestsPage() {
                             variant="outline"
                             size="sm"
                             disabled={
-                              activePullRequestActionBusy !== null ||
+                              pullRequestActionBusy !== null ||
+                              (selectedReviewKey !== null &&
+                                pullRequestReviewSnapshot.activeKeys.has(selectedReviewKey)) ||
                               reviewProject === null ||
                               !canPostPullRequestReview
                             }
@@ -1658,7 +1655,7 @@ export function PullRequestsPage() {
                             }
                             onClick={() => void handlePullRequestReview()}
                           >
-                            {pullRequestReviewSnapshot.activeKey === selectedReviewKey ? (
+                            {selectedReviewKey !== null && pullRequestReviewSnapshot.activeKeys.has(selectedReviewKey) ? (
                               <LoaderCircleIcon className="size-3.5 animate-spin" />
                             ) : (
                               <GitPullRequestIcon className="size-3.5" />
@@ -1668,7 +1665,7 @@ export function PullRequestsPage() {
                           <Button
                             size="sm"
                             disabled={
-                              activePullRequestActionBusy !== null || displayedPullRequest.isDraft
+                              pullRequestActionBusy !== null || displayedPullRequest.isDraft
                             }
                             onClick={() => void handlePullRequestAction("merge")}
                           >
@@ -1681,7 +1678,7 @@ export function PullRequestsPage() {
                             variant="outline"
                             size="sm"
                             disabled={
-                              activePullRequestActionBusy !== null || displayedPullRequest.isDraft
+                              pullRequestActionBusy !== null || displayedPullRequest.isDraft
                             }
                             onClick={() => void handlePullRequestAction("squash")}
                           >
@@ -1693,7 +1690,7 @@ export function PullRequestsPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={activePullRequestActionBusy !== null}
+                            disabled={pullRequestActionBusy !== null}
                             onClick={() => void handlePullRequestAction("close")}
                           >
                             {pullRequestActionBusy === "close" ? (

@@ -13,7 +13,7 @@ export type PullRequestReviewProgress = {
 };
 
 export type PullRequestReviewProgressSnapshot = {
-  readonly activeKey: string | null;
+  readonly activeKeys: ReadonlySet<string>;
   readonly progressByKey: ReadonlyMap<string, PullRequestReviewProgress>;
 };
 
@@ -25,7 +25,7 @@ export type PullRequestReviewProgressReporter = (
 const MAX_PROGRESS_ENTRIES = 80;
 
 let snapshot: PullRequestReviewProgressSnapshot = {
-  activeKey: null,
+  activeKeys: new Set(),
   progressByKey: new Map(),
 };
 
@@ -40,21 +40,18 @@ export function subscribeToPullRequestReviewProgress(listener: () => void): () =
   return () => listeners.delete(listener);
 }
 
-function publish(
-  progress: PullRequestReviewProgress,
-  activeKey: string | null = snapshot.activeKey,
-): void {
+function publish(progress: PullRequestReviewProgress): void {
   const progressByKey = new Map(snapshot.progressByKey);
   progressByKey.delete(progress.key);
   progressByKey.set(progress.key, progress);
 
   while (progressByKey.size > MAX_PROGRESS_ENTRIES) {
-    const oldestKey = [...progressByKey.keys()].find((key) => key !== activeKey);
+    const oldestKey = [...progressByKey.keys()].find((key) => !snapshot.activeKeys.has(key));
     if (oldestKey === undefined) break;
     progressByKey.delete(oldestKey);
   }
 
-  snapshot = { activeKey, progressByKey };
+  snapshot = { ...snapshot, progressByKey };
   for (const listener of listeners) listener();
 }
 
@@ -69,28 +66,28 @@ export function startPullRequestReviewProgress(
   key: string,
   task: (report: PullRequestReviewProgressReporter) => Promise<void>,
 ): Promise<void> | null {
-  if (snapshot.activeKey !== null) return null;
+  if (snapshot.activeKeys.has(key)) return null;
+
+  snapshot = { ...snapshot, activeKeys: new Set(snapshot.activeKeys).add(key) };
+  for (const listener of listeners) listener();
 
   const report: PullRequestReviewProgressReporter = (phase, message) => {
-    if (snapshot.activeKey !== key) return;
-    publish({ key, phase, message }, key);
+    if (!snapshot.activeKeys.has(key)) return;
+    publish({ key, phase, message });
   };
 
-  publish(
-    {
-      key,
-      phase: "fetching",
-      message: "Fetching the latest pull-request changes from GitHub…",
-    },
+  publish({
     key,
-  );
+    phase: "fetching",
+    message: "Fetching the latest pull-request changes from GitHub…",
+  });
 
   return Promise.resolve()
     .then(() => task(report))
     .then(() => {
       const current = snapshot.progressByKey.get(key);
       if (
-        snapshot.activeKey === key &&
+        snapshot.activeKeys.has(key) &&
         current?.phase !== "success" &&
         current?.phase !== "error"
       ) {
@@ -99,8 +96,10 @@ export function startPullRequestReviewProgress(
     })
     .catch((cause: unknown) => report("error", defaultErrorMessage(cause)))
     .finally(() => {
-      if (snapshot.activeKey === key) {
-        snapshot = { ...snapshot, activeKey: null };
+      if (snapshot.activeKeys.has(key)) {
+        const activeKeys = new Set(snapshot.activeKeys);
+        activeKeys.delete(key);
+        snapshot = { ...snapshot, activeKeys };
         for (const listener of listeners) listener();
       }
     });

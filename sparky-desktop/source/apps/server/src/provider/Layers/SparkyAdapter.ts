@@ -99,8 +99,9 @@ export interface SparkyStreamCallbacks {
   readonly onToolStarted?: ((event: SparkyToolStartedEvent) => void) | undefined;
   readonly onToolCompleted?: ((event: SparkyToolCompletedEvent) => void) | undefined;
   readonly onUsage?: ((event: SparkyUsageEvent) => void) | undefined;
-  /** Fired as soon as the terminal JSON result frame is received. */
+  /** Fired as soon as the result frame for this request is received. */
   readonly onResult?: ((result: SparkyProcessResult) => void) | undefined;
+  readonly onError?: ((message: string) => void) | undefined;
 }
 
 export interface SparkyAssistantSegmentCallbacks {
@@ -218,6 +219,23 @@ interface SessionState {
 
 type SparkyChildProcess = ReturnType<typeof NodeChildProcess.spawn>;
 
+interface PendingPersistentTurn {
+  readonly decoder: ReturnType<typeof makeSparkyStreamDecoder>;
+  readonly resolve: (result: SparkyProcessResult) => void;
+  readonly reject: (cause: unknown) => void;
+  readonly childKey: string;
+  onActivity?: (() => void) | undefined;
+  fail?: ((cause: unknown) => void) | undefined;
+  timeout?: ReturnType<typeof setTimeout>;
+}
+
+interface PersistentSparkyProcess {
+  readonly child: SparkyChildProcess;
+  readonly signature: string;
+  stderr: string;
+  pending?: PendingPersistentTurn;
+}
+
 export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
   let stdoutBuffer = "";
   let result: SparkyProcessResult | undefined;
@@ -244,6 +262,7 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
         type?: unknown;
         delta?: unknown;
         response?: unknown;
+        message?: unknown;
         sessionId?: unknown;
         toolCallId?: unknown;
         toolName?: unknown;
@@ -328,6 +347,16 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
           output: event.output,
           isError: event.isError,
         });
+        return;
+      }
+      if (event.type === "error") {
+        if (typeof event.message !== "string") {
+          setProtocolError("Sparky returned a malformed error event.");
+          return;
+        }
+        if (typeof event.sessionId === "string") callbacks.onSessionId?.(event.sessionId);
+        failOpenTools(event.message);
+        callbacks.onError?.(event.message);
         return;
       }
       if (event.type === "result") {
@@ -769,6 +798,7 @@ export function makeSparkyProcessArgs(input: {
   readonly customInstructions?: string | undefined;
   readonly mcpUrl?: string | undefined;
   readonly mcpBearerTokenEnvVar?: string | undefined;
+  readonly persistentJsonStream?: boolean | undefined;
 }): string[] {
   const selection = parseSparkyModelSelection(input.model);
   const args = [
@@ -779,7 +809,7 @@ export function makeSparkyProcessArgs(input: {
     selection.model,
     "--cwd",
     input.cwd,
-    "--prompt-stdin",
+    ...(input.persistentJsonStream ? ["--persistent-json-stream"] : ["--prompt-stdin"]),
   ];
   if (selection.baseUrl) {
     args.push("--base-url", selection.baseUrl);
@@ -804,8 +834,10 @@ export function makeSparkyProcessArgs(input: {
     // Sparky's CLI names that same mode "build".
     args.push("--interaction-mode", input.interactionMode === "plan" ? "plan" : "build");
   }
-  for (const image of input.images ?? []) {
-    args.push("--image-path", image.path, "--image-mime-type", image.mimeType);
+  if (!input.persistentJsonStream) {
+    for (const image of input.images ?? []) {
+      args.push("--image-path", image.path, "--image-mime-type", image.mimeType);
+    }
   }
   if (input.customInstructions?.trim()) {
     args.push("--append-system-prompt", input.customInstructions.trim());
@@ -978,12 +1010,206 @@ function runSparky(input: {
   });
 }
 
+function runPersistentSparky(input: {
+  readonly binaryPath: string;
+  readonly cwd: string;
+  readonly prompt: string;
+  readonly model: string;
+  readonly images?: ReadonlyArray<{ readonly path: string; readonly mimeType: string }>;
+  readonly reasoningEffort?: string | undefined;
+  readonly contextWindow?: string | undefined;
+  readonly interactionMode?: ProviderInteractionMode | undefined;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly activeChildren: Map<string, SparkyChildProcess>;
+  readonly childKey: string;
+  readonly isCancelled: () => boolean;
+  readonly callbacks?: SparkyStreamCallbacks | undefined;
+  readonly sessionId?: string | undefined;
+  readonly workspaceContext?: ProviderWorkspaceContext | undefined;
+  readonly customInstructions?: string | undefined;
+  readonly mcpUrl?: string | undefined;
+  readonly mcpBearerTokenEnvVar?: string | undefined;
+  readonly processes: Map<string, PersistentSparkyProcess>;
+  readonly processKey: string;
+}) {
+  return Effect.tryPromise({
+    try: () =>
+      new Promise<SparkyProcessResult>((resolve, reject) => {
+        if (input.isCancelled()) {
+          reject(new Error("Sparky turn interrupted."));
+          return;
+        }
+        const args = makeSparkyProcessArgs({ ...input, persistentJsonStream: true });
+        const signatureArgs = args.filter(
+          (argument, index) => argument !== "--session" && args[index - 1] !== "--session",
+        );
+        const signature = NodeCrypto.createHash("sha256")
+          .update(JSON.stringify(signatureArgs))
+          .update(JSON.stringify(input.environment))
+          .digest("hex");
+        let processState = input.processes.get(input.processKey);
+        if (processState && (processState.signature !== signature || processState.child.exitCode !== null)) {
+          input.processes.delete(input.processKey);
+          processState.child.kill();
+          processState = undefined;
+        }
+        let createdProcess = false;
+        if (!processState) {
+          const child = NodeChildProcess.spawn(input.binaryPath, args, {
+            cwd: input.cwd,
+            env: input.environment,
+            windowsHide: true,
+            shell: false,
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+          processState = { child, signature, stderr: "" };
+          input.processes.set(input.processKey, processState);
+          createdProcess = true;
+        }
+        const currentProcess = processState;
+        const child = currentProcess.child;
+        let settled = false;
+        currentProcess.stderr = "";
+        const appendStderr = (chunk: string) => {
+          const next = currentProcess.stderr + chunk;
+          currentProcess.stderr = next.length > 65_536 ? next.slice(-65_536) : next;
+        };
+        const removeActiveChild = () => {
+          if (input.activeChildren.get(input.childKey) === child) {
+            input.activeChildren.delete(input.childKey);
+          }
+        };
+        const clearPending = () => {
+          const pending = currentProcess.pending;
+          if (pending?.timeout !== undefined) clearTimeout(pending.timeout);
+          if (pending) currentProcess.pending = undefined;
+          removeActiveChild();
+        };
+        const settle = (result?: SparkyProcessResult, cause?: unknown) => {
+          if (settled) return;
+          settled = true;
+          clearPending();
+          if (cause !== undefined) reject(cause);
+          else if (result !== undefined) resolve(result);
+          else reject(new Error("Sparky persistent turn ended without a result."));
+        };
+        const destroyProcess = () => {
+          if (input.processes.get(input.processKey) === currentProcess) {
+            input.processes.delete(input.processKey);
+          }
+          child.kill();
+        };
+        const decoder = makeSparkyStreamDecoder({
+          ...input.callbacks,
+          onResult: () => {
+            try {
+              settle(decoder.finish());
+            } catch (cause) {
+              settle(undefined, cause);
+              destroyProcess();
+            }
+          },
+          onError: (message) => {
+            input.callbacks?.onError?.(message);
+            settle(undefined, new Error(message));
+            // A failed turn may have mutated in-memory session state. Discard
+            // this process so a retry reloads the durable transcript instead.
+            destroyProcess();
+          },
+        });
+        const pending: PendingPersistentTurn = {
+          decoder,
+          resolve,
+          reject,
+          childKey: input.childKey,
+        };
+        currentProcess.pending = pending;
+        input.activeChildren.set(input.childKey, child);
+        const armTimeout = () => {
+          if (settled || currentProcess.pending !== pending || decoder.hasOpenTools()) return;
+          if (pending.timeout !== undefined) clearTimeout(pending.timeout);
+          pending.timeout = setTimeout(() => {
+            const message = `Sparky turn stalled after ${SPARKY_TURN_IDLE_TIMEOUT_MS}ms without provider activity.`;
+            decoder.failOpenTools(message);
+            settle(undefined, new Error(message));
+            destroyProcess();
+          }, SPARKY_TURN_IDLE_TIMEOUT_MS);
+        };
+        pending.onActivity = armTimeout;
+        pending.fail = (cause) => settle(undefined, cause);
+        if (createdProcess) {
+          child.stdout.setEncoding("utf8");
+          child.stderr.setEncoding("utf8");
+          child.stdout.on("data", (chunk: string) => {
+            const activeTurn = currentProcess.pending;
+            if (!activeTurn) return;
+            activeTurn.decoder.push(chunk);
+            if (chunk.length > 0) activeTurn.onActivity?.();
+          });
+          child.stderr.on("data", (chunk: string) => {
+            appendStderr(chunk);
+            if (chunk.length > 0) currentProcess.pending?.onActivity?.();
+          });
+          child.stdin.on("error", (error) => {
+            const activeTurn = currentProcess.pending;
+            if (!activeTurn) return;
+            activeTurn.fail?.(new Error(`Unable to send the prompt to Sparky: ${error.message}`));
+            destroyProcess();
+          });
+          child.once("error", (error) => {
+            const activeTurn = currentProcess.pending;
+            if (!activeTurn) return;
+            activeTurn.fail?.(error);
+            destroyProcess();
+          });
+          child.once("close", (code) => {
+            if (input.processes.get(input.processKey) === currentProcess) {
+              input.processes.delete(input.processKey);
+            }
+            const activeTurn = currentProcess.pending;
+            if (!activeTurn) return;
+            const detail = currentProcess.stderr.trim() || `Sparky exited (exit code ${code ?? "unknown"}).`;
+            activeTurn.decoder.failOpenTools(detail);
+            activeTurn.fail?.(new Error(detail));
+          });
+        }
+        try {
+          child.stdin.write(
+            `${JSON.stringify({
+              prompt: input.prompt,
+              imagePaths: (input.images ?? []).map((image) => image.path),
+              imageMimeTypes: (input.images ?? []).map((image) => image.mimeType),
+              interactionMode: input.interactionMode === "plan" ? "plan" : "build",
+            })}\n`,
+            "utf8",
+          );
+          armTimeout();
+        } catch (cause) {
+          settle(undefined, cause);
+          destroyProcess();
+        }
+        if (input.isCancelled()) {
+          settle(undefined, new Error("Sparky turn interrupted."));
+          destroyProcess();
+        }
+      }),
+    catch: (cause) =>
+      new ProviderAdapterProcessError({
+        provider: PROVIDER,
+        threadId: "standalone",
+        detail: formatSparkyProcessError(cause, input.workspaceContext),
+        cause,
+      }),
+  });
+}
+
 export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
   Effect.gen(function* () {
     const adapterScope = yield* Scope.Scope;
     const runtimeEvents = yield* PubSub.unbounded<ProviderRuntimeEvent>();
     const sessions = new Map<ThreadId, SessionState>();
     const activeChildren = new Map<string, SparkyChildProcess>();
+    const persistentProcesses = new Map<string, PersistentSparkyProcess>();
     const activeFibers = new Map<string, Fiber.Fiber<void>>();
     const cancelledTurnKeys = new Set<string>();
 
@@ -1195,7 +1421,7 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
               hasSession: sessionId !== undefined,
               hasMcpSession: activeMcp !== undefined,
             });
-            const result = yield* runSparky({
+            const result = yield* runPersistentSparky({
               binaryPath: options.binaryPath,
               cwd,
               prompt,
@@ -1221,6 +1447,8 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
               sessionId,
               customInstructions: effectiveInstructions,
               isCancelled: isTurnCancelled,
+              processes: persistentProcesses,
+              processKey: String(threadId),
               ...(activeMcp
                 ? {
                     mcpUrl: activeMcp.endpoint,
@@ -1566,6 +1794,11 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
             createdAt: now,
             updatedAt: now,
           };
+          const previousProcess = persistentProcesses.get(String(input.threadId));
+          if (previousProcess) {
+            persistentProcesses.delete(String(input.threadId));
+            previousProcess.child.kill();
+          }
           sessions.set(input.threadId, {
             session,
             runtimeCwd,
@@ -1729,6 +1962,11 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
           for (const [key, child] of activeChildren) {
             if (key.startsWith(`${threadId}:`)) child.kill();
           }
+          const persistentProcess = persistentProcesses.get(String(threadId));
+          if (persistentProcess) {
+            persistentProcesses.delete(String(threadId));
+            persistentProcess.child.kill();
+          }
           for (const key of activeKeys) {
             const fiber = activeFibers.get(key);
             if (fiber) yield* Fiber.interrupt(fiber);
@@ -1765,6 +2003,8 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
       stopAll: () =>
         Effect.sync(() => {
           for (const child of activeChildren.values()) child.kill();
+          for (const processState of persistentProcesses.values()) processState.child.kill();
+          persistentProcesses.clear();
           activeChildren.clear();
           sessions.clear();
         }),

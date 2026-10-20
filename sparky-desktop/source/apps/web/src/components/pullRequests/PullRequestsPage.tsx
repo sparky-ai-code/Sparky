@@ -1331,9 +1331,6 @@ export function PullRequestsPage() {
     selectedRepository && displayedPullRequest
       ? pullRequestCacheKey(selectedRepository, displayedPullRequest.number)
       : null;
-  const reviewProgressForSelectedPullRequest = selectedReviewKey
-    ? (pullRequestReviewSnapshot.progressByKey.get(selectedReviewKey) ?? null)
-    : null;
   const activePullRequestActionBusy =
     pullRequestActionBusy ?? (pullRequestReviewSnapshot.activeKey !== null ? "review" : null);
 
@@ -1702,36 +1699,6 @@ export function PullRequestsPage() {
                             Close
                           </Button>
                         </div>
-                      ) : null}
-                      {reviewProgressForSelectedPullRequest ? (
-                        <p
-                          role={
-                            reviewProgressForSelectedPullRequest.phase === "error"
-                              ? "alert"
-                              : "status"
-                          }
-                          aria-live={
-                            reviewProgressForSelectedPullRequest.phase === "error"
-                              ? "assertive"
-                              : "polite"
-                          }
-                          className={cn(
-                            "mt-2 flex items-center gap-2 text-xs",
-                            reviewProgressForSelectedPullRequest.phase === "error"
-                              ? "text-destructive"
-                              : reviewProgressForSelectedPullRequest.phase === "success"
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-muted-foreground",
-                          )}
-                        >
-                          {reviewProgressForSelectedPullRequest.phase === "fetching" ||
-                          reviewProgressForSelectedPullRequest.phase === "reviewing" ||
-                          reviewProgressForSelectedPullRequest.phase === "validating" ||
-                          reviewProgressForSelectedPullRequest.phase === "posting" ? (
-                            <LoaderCircleIcon className="size-3.5 animate-spin" />
-                          ) : null}
-                          {reviewProgressForSelectedPullRequest.message}
-                        </p>
                       ) : null}
                       {pullRequestActionError ? (
                         <p role="alert" className="mt-2 text-xs text-destructive">

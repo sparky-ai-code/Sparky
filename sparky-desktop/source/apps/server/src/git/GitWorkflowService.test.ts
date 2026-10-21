@@ -189,4 +189,34 @@ describe("GitWorkflowService", () => {
       ),
     );
   });
+
+  it.effect("runs AI pull-request reviews without requiring a VCS repository", () => {
+    const resolve = vi.fn(() => Effect.die("Review should not resolve a VCS driver."));
+    const reviewPullRequest = vi.fn(() => Effect.succeed({ response: "review response" }));
+    const input = {
+      cwd: "/workspace-without-a-repository",
+      modelSelection: {},
+      prompt: "Review this diff.",
+      systemPrompt: "Review the code carefully.",
+    } as Parameters<GitWorkflowService.GitWorkflowService["Service"]["reviewPullRequest"]>[0];
+    const testLayer = GitWorkflowService.layer.pipe(
+      Layer.provide(
+        Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+          detect: () => Effect.succeed(null),
+          resolve,
+        }),
+      ),
+      Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+      Layer.provide(Layer.mock(GitManager.GitManager)({ reviewPullRequest })),
+    );
+
+    return Effect.gen(function* () {
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      const result = yield* workflow.reviewPullRequest(input);
+
+      expect(result).toEqual({ response: "review response" });
+      expect(resolve).not.toHaveBeenCalled();
+      expect(reviewPullRequest).toHaveBeenCalledWith(input);
+    }).pipe(Effect.provide(testLayer));
+  });
 });

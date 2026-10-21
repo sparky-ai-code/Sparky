@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#090909"><title>AI providers & models — Sparky Docs</title><link rel="icon" href="../assets/sparky-favicon.png?v=5" type="image/png" sizes="256x256"><link rel="preload" href="../assets/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="docs.css"><script type="module" src="docs.js"></script></head>
+<body><!-- THESIS: A readable working manual that gets a developer to their first useful task.
+OWN-WORLD: Sparky black and white, DM Sans, thin rules, plain text navigation; no old documentation imagery.
+STORY: Connect a provider, open a project, give a task, inspect the result, then find a focused guide.
+FIRST VIEWPORT: Fixed 76px header; left guide rail, central 44px title and setup entry, right section index. Mobile folds the rail into a native disclosure.
+FORM: Guided manual with a persistent index, grounded structure 5; seed 6baccacf. Signature interaction: guide filtering and scroll-aware section navigation.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md -->
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="docs-header"><a class="brand" href="../index.html" aria-label="Sparky home"><img src="../assets/sparky-symbol.png" alt="" width="34" height="34"><span>Sparky</span></a><nav class="header-nav" aria-label="Main navigation"><a href="../index.html#product">Product</a><a href="overview.html" aria-current="page">Docs</a><a href="../changelog.html">Changelog</a></nav><a class="download-link" href="../index.html#download">Get Sparky <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5"/></svg></a></header>
+<div class="docs-layout"><details class="docs-sidebar" open><summary>Documentation <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg></summary><div class="sidebar-inner"><span class="sidebar-title">Documentation</span><label class="guide-search"><span class="sr-only">Find a guide</span><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><input id="guide-search" type="search" placeholder="Find a guide…" autocomplete="off"></label><nav aria-label="Documentation guides"><section class="nav-group"><h2>Get started</h2><ul><li><a href="overview.html">Overview</a></li><li><a href="getting-started.html">Quickstart</a></li><li><a href="models.html" aria-current="page">AI providers & models</a></li></ul></section>
+<section class="nav-group"><h2>Work with your project</h2><ul><li><a href="read-edit.html">Read & edit files</a></li><li><a href="terminal.html">Terminal commands</a></li><li><a href="search.html">Search your code</a></li><li><a href="git.html">Git operations</a></li><li><a href="pull-requests.html">Pull requests</a></li><li><a href="preview.html">Preview websites</a></li><li><a href="web-search.html">Search the web</a></li></ul></section>
+<section class="nav-group"><h2>Conversations</h2><ul><li><a href="prompts.html">Writing prompts</a></li><li><a href="sessions.html">Sessions</a></li><li><a href="stateless-chats.html">Project-free chats</a></li><li><a href="memory.html">Memory</a></li><li><a href="overview.html#focus-mode">Focus Mode</a></li></ul></section>
+<section class="nav-group"><h2>Help</h2><ul><li><a href="troubleshooting.html">Troubleshooting</a></li></ul></section></nav><p class="search-empty" hidden>No guides found. Try a different word.</p><p id="search-status" class="sr-only" role="status"></p></div></details>
+<main class="docs-content" id="main">
+      <div class="docs-page-header">
+
+        <h1>Supported Models</h1>
+        <p>Connect an AI provider and choose a model for your project. Sparky discovers the models available to your account; access can differ between an API key and a connected subscription.</p>
+      </div>
+
+<h2 id="providers">Providers</h2>
+<p>Catalog checked <time datetime="2026-10-03">October 3, 2026</time>. Each provider has its own text-model listing below. Sparky also refreshes the full account-specific text catalog after you save a key in Settings, Models. Voice, audio, image, and video-only models are intentionally excluded.</p>
+<p>Official model catalogs: <a href="https://developers.openai.com/api/docs/models" target="_blank" rel="noopener">OpenAI</a>, <a href="https://platform.claude.com/docs/en/models/overview" target="_blank" rel="noopener">Anthropic</a>, <a href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noopener">Google</a>, <a href="https://fireworks.ai/models" target="_blank" rel="noopener">Fireworks</a>, and <a href="https://ollama.com/search" target="_blank" rel="noopener">Ollama Cloud</a>.</p>
+<p>Click a provider to get your API key, then add it in <strong>Settings, Models</strong>. For OpenAI, Sparky uses the official OpenAI SDK with your API key. You can also connect a ChatGPT account there to use eligible ChatGPT plan usage without an API key. Sparky discovers available models automatically, including the latest supported OpenAI and Anthropic models; the available catalog depends on your account and connection.</p>
+<div class="table-scroll" role="region" aria-label="Reference table" tabindex="0"><table class="docs-table" style="margin-bottom:2rem;">
+<tr><th>Provider</th><th>Get your API key</th></tr>
+<tr><td><strong>Anthropic</strong> (Claude)</td><td><a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a></td></tr>
+<tr><td><strong>OpenAI</strong> (GPT)</td><td><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a></td></tr>
+<tr><td><strong>Google</strong> (Gemini)</td><td><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com</a></td></tr>
+<tr><td><strong>Fireworks</strong></td><td><a href="https://fireworks.ai/account/api-keys" target="_blank" rel="noopener">fireworks.ai</a></td></tr>
+<tr><td><strong>Ollama Cloud</strong></td><td><a href="https://ollama.com/settings/keys" target="_blank" rel="noopener">ollama.com</a></td></tr>
+</table></div>
+
+<div id="app">
+  <div class="model-group" id="provider-openai">
+    <h3>OpenAI</h3>
+    <ul class="model-list" id="list-openai"></ul>
+  </div>
+
+  <div class="model-group" id="provider-anthropic">
+    <h3>Anthropic (Claude)</h3>
+    <ul class="model-list" id="list-anthropic"></ul>
+  </div>
+
+  <div class="model-group" id="provider-google">
+    <h3>Google (Gemini)</h3>
+    <ul class="model-list" id="list-google"></ul>
+  </div>
+
+  <div class="model-group" id="provider-fireworks">
+    <h3>Fireworks</h3>
+    <ul class="model-list" id="list-fireworks"></ul>
+  </div>
+
+  <div class="model-group" id="provider-ollama-cloud">
+    <h3>Ollama Cloud</h3>
+    <ul class="model-list" id="list-ollama-cloud"></ul>
+  </div>
+</div>
+
+<h2 id="codex-oauth">ChatGPT account sign-in</h2>
+<p>To use eligible ChatGPT plan usage, go to <strong>Settings, Models</strong> and choose <strong>Use your ChatGPT plan</strong> in the OpenAI provider settings. Sign in with your ChatGPT account in the browser and approve access. This is separate from an OpenAI API key; eligible Responses API usage is billed through your ChatGPT plan and subject to its limits. You can disconnect the plan from the same settings page.</p>
+<p>If sign-in fails or your plan is not connected, try again from the OpenAI provider controls in Settings, Models. For API-key setup, see <a href="getting-started.html#step-2">Quickstart</a>.</p>
+
+<h2 id="switching">Switching models</h2>
+<p>Switch anytime in <strong>Settings, Models</strong> in the desktop app. Select the provider and model you want from the dropdown.</p>
+
+<div class="docs-next"><h3>Next steps</h3><ul>
+<li><a href="getting-started.html">Quickstart</a> — set up your key</li>
+<li><a href="prompts.html">Writing Prompts</a> — write effective prompts</li>
+<li><a href="sessions.html">Sessions</a> — manage conversations</li>
+</ul></div>
+    <footer class="docs-bottom"><a href="../index.html">Sparky</a><a href="../changelog.html">Product updates <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5"/></svg></a></footer></main>
+<aside class="docs-toc"><p>On this page</p><nav aria-label="On this page"><a href="#providers">Providers</a>
+<a href="#codex-oauth">Codex sign-in</a>
+<a href="#switching">Switching models</a></nav></aside></div><script>
+(function() {
+var MODELS = {
+  "openai": {
+    "label": "OpenAI",
+    "badge": "badge-openai",
+    "featured": 4,
+    "models": [
+      { name: "GPT-6 Sol", id: "gpt-6-sol", note: "Frontier model for complex reasoning and coding" },
+      { name: "GPT-6 Luna", id: "gpt-6-luna", note: "Fast, efficient GPT-6 model for everyday work" },
+      { name: "GPT-6 Astra", id: "gpt-6-astra", note: "Complex reasoning, coding, and extended tasks" },
+      { name: "GPT-5.6 Sol", id: "gpt-5.6-sol", note: "Frontier model for complex professional work" },
+      { name: "GPT-5.6 Terra", id: "gpt-5.6-terra", note: "Balances intelligence and cost" },
+      { name: "GPT-5.6 Luna", id: "gpt-5.6-luna", note: "Optimized for cost-sensitive workloads" },
+      { name: "GPT-5.5", id: "gpt-5.5", note: "Intelligence for coding and professional work" },
+      { name: "GPT-5.5 Pro", id: "gpt-5.5-pro", note: "Smarter and more precise responses" },
+      { name: "GPT-5.4", id: "gpt-5.4", note: "Affordable model for coding" },
+      { name: "GPT-5.4 Pro", id: "gpt-5.4-pro", note: "Smarter and more precise responses" },
+      { name: "GPT-5.4 mini", id: "gpt-5.4-mini", note: "Strongest mini model for coding, computer use, subagents" },
+      { name: "GPT-5.4 nano", id: "gpt-5.4-nano", note: "Cheapest GPT-5.4-class model for high-volume tasks" },
+      { name: "GPT-5.3-Codex", id: "gpt-5.3-codex", note: "Earlier coding-focused model" },
+      { name: "GPT-5.2", id: "gpt-5.2", note: "Previous frontier model with configurable reasoning" },
+      { name: "GPT-5.2 Pro", id: "gpt-5.2-pro", note: "Smarter and more precise responses" },
+      { name: "GPT-5.1", id: "gpt-5.1", note: "Best model for coding and agentic tasks" },
+      { name: "GPT-5", id: "gpt-5", note: "Intelligent reasoning model for coding" },
+      { name: "GPT-5 mini", id: "gpt-5-mini", note: "Near-frontier intelligence for cost-sensitive workloads" },
+      { name: "gpt-oss-120b", id: "gpt-oss-120b", note: "Most powerful open-weight model" },
+      { name: "gpt-oss-20b", id: "gpt-oss-20b", note: "Medium-sized open-weight model" }
+    ]
+  },
+  "anthropic": {
+    "label": "Anthropic",
+    "badge": "badge-anthropic",
+    "featured": 3,
+    "models": [
+      { name: "Claude Opus 5.5", id: "claude-opus-5-5", note: "Most capable model for complex agentic coding" },
+      { name: "Claude Fable 5.1", id: "claude-fable-5-1", note: "Demanding reasoning and long-running agent tasks" },
+      { name: "Claude Opus 5", id: "claude-opus-5", note: "Complex agentic coding and enterprise work" },
+      { name: "Claude Sonnet 5", id: "claude-sonnet-5", note: "Best combination of speed and intelligence" },
+      { name: "Claude Haiku 4.5", id: "claude-haiku-4-5-20251001", note: "Fastest model with near-frontier intelligence" },
+      { name: "Claude Opus 4.8", id: "claude-opus-4-8", note: "Previous-generation pro model" },
+      { name: "Claude Opus 4.7", id: "claude-opus-4-7", note: "Previous pro model" },
+      { name: "Claude Opus 4.6", id: "claude-opus-4-6", note: "Previous pro model" },
+      { name: "Claude Opus 4.5", id: "claude-opus-4-5", note: "Previous pro model" },
+      { name: "Claude Sonnet 4.6", id: "claude-sonnet-4-6", note: "Previous fast model" },
+      { name: "Claude Sonnet 4.5", id: "claude-sonnet-4-5", note: "Previous fast model" }
+    ]
+  },
+  "google": {
+    "label": "Google",
+    "badge": "badge-google",
+    "featured": 3,
+    "models": [
+      { name: "Gemini 3.8 Flash", id: "gemini-3.8-flash", note: "Long-running coding and agent workflows" },
+      { name: "Gemini 3.7 Flash", id: "gemini-3.7-flash", note: "Previous-generation Flash for multi-step tasks" },
+      { name: "Gemini 3.6 Flash", id: "gemini-3.6-flash", note: "General-purpose multimodal tasks" },
+      { name: "Gemini 3.5 Flash-Lite", id: "gemini-3.5-flash-lite", note: "Fast, high-throughput tasks" },
+      { name: "Gemini 3.5 Flash", id: "gemini-3.5-flash", note: "Earlier Flash model for routine tasks" },
+      { name: "Gemini 3.1 Pro", id: "gemini-3.1-pro-preview", note: "Preview · complex problem-solving" },
+      { name: "Gemini 3.1 Flash-Lite", id: "gemini-3.1-flash-lite", note: "Frontier-class performance at a fraction of the cost" },
+      { name: "Gemini 3 Flash", id: "gemini-3-flash-preview", note: "Preview · general-purpose Flash model" },
+      { name: "Gemini 2.5 Flash", id: "gemini-2.5-flash", note: "Best price-performance for high-volume tasks" },
+      { name: "Gemini 2.5 Flash-Lite", id: "gemini-2.5-flash-lite", note: "Fastest and most economical multimodal model" },
+      { name: "Gemini 2.5 Pro", id: "gemini-2.5-pro", note: "Most advanced model for complex tasks" }
+    ]
+  },
+  "fireworks": {
+    "label": "Fireworks",
+    "badge": "badge-fireworks",
+    "featured": 6,
+    "models": [
+      { name: "GLM 5.3", id: "fireworks/accounts/fireworks/models/glm-5p3", note: "Agentic coding and long-horizon tasks" },
+      { name: "GLM 5.2 Fast", id: "fireworks/accounts/fireworks/routers/glm-5p2-fast", note: "Fast GLM 5.2 router" },
+      { name: "Kimi K3", id: "fireworks/accounts/fireworks/models/kimi-k3", note: "Reasoning and coding" },
+      { name: "Qwen 3.8 Max", id: "fireworks/accounts/fireworks/models/qwen3p8-max", note: "Agent-focused Qwen model" },
+      { name: "DeepSeek V4 Flash", id: "fireworks/accounts/fireworks/models/deepseek-v4-flash-0731", note: "Efficient reasoning model" },
+      { name: "Qwen 2.5 Coder 7B", id: "fireworks/accounts/fireworks/models/qwen2p5-coder-7b", note: "Coding-focused open model" }
+    ]
+  },
+  "ollama-cloud": {
+    "label": "Ollama Cloud",
+    "badge": "badge-ollama",
+    "featured": 8,
+    "models": [
+      { name: "GLM 5.3", id: "ollama-cloud/glm-5.3", note: "Agentic coding and reasoning" },
+      { name: "GLM 5.3 Flash", id: "ollama-cloud/glm-5.3-flash", note: "Faster GLM model" },
+      { name: "DeepSeek V4 Flash", id: "ollama-cloud/deepseek-v4-flash", note: "Efficient reasoning" },
+      { name: "Kimi K3", id: "ollama-cloud/kimi-k3", note: "Multimodal agentic model" },
+      { name: "MiniMax M3", id: "ollama-cloud/minimax-m3", note: "General-purpose model" },
+      { name: "Mistral Large 3", id: "ollama-cloud/mistral-large-3", note: "Large general-purpose model" },
+      { name: "Qwen 3.8", id: "ollama-cloud/qwen3.8", note: "Open model for coding and reasoning" },
+      { name: "Llama 3.2", id: "ollama-cloud/llama3.2", note: "General-purpose model" }
+    ]
+  }
+};
+
+function renderProvider(key, provider) {
+  var list = document.getElementById("list-" + key);
+  if (!list) return;
+  var html = "";
+  var total = provider.models.length;
+  var featured = provider.featured;
+
+  for (var i = 0; i < total; i++) {
+    var m = provider.models[i];
+    var isFeatured = i < featured;
+    var hiddenClass = isFeatured ? "" : " model-hidden";
+    var featuredClass = isFeatured ? " model-featured" : "";
+    html += '<li class="model-item' + hiddenClass + featuredClass + '">';
+    html += '<span><span class="model-name">' + m.name + '</span> <span class="model-id">' + m.id + '</span></span>';
+    if (m.note) html += '<span class="model-note" style="font-size:0.85rem;color:var(--text-muted);text-align:right;margin-left:1rem;">' + m.note + '</span>';
+    html += '</li>';
+  }
+
+  list.innerHTML = html;
+
+  if (total > featured) {
+    var expanded = false;
+    var btn = document.createElement("button");
+    btn.className = "show-more-btn";
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-controls", list.id);
+    var extra = total - featured;
+    btn.textContent = "Show all " + total + " models (" + extra + " more)";
+    btn.addEventListener("click", function() {
+      expanded = !expanded;
+      btn.setAttribute("aria-expanded", String(expanded));
+      var items = list.querySelectorAll(".model-item");
+      for (var j = featured; j < items.length; j++) {
+        items[j].classList.toggle("model-hidden", !expanded);
+      }
+      btn.textContent = expanded ? "Show fewer" : "Show all " + total + " models (" + extra + " more)";
+    });
+    list.parentNode.appendChild(btn);
+  }
+}
+
+renderProvider("openai", MODELS.openai);
+renderProvider("anthropic", MODELS.anthropic);
+renderProvider("google", MODELS.google);
+renderProvider("fireworks", MODELS.fireworks);
+renderProvider("ollama-cloud", MODELS["ollama-cloud"]);
+})();
+</script>
+</body></html>

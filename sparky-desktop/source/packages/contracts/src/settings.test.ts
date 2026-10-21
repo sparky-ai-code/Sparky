@@ -43,6 +43,15 @@ describe("ClientSettings focus mode", () => {
   });
 });
 
+describe("ClientSettings sidebar grouping", () => {
+  it("accepts grouped-by-project patches", () => {
+    expect(
+      decodeClientSettingsPatch({ sidebarThreadsGroupedByProject: true })
+        .sidebarThreadsGroupedByProject,
+    ).toBe(true);
+  });
+});
+
 describe("ClientSettings streaming text animation", () => {
   it("defaults legacy settings to fade and lift", () => {
     expect(decodeClientSettings({}).streamingTextAnimation).toBe("lift");

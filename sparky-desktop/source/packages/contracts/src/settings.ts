@@ -671,6 +671,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
+  sidebarThreadsGroupedByProject: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   streamingTextAnimation: Schema.optionalKey(StreamingTextAnimation),
   pullRequestReviewModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),

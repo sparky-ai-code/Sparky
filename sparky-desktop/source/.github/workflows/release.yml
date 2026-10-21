@@ -5,6 +5,7 @@ on:
     tags:
       - "v*.*.*"
       - "!v*-nightly.*"
+      - "!v*-beta.*"
   schedule:
     - cron: "0 */3 * * *"
   workflow_dispatch:
@@ -17,6 +18,7 @@ on:
         options:
           - stable
           - nightly
+          - beta
       version:
         description: "Release version (for example 1.2.3 or v1.2.3)"
         required: false
@@ -134,23 +136,35 @@ jobs:
               echo "Invalid release version: $raw" >&2
               exit 1
             fi
-
-            echo "release_channel=stable" >> "$GITHUB_OUTPUT"
-            echo "version=$version" >> "$GITHUB_OUTPUT"
-            echo "tag=v$version" >> "$GITHUB_OUTPUT"
-            if [[ "$version" == "1.0.0" ]]; then
-              echo "name=Sparky 1" >> "$GITHUB_OUTPUT"
-            else
-              echo "name=Sparky v$version" >> "$GITHUB_OUTPUT"
+            if [[ "${DISPATCH_CHANNEL:-stable}" == "beta" && ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+              echo "Developer beta versions must use the form X.Y.Z-beta.N." >&2
+              exit 1
             fi
-            echo "cli_dist_tag=latest" >> "$GITHUB_OUTPUT"
-            if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
-              echo "make_latest=true" >> "$GITHUB_OUTPUT"
-            else
+
+            if [[ "${DISPATCH_CHANNEL:-stable}" == "beta" ]]; then
+              echo "release_channel=beta" >> "$GITHUB_OUTPUT"
+              echo "cli_dist_tag=beta" >> "$GITHUB_OUTPUT"
+              echo "name=Sparky v$version (Developer Beta)" >> "$GITHUB_OUTPUT"
               echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
               echo "make_latest=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "release_channel=stable" >> "$GITHUB_OUTPUT"
+              echo "cli_dist_tag=latest" >> "$GITHUB_OUTPUT"
+              if [[ "$version" == "1.0.0" ]]; then
+                echo "name=Sparky 1" >> "$GITHUB_OUTPUT"
+              else
+                echo "name=Sparky v$version" >> "$GITHUB_OUTPUT"
+              fi
+              if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+                echo "make_latest=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+                echo "make_latest=false" >> "$GITHUB_OUTPUT"
+              fi
             fi
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "tag=v$version" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check

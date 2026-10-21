@@ -17,6 +17,8 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import { ExternalMcpToolkitHandlersLive } from "./toolkits/externalMcpHandlers.ts";
+import { ExternalMcpToolkit } from "./toolkits/externalMcpTools.ts";
 import { PluginToolkitHandlersLive } from "./toolkits/plugins/handlers.ts";
 import { PluginToolkit } from "./toolkits/plugins/tools.ts";
 import { reviewPullRequest } from "./toolkits/pullRequestReview/handlers.ts";
@@ -292,8 +294,13 @@ export const PullRequestReviewToolkitRegistrationLive = Layer.effectDiscard(
   registerPullRequestReview(),
 );
 
+const ExternalMcpToolkitRegistrationLive = McpServer.toolkit(ExternalMcpToolkit).pipe(
+  Layer.provide(ExternalMcpToolkitHandlersLive),
+);
+
 const ToolkitRegistrationLive = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
+  ExternalMcpToolkitRegistrationLive,
   PluginToolkitRegistrationLive,
   PullRequestReviewToolkitRegistrationLive,
 );

@@ -1,41 +1,22 @@
 import { useState, type FormEvent } from "react";
 import { PlugZapIcon, PlusIcon, Trash2Icon } from "lucide-react";
 
+import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsSection, SettingsRow } from "./settingsLayout";
 
-type McpConnection = { id: string; name: string; endpoint: string };
-const STORAGE_KEY = "sparky.mcp-connections";
-
-function readConnections(): McpConnection[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]");
-    if (!Array.isArray(value)) return [];
-    return value.filter(
-      (item): item is McpConnection =>
-        typeof item === "object" &&
-        item !== null &&
-        typeof item.id === "string" &&
-        typeof item.name === "string" &&
-        typeof item.endpoint === "string",
-    );
-  } catch {
-    return [];
-  }
-}
-
 export function McpSettingsPanel() {
-  const [connections, setConnections] = useState<McpConnection[]>(readConnections);
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
+  const connections = settings.mcpServers;
   const [name, setName] = useState("");
   const [endpoint, setEndpoint] = useState("");
+  const [authorizationToken, setAuthorizationToken] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const save = (next: McpConnection[]) => {
-    setConnections(next);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  };
+  const save = (next: typeof connections) => updateSettings({ mcpServers: next });
 
   const addConnection = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -47,9 +28,23 @@ export function McpSettingsPanel() {
         throw new Error("Use an HTTP or HTTPS endpoint.");
       }
       if (!normalizedName) throw new Error("Enter a name for this MCP server.");
-      save([...connections, { id: crypto.randomUUID(), name: normalizedName, endpoint: parsedEndpoint.href }]);
+      if (connections.some((server) => server.name.toLowerCase() === normalizedName.toLowerCase())) {
+        throw new Error("Choose a unique server name.");
+      }
+      save([
+        ...connections,
+        {
+          id: crypto.randomUUID(),
+          name: normalizedName,
+          url: parsedEndpoint.href,
+          authorizationToken: authorizationToken.trim(),
+          authorizationTokenRedacted: false,
+          enabled: true,
+        },
+      ]);
       setName("");
       setEndpoint("");
+      setAuthorizationToken("");
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Enter a valid MCP endpoint.");
@@ -61,7 +56,7 @@ export function McpSettingsPanel() {
       <div>
         <h1 className="text-lg font-semibold tracking-tight text-foreground">MCP</h1>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Choose built-in tools and add MCP servers for your workspace. Server entries are saved in this browser; external MCP connections are not active yet.
+          Add streamable HTTP MCP servers here. Enabled servers are connected by Sparky's agent and their tools are available during a session.
         </p>
       </div>
 
@@ -91,8 +86,17 @@ export function McpSettingsPanel() {
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-semibold text-foreground">{connection.name}</p>
-                <p className="truncate text-xs text-muted-foreground">{connection.endpoint}</p>
+                <p className="truncate text-xs text-muted-foreground">{connection.url}</p>
               </div>
+              <Switch
+                checked={connection.enabled}
+                onCheckedChange={(enabled) =>
+                  save(connections.map((server) =>
+                    server.id === connection.id ? { ...server, enabled: Boolean(enabled) } : server,
+                  ))
+                }
+                aria-label={`${connection.enabled ? "Disable" : "Enable"} ${connection.name}`}
+              />
               <Button
                 type="button"
                 size="icon-sm"
@@ -118,6 +122,16 @@ export function McpSettingsPanel() {
                 value={endpoint}
                 onChange={(event) => setEndpoint(event.currentTarget.value)}
                 placeholder="https://example.com/mcp"
+              />
+            </label>
+            <label className="grid gap-1.5 text-xs font-medium text-foreground sm:col-span-2">
+              Bearer token <span className="font-normal text-muted-foreground">(optional)</span>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                value={authorizationToken}
+                onChange={(event) => setAuthorizationToken(event.currentTarget.value)}
+                placeholder="Stored securely on the server"
               />
             </label>
           </div>

@@ -731,6 +731,16 @@ async fn main() -> anyhow::Result<()> {
                 "toolName": tool_name,
                 "arguments": arguments,
             })),
+            SparkyEvent::ToolExecutionBackground {
+                tool_call_id,
+                tool_name,
+                job_id,
+            } if !is_hidden_control_tool(tool_name) => write_json_line(serde_json::json!({
+                "type": "tool.backgrounded",
+                "toolCallId": tool_call_id,
+                "toolName": tool_name,
+                "jobId": job_id,
+            })),
             SparkyEvent::ToolExecutionEnd {
                 tool_call_id,
                 tool_name,

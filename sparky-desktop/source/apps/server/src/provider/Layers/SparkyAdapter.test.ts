@@ -207,6 +207,36 @@ describe("makeSparkyStreamDecoder", () => {
     expect(decoder.finish()).toEqual({ response: "Done" });
   });
 
+  it("keeps backgrounded command tools active for inactivity checks without blocking turn completion", () => {
+    const initialTurn = makeSparkyStreamDecoder();
+    initialTurn.push(
+      '{"type":"tool.started","toolCallId":"bash-1","toolName":"bash","arguments":{}}\n' +
+        '{"type":"tool.backgrounded","toolCallId":"bash-1","toolName":"bash","jobId":"cmd-1"}\n' +
+        '{"type":"result","response":"Continuing work"}\n',
+    );
+    expect(initialTurn.hasOpenTools()).toBe(true);
+    expect(initialTurn.finish()).toEqual({ response: "Continuing work" });
+
+    const completed: unknown[] = [];
+    const laterTurn = makeSparkyStreamDecoder({
+      onToolCompleted: (event) => completed.push(event),
+    });
+    laterTurn.push(
+      '{"type":"tool.completed","toolCallId":"bash-1","toolName":"bash",' +
+        '"output":"command output","isError":false}\n' +
+        '{"type":"result","response":"Command finished"}\n',
+    );
+    expect(completed).toEqual([
+      {
+        toolCallId: "bash-1",
+        toolName: "bash",
+        output: "command output",
+        isError: false,
+      },
+    ]);
+    expect(laterTurn.finish()).toEqual({ response: "Command finished" });
+  });
+
   it("forwards real token usage events to the desktop context meter", () => {
     const usage: unknown[] = [];
     const decoder = makeSparkyStreamDecoder({ onUsage: (value) => usage.push(value) });

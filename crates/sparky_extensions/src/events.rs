@@ -32,6 +32,11 @@ pub enum SparkyEvent {
         tool_name: String,
         arguments: serde_json::Value,
     },
+    ToolExecutionBackground {
+        tool_call_id: String,
+        tool_name: String,
+        job_id: String,
+    },
     ToolExecutionEnd {
         tool_call_id: String,
         tool_name: String,

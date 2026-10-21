@@ -241,6 +241,7 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
   let result: SparkyProcessResult | undefined;
   let protocolError: Error | undefined;
   const activeTools = new Map<string, { readonly toolName: string }>();
+  const backgroundTools = new Map<string, { readonly toolName: string; readonly jobId: string }>();
 
   const failOpenTools = (reason: string) => {
     for (const [toolCallId, tool] of activeTools) {
@@ -266,6 +267,7 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
         sessionId?: unknown;
         toolCallId?: unknown;
         toolName?: unknown;
+        jobId?: unknown;
         arguments?: unknown;
         output?: unknown;
         isError?: unknown;
@@ -312,6 +314,27 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
         });
         return;
       }
+      if (event.type === "tool.backgrounded") {
+        if (
+          typeof event.toolCallId !== "string" ||
+          typeof event.toolName !== "string" ||
+          typeof event.jobId !== "string"
+        ) {
+          setProtocolError("Sparky returned a malformed tool.backgrounded event.");
+          return;
+        }
+        const activeTool = activeTools.get(event.toolCallId);
+        if (!activeTool || activeTool.toolName !== event.toolName) {
+          setProtocolError("Sparky backgrounded a tool that was not active.");
+          return;
+        }
+        activeTools.delete(event.toolCallId);
+        backgroundTools.set(event.toolCallId, {
+          toolName: event.toolName,
+          jobId: event.jobId,
+        });
+        return;
+      }
       if (event.type === "usage") {
         if (
           typeof event.promptTokens !== "number" ||
@@ -341,6 +364,7 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
           return;
         }
         activeTools.delete(event.toolCallId);
+        backgroundTools.delete(event.toolCallId);
         callbacks.onToolCompleted?.({
           toolCallId: event.toolCallId,
           toolName: event.toolName,
@@ -379,7 +403,7 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
 
   return {
     hasOpenTools(): boolean {
-      return activeTools.size > 0;
+      return activeTools.size > 0 || backgroundTools.size > 0;
     },
     push(chunk: string): void {
       stdoutBuffer += chunk;

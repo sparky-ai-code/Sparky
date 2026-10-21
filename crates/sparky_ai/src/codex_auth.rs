@@ -280,15 +280,29 @@ async fn validate_id_token(
     Ok(claims.sub)
 }
 
+async fn bind_callback_listener(preferred_port: u16) -> anyhow::Result<TcpListener> {
+    match TcpListener::bind(("127.0.0.1", preferred_port)).await {
+        Ok(listener) => Ok(listener),
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+            TcpListener::bind(("127.0.0.1", 0)).await.map_err(|fallback_error| {
+                anyhow::anyhow!(
+                    "ChatGPT callback port {preferred_port} is already in use, and a fallback port could not be opened: {fallback_error}"
+                )
+            })
+        }
+        Err(error) => Err(anyhow::anyhow!(
+            "Could not open the Sign in with ChatGPT loopback callback: {error}"
+        )),
+    }
+}
+
 async fn oauth_login() -> anyhow::Result<()> {
     let existing = codex_auth_path()
         .ok()
         .and_then(|path| read_managed_credentials(&path).ok());
-    // The redirect URI is bound to the registered OAuth client. Reusing the
-    // client ID with an ephemeral port causes the token exchange to fail because
-    // the redirect_uri no longer matches the one used during registration.
-    let listener = TcpListener::bind(("127.0.0.1", OAUTH_CALLBACK_PORT)).await
-        .map_err(|error| anyhow::anyhow!("Could not open the Sign in with ChatGPT loopback callback: {error}"))?;
+    // The redirect URI must stay identical throughout this OAuth attempt; the
+    // actual listener port is included in both the authorize request and token exchange.
+    let listener = bind_callback_listener(OAUTH_CALLBACK_PORT).await?;
     let port = listener.local_addr()?.port();
     let redirect_uri = format!("http://127.0.0.1:{port}{OAUTH_CALLBACK_PATH}");
     let client_id = existing.as_ref().map(|credentials| credentials.client_id.clone())
@@ -530,6 +544,16 @@ pub async fn valid_codex_credentials() -> anyhow::Result<CodexCredentials> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn falls_back_to_an_available_port_when_preferred_callback_port_is_busy() {
+        let occupied = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let occupied_port = occupied.local_addr().unwrap().port();
+
+        let fallback = bind_callback_listener(occupied_port).await.unwrap();
+
+        assert_ne!(fallback.local_addr().unwrap().port(), occupied_port);
+    }
 
     #[test]
     fn requires_explicit_chatgpt_plan_usage_scopes() {

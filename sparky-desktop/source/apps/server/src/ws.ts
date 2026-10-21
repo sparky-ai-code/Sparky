@@ -1083,25 +1083,6 @@ const makeWsRpcLayer = (
                 createdAt: command.createdAt,
               });
               recordedUserMessage = true;
-              const worktreeToolCallId = yield* serverEventId;
-              const preparingAt = yield* nowIso;
-              yield* appendThreadActivity({
-                threadId: command.threadId,
-                kind: "tool.started",
-                summary: "Creating worktree",
-                createdAt: preparingAt,
-                payload: {
-                  toolName: "create_worktree",
-                  toolCallId: worktreeToolCallId,
-                  title: "Creating worktree",
-                  status: "inProgress",
-                  data: {
-                    baseBranch: bootstrap.prepareWorktree.baseBranch,
-                    branch: bootstrap.prepareWorktree.branch ?? null,
-                  },
-                },
-                tone: "tool",
-              });
               let worktreeBaseRef = bootstrap.prepareWorktree.baseBranch;
               if (bootstrap.prepareWorktree.startFromOrigin) {
                 yield* gitWorkflow.fetchRemote({
@@ -1131,23 +1112,6 @@ const makeWsRpcLayer = (
                 worktreePath: targetWorktreePath,
               });
               yield* refreshGitStatus(targetWorktreePath);
-              yield* appendThreadActivity({
-                threadId: command.threadId,
-                kind: "tool.completed",
-                summary: "Worktree ready",
-                createdAt: yield* nowIso,
-                payload: {
-                  toolName: "create_worktree",
-                  toolCallId: worktreeToolCallId,
-                  title: "Creating worktree",
-                  status: "completed",
-                  data: {
-                    branch: worktree.worktree.refName,
-                    worktreePath: targetWorktreePath,
-                  },
-                },
-                tone: "tool",
-              });
             }
 
             yield* runSetupProgram();

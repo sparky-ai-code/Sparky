@@ -435,6 +435,38 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
     ).toBe(false);
   });
 
+  it("keeps a preparing-worktree dispatch active until the worktree is attached", () => {
+    const thread = makeThread({ latestTurn: completedTurn, session: readySession });
+    const localDispatch = createLocalDispatchSnapshot(thread, { preparingWorktree: true });
+
+    expect(
+      hasServerAcknowledgedLocalDispatch({
+        localDispatch,
+        phase: "ready",
+        latestTurn: completedTurn,
+        latestUserMessageId: MessageId.make("message-recorded-on-server"),
+        session: readySession,
+        hasWorktree: false,
+        hasPendingApproval: false,
+        hasPendingUserInput: false,
+        threadError: null,
+      }),
+    ).toBe(false);
+    expect(
+      hasServerAcknowledgedLocalDispatch({
+        localDispatch,
+        phase: "ready",
+        latestTurn: completedTurn,
+        latestUserMessageId: MessageId.make("message-recorded-on-server"),
+        session: { ...readySession, updatedAt: "2026-03-29T00:02:00.000Z" },
+        hasWorktree: true,
+        hasPendingApproval: false,
+        hasPendingUserInput: false,
+        threadError: null,
+      }),
+    ).toBe(true);
+  });
+
   it("acknowledges a settled newer turn", () => {
     const localDispatch = createLocalDispatchSnapshot(
       makeThread({ latestTurn: completedTurn, session: readySession }),

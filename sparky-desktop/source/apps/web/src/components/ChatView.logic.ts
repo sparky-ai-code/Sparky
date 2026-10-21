@@ -472,6 +472,7 @@ export function hasServerAcknowledgedLocalDispatch(input: {
   latestTurn: Thread["latestTurn"] | null;
   latestUserMessageId: ChatMessage["id"] | null;
   session: Thread["session"] | null;
+  hasWorktree?: boolean;
   hasPendingApproval: boolean;
   hasPendingUserInput: boolean;
   threadError: string | null | undefined;
@@ -481,6 +482,9 @@ export function hasServerAcknowledgedLocalDispatch(input: {
   }
   if (input.hasPendingApproval || input.hasPendingUserInput || Boolean(input.threadError)) {
     return true;
+  }
+  if (input.localDispatch.preparingWorktree && !input.hasWorktree) {
+    return false;
   }
 
   const latestTurn = input.latestTurn ?? null;

@@ -12,6 +12,40 @@ const layer = it.layer(
 );
 
 layer("ProjectionThreadMessageRepository", (it) => {
+  it.effect("appends streamed deltas without replacing the accumulated text", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadMessageRepository;
+      const threadId = ThreadId.make("thread-append-streaming-delta");
+      const messageId = MessageId.make("message-append-streaming-delta");
+      const createdAt = "2026-02-28T18:00:00.000Z";
+
+      for (const [text, updatedAt] of [
+        ["first ", "2026-02-28T18:00:01.000Z"],
+        ["second ", "2026-02-28T18:00:02.000Z"],
+        ["third", "2026-02-28T18:00:03.000Z"],
+      ] as const) {
+        yield* repository.appendStreamingDelta({
+          messageId,
+          threadId,
+          turnId: null,
+          role: "assistant",
+          text,
+          isStreaming: true,
+          createdAt,
+          updatedAt,
+        });
+      }
+
+      const row = yield* repository.getByMessageId({ messageId });
+      assert.equal(row._tag, "Some");
+      if (row._tag === "Some") {
+        assert.equal(row.value.text, "first second third");
+        assert.equal(row.value.isStreaming, true);
+        assert.equal(row.value.createdAt, createdAt);
+      }
+    }),
+  );
+
   it.effect("preserves existing attachments when upsert omits attachments", () =>
     Effect.gen(function* () {
       const repository = yield* ProjectionThreadMessageRepository;

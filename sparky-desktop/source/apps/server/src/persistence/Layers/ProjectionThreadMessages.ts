@@ -95,6 +95,38 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
     },
   });
 
+  const appendStreamingDeltaRow = SqlSchema.void({
+    Request: ProjectionThreadMessage,
+    execute: (row) =>
+      sql`
+        INSERT INTO projection_thread_messages (
+          message_id,
+          thread_id,
+          turn_id,
+          role,
+          text,
+          is_streaming,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          ${row.messageId},
+          ${row.threadId},
+          ${row.turnId},
+          ${row.role},
+          ${row.text},
+          1,
+          ${row.createdAt},
+          ${row.updatedAt}
+        )
+        ON CONFLICT (message_id)
+        DO UPDATE SET
+          text = projection_thread_messages.text || excluded.text,
+          is_streaming = 1,
+          updated_at = excluded.updated_at
+      `,
+  });
+
   const getProjectionThreadMessageRow = SqlSchema.findOneOption({
     Request: GetProjectionThreadMessageInput,
     Result: ProjectionThreadMessageDbRowSchema,
@@ -151,6 +183,15 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
       Effect.mapError(toPersistenceSqlError("ProjectionThreadMessageRepository.upsert:query")),
     );
 
+  const appendStreamingDelta: ProjectionThreadMessageRepositoryShape["appendStreamingDelta"] = (
+    row,
+  ) =>
+    appendStreamingDeltaRow(row).pipe(
+      Effect.mapError(
+        toPersistenceSqlError("ProjectionThreadMessageRepository.appendStreamingDelta:query"),
+      ),
+    );
+
   const getByMessageId: ProjectionThreadMessageRepositoryShape["getByMessageId"] = (input) =>
     getProjectionThreadMessageRow(input).pipe(
       Effect.mapError(
@@ -176,6 +217,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
 
   return {
     upsert,
+    appendStreamingDelta,
     getByMessageId,
     listByThreadId,
     deleteByThreadId,

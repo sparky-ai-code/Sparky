@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
-import { PlugZapIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { PlusIcon, Trash2Icon } from "lucide-react";
 
+import { McpIcon } from "./McpIcon";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -60,7 +61,7 @@ export function McpSettingsPanel() {
         </p>
       </div>
 
-      <SettingsSection title="Built-in MCPs" icon={<PlugZapIcon className="size-3.5" />}>
+      <SettingsSection title="Built-in MCPs" icon={<McpIcon className="size-3.5" />}>
         <SettingsRow
           title="Browser"
           description="Use the shared browser to navigate, inspect pages, and interact with websites."
@@ -73,7 +74,7 @@ export function McpSettingsPanel() {
         />
       </SettingsSection>
 
-      <SettingsSection title="Your MCP servers" icon={<PlugZapIcon className="size-3.5" />}>
+      <SettingsSection title="Your MCP servers" icon={<McpIcon className="size-3.5" />}>
         {connections.length === 0 ? (
           <div className="px-4 py-5 text-sm text-muted-foreground sm:px-5">
             No MCP servers added yet.

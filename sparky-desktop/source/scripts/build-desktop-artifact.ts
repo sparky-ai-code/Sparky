@@ -1309,7 +1309,7 @@ export function resolveServerRuntimeDependencies(
 }
 
 export const resolveDesktopPublishConfig = Effect.fn("resolveDesktopPublishConfig")(function* (
-  updateChannel: "latest" | "nightly",
+  updateChannel: "latest" | "nightly" | "beta",
 ) {
   const env = yield* Config.all({
     sparkyUpdateUrl: Config.string("SPARKY_UPDATE_URL").pipe(Config.option),
@@ -1319,12 +1319,13 @@ export const resolveDesktopPublishConfig = Effect.fn("resolveDesktopPublishConfi
   return {
     provider: "generic" as const,
     url: sparkyUpdateUrl.replace(/\/+$/u, ""),
-    ...(updateChannel === "nightly" ? { channel: "nightly" as const } : {}),
+    ...(updateChannel !== "latest" ? { channel: updateChannel } : {}),
   };
 });
 
-export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
-  return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
+export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" | "beta" {
+  if (/-nightly\.\d{8}\.\d+$/.test(version)) return "nightly";
+  return /-beta\.\d+$/.test(version) ? "beta" : "latest";
 }
 
 export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {

@@ -154,7 +154,7 @@ function ReactiveTraitsControl({
     value: ReadonlyArray<ProviderOptionSelection> | undefined;
   } | null>(null);
   const modelOptions =
-    optimisticModelOptions?.source === input.modelOptions
+    optimisticModelOptions !== null && optimisticModelOptions.source === input.modelOptions
       ? optimisticModelOptions.value
       : input.modelOptions;
   const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);

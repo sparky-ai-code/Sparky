@@ -146,7 +146,7 @@ impl Tool for BashTool {
             .and_then(|v| v.as_u64())
             .unwrap_or(300);
 
-        self.monitor.start(command_str, cwd, timeout_secs).await
+        Ok(self.monitor.start(command_str, cwd, timeout_secs).await)
     }
 }
 

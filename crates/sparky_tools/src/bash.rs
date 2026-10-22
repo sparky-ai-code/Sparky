@@ -45,7 +45,8 @@ impl CommandMonitor {
             .await
             .is_ok()
         {
-            if let Some(result) = receiver.borrow().clone() {
+            let completed_result = { receiver.borrow().clone() };
+            if let Some(result) = completed_result {
                 self.jobs.lock().await.remove(&id);
                 return result;
             }

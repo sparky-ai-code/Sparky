@@ -402,7 +402,7 @@ jobs:
             if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing updater asset: $file" }
           }
           $feed = Get-Content -Raw release/latest.yml
-          if ($feed -notmatch 'Sparky-x64\.exe' -or $feed -notmatch '1\.1\.24') { throw 'Windows update feed has incorrect asset or version metadata.' }
+          if ($feed -notmatch 'Sparky-x64\.exe' -or $feed -notmatch [regex]::Escape($env:RELEASE_VERSION)) { throw 'Windows update feed has incorrect asset or version metadata.' }
       - uses: actions/upload-artifact@v4
         with:
           name: installers-windows-x64

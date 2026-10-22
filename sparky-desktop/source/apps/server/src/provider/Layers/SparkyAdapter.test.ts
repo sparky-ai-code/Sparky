@@ -325,6 +325,18 @@ describe("makeSparkyStreamDecoder", () => {
 });
 
 describe("sparkyToolPresentation", () => {
+  it("presents bash monitor calls like normal terminal calls", () => {
+    expect(sparkyToolPresentation("bash_monitor", { command_id: "cmd-123" })).toEqual({
+      itemType: "command_execution",
+      title: "Terminal",
+      data: {
+        kind: "execute",
+        toolName: "bash_monitor",
+        rawInput: { command_id: "cmd-123" },
+      },
+    });
+  });
+
   it("gives browser MCP tools readable titles and an MCP lifecycle type", () => {
     expect(sparkyToolPresentation("preview_evaluate", { expression: "document.title" })).toEqual({
       itemType: "mcp_tool_call",

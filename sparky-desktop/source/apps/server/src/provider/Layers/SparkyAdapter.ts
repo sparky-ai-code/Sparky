@@ -525,7 +525,7 @@ export function sparkyToolPresentation(
   const isBrowserTool = normalizedName.startsWith("preview_");
   const isMcpTool = isBrowserTool || normalizedName === "getpullrequestcomments";
   const itemType: ToolLifecycleItemType =
-    normalizedName === "bash"
+    normalizedName === "bash" || normalizedName === "bash_monitor"
       ? "command_execution"
       : normalizedName === "write" || normalizedName === "edit"
         ? "file_change"
@@ -535,7 +535,7 @@ export function sparkyToolPresentation(
             ? "mcp_tool_call"
             : "dynamic_tool_call";
   const kind =
-    normalizedName === "bash"
+    normalizedName === "bash" || normalizedName === "bash_monitor"
       ? "execute"
       : normalizedName === "grep" || normalizedName === "find"
         ? "search"
@@ -543,6 +543,7 @@ export function sparkyToolPresentation(
   const titleByName: Record<string, string> = {
     ask_user: "Ask user",
     bash: "Terminal",
+    bash_monitor: "Terminal",
     edit: "Edit file",
     find: "Find",
     grep: "Grep",

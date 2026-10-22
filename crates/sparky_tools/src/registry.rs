@@ -1,4 +1,4 @@
-use crate::bash::BashTool;
+use crate::bash::{BashMonitorTool, BashTool};
 use crate::edit::EditTool;
 use crate::find::FindTool;
 use crate::grep::GrepTool;
@@ -65,7 +65,9 @@ impl ToolRegistry {
         reg.register_builtin(Arc::new(ReadTool::new(limits.read_bytes)));
         reg.register_builtin(Arc::new(WriteTool));
         reg.register_builtin(Arc::new(EditTool));
-        reg.register_builtin(Arc::new(BashTool::new(limits.bash_bytes)));
+        let bash = BashTool::new(limits.bash_bytes);
+        reg.register_builtin(Arc::new(BashMonitorTool::new(bash.monitor())));
+        reg.register_builtin(Arc::new(bash));
         reg.register_builtin(Arc::new(LsTool));
         reg.register_builtin(Arc::new(GrepTool));
         reg.register_builtin(Arc::new(WebSearchTool));
@@ -210,6 +212,7 @@ mod tests {
 
         assert!(registry.get("update_plan").is_some());
         assert!(registry.get_for_mode("update_plan", false).is_none());
+        assert!(registry.get_for_mode("bash_monitor", false).is_some());
     }
 
     #[tokio::test]

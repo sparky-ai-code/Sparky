@@ -895,6 +895,83 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn background_command_stays_active_in_tool_events_until_it_finishes() {
+        let workspace = temporary_workspace();
+        tokio::fs::create_dir_all(&workspace).await.unwrap();
+        let cwd = workspace.to_string_lossy().to_string();
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded_events = events.clone();
+        let mut event_bus = EventBus::new();
+        event_bus.subscribe(move |event| recorded_events.lock().unwrap().push(event.clone()));
+        let agent = AgentLoop::new(
+            Arc::new(StreamingProvider),
+            ToolRegistry::new(),
+            event_bus,
+            AgentLoopOptions {
+                cwd,
+                ..AgentLoopOptions::default()
+            },
+        );
+        let command = if cfg!(windows) {
+            "Start-Sleep -Seconds 6; Write-Output finished"
+        } else {
+            "sleep 6; printf finished"
+        };
+        let result = agent
+            .execute_tool_call_result_with_events(
+                &ToolCall {
+                    id: "bash-call".to_string(),
+                    name: "bash".to_string(),
+                    arguments: serde_json::json!({ "command": command, "timeout_seconds": 30 }),
+                },
+                true,
+            )
+            .await;
+        let command_id = result
+            .output
+            .split("command_id: ")
+            .nth(1)
+            .unwrap()
+            .to_string();
+        let events_before_completion = events.lock().unwrap().clone();
+        assert!(events_before_completion.iter().any(|event| matches!(
+            event,
+            SparkyEvent::ToolExecutionStart { tool_call_id, .. } if tool_call_id == "bash-call"
+        )));
+        assert!(!events_before_completion.iter().any(|event| matches!(
+            event,
+            SparkyEvent::ToolExecutionEnd { tool_call_id, .. } if tool_call_id == "bash-call"
+        )));
+        assert!(events_before_completion.iter().any(|event| matches!(
+            event,
+            SparkyEvent::ToolExecutionBackground { tool_call_id, job_id, .. }
+                if tool_call_id == "bash-call" && job_id == &command_id
+        )));
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        agent
+            .execute_tool_call_result_with_events(
+                &ToolCall {
+                    id: "monitor-call".to_string(),
+                    name: "bash_monitor".to_string(),
+                    arguments: serde_json::json!({ "command_id": command_id }),
+                },
+                true,
+            )
+            .await;
+        let final_events = events.lock().unwrap();
+        assert!(final_events.iter().any(|event| matches!(
+            event,
+            SparkyEvent::ToolExecutionEnd { tool_call_id, output, .. }
+                if tool_call_id == "bash-call" && output.contains("finished")
+        )));
+        drop(final_events);
+
+        drop(agent);
+        remove_temporary_workspace(workspace).await;
+    }
+
+    #[tokio::test]
     async fn browser_tools_are_available_for_ordinary_implementation_requests() {
         let workspace = temporary_workspace();
         tokio::fs::create_dir_all(&workspace).await.unwrap();
@@ -949,10 +1026,16 @@ impl Default for AgentLoopOptions {
     }
 }
 
+struct PendingBackgroundTool {
+    tool_call_id: String,
+    tool_name: String,
+}
+
 pub struct AgentLoop {
     provider: Arc<dyn LlmProvider>,
     tool_registry: ToolRegistry,
     event_bus: EventBus,
+    pending_background_tools: tokio::sync::Mutex<HashMap<String, PendingBackgroundTool>>,
     compaction: CompactionEngine,
     options: AgentLoopOptions,
 }
@@ -990,6 +1073,7 @@ impl AgentLoop {
             provider,
             tool_registry,
             event_bus,
+            pending_background_tools: tokio::sync::Mutex::new(HashMap::new()),
             compaction: CompactionEngine::default(),
             options,
         }
@@ -1497,12 +1581,38 @@ impl AgentLoop {
         };
 
         if emit_events {
-            self.event_bus.emit(&SparkyEvent::ToolExecutionEnd {
-                tool_call_id: tool_call.id.clone(),
-                tool_name: tool_call.name.clone(),
-                output: result.output.clone(),
-                is_error: result.is_error,
-            });
+            if let Some(job_id) = result.background_job_id.as_ref() {
+                self.pending_background_tools.lock().await.insert(
+                    job_id.clone(),
+                    PendingBackgroundTool {
+                        tool_call_id: tool_call.id.clone(),
+                        tool_name: tool_call.name.clone(),
+                    },
+                );
+                self.event_bus.emit(&SparkyEvent::ToolExecutionBackground {
+                    tool_call_id: tool_call.id.clone(),
+                    tool_name: tool_call.name.clone(),
+                    job_id: job_id.clone(),
+                });
+            } else {
+                self.event_bus.emit(&SparkyEvent::ToolExecutionEnd {
+                    tool_call_id: tool_call.id.clone(),
+                    tool_name: tool_call.name.clone(),
+                    output: result.output.clone(),
+                    is_error: result.is_error,
+                });
+            }
+
+            if let Some(job_id) = result.completed_background_job_id.as_ref() {
+                if let Some(pending) = self.pending_background_tools.lock().await.remove(job_id) {
+                    self.event_bus.emit(&SparkyEvent::ToolExecutionEnd {
+                        tool_call_id: pending.tool_call_id,
+                        tool_name: pending.tool_name,
+                        output: result.output.clone(),
+                        is_error: result.is_error,
+                    });
+                }
+            }
         }
 
         result

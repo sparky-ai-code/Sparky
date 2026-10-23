@@ -5783,11 +5783,15 @@ function ChatViewContent(props: ChatViewProps) {
                           onChangeActivePendingUserInputCustomAnswer
                         }
                         onProviderModelSelect={onProviderModelSelect}
-                        onRefreshModelCatalog={
-                          routeKind === "server"
-                            ? (instanceId) => refreshServerProviders({ instanceId })
-                            : undefined
-                        }
+                        {...(routeKind === "server"
+                          ? {
+                              onRefreshModelCatalog: (instanceId: ProviderInstanceId) =>
+                                refreshServerProviders({
+                                  environmentId,
+                                  input: { instanceId },
+                                }),
+                            }
+                          : {})}
                         getModelDisabledReason={getModelDisabledReason}
                         toggleInteractionMode={toggleInteractionMode}
                         handleRuntimeModeChange={handleRuntimeModeChange}

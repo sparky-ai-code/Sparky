@@ -1775,6 +1775,22 @@ export function PullRequestsPage() {
                           {pullRequestActionError}
                         </p>
                       ) : null}
+                      {selectedReviewProgress && selectedReviewProgress.phase !== "success" ? (
+                        <p
+                          role={selectedReviewProgress.phase === "error" ? "alert" : "status"}
+                          aria-live={
+                            selectedReviewProgress.phase === "error" ? "assertive" : "polite"
+                          }
+                          className={cn(
+                            "mt-2 text-xs",
+                            selectedReviewProgress.phase === "error"
+                              ? "text-destructive"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {selectedReviewProgress.message}
+                        </p>
+                      ) : null}
                     </div>
                     {loadingDetail ? (
                       <LoaderCircleIcon className="mt-1 size-4 animate-spin text-muted-foreground" />

@@ -110,11 +110,6 @@ export interface SparkyAssistantSegmentCallbacks {
   readonly onCompleted: (segmentId: string, text: string) => void;
 }
 
-// Maximum period without provider stdout/stderr activity before we kill one
-// Sparky process attempt. This is deliberately an inactivity timeout, not a
-// total-turn timeout: slow networks and long tool calls are allowed to make
-// progress without being killed merely because the turn is old.
-export const SPARKY_TURN_IDLE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(10));
 export const SPARKY_RECONNECT_RETRY_COUNT = 5;
 const SPARKY_RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 const isSparkyProcessError = Schema.is(ProviderAdapterProcessError);
@@ -224,9 +219,7 @@ interface PendingPersistentTurn {
   readonly resolve: (result: SparkyProcessResult) => void;
   readonly reject: (cause: unknown) => void;
   readonly childKey: string;
-  onActivity?: (() => void) | undefined;
   fail?: ((cause: unknown) => void) | undefined;
-  timeout?: ReturnType<typeof setTimeout>;
 }
 
 interface PersistentSparkyProcess {
@@ -901,7 +894,6 @@ function runSparky(input: {
         const args = makeSparkyProcessArgs(input);
 
         let settled = false;
-        let timeout: ReturnType<typeof setTimeout> | undefined;
 
         const child = NodeChildProcess.spawn(input.binaryPath, args, {
           cwd: input.cwd,
@@ -923,10 +915,6 @@ function runSparky(input: {
           }
         };
         const cleanup = () => {
-          if (timeout !== undefined) {
-            clearTimeout(timeout);
-            timeout = undefined;
-          }
           removeActiveChild();
         };
         const resolveOnce = (value: SparkyProcessResult) => {
@@ -959,40 +947,18 @@ function runSparky(input: {
             }
           },
         });
-        const armTimeout = () => {
-          if (settled) return;
-          if (timeout !== undefined) clearTimeout(timeout);
-          timeout = undefined;
-          // The Rust tool runner owns each tool's configured timeout. It does
-          // not stream tool stdout, so an open tool lifecycle is positive
-          // activity even when the provider pipe is quiet for ten minutes.
-          if (decoder.hasOpenTools()) return;
-          timeout = setTimeout(() => {
-            const message = `Sparky turn stalled after ${SPARKY_TURN_IDLE_TIMEOUT_MS}ms without provider activity.`;
-            appendStderr(`\n${message}`);
-            decoder.failOpenTools(message);
-            // Reject immediately instead of waiting for the child close event.
-            // This guarantees the orchestration layer receives the terminal
-            // failure and can leave the UI's running state.
-            child.kill("SIGKILL");
-            rejectOnce(new Error(message));
-          }, SPARKY_TURN_IDLE_TIMEOUT_MS);
-        };
         child.stdout.setEncoding("utf8");
         child.stderr.setEncoding("utf8");
         child.stdout.on("data", (chunk: string) => {
           decoder.push(chunk);
-          if (chunk.length > 0) armTimeout();
         });
         child.stderr.on("data", (chunk: string) => {
           appendStderr(chunk);
-          if (chunk.length > 0) armTimeout();
         });
         child.stdin.on("error", (error) => {
           appendStderr(`\nUnable to send the prompt to Sparky: ${error.message}`);
         });
         child.stdin.end(input.prompt, "utf8");
-        armTimeout();
         child.once("error", (err) => {
           if (settled) return;
           decoder.failOpenTools(`Sparky process error: ${err.message}`);
@@ -1105,9 +1071,7 @@ function runPersistentSparky(input: {
           }
         };
         const clearPending = () => {
-          const pending = currentProcess.pending;
-          if (pending?.timeout !== undefined) clearTimeout(pending.timeout);
-          if (pending) currentProcess.pending = undefined;
+          currentProcess.pending = undefined;
           removeActiveChild();
         };
         const settle = (result?: SparkyProcessResult, cause?: unknown) => {
@@ -1150,17 +1114,6 @@ function runPersistentSparky(input: {
         };
         currentProcess.pending = pending;
         input.activeChildren.set(input.childKey, child);
-        const armTimeout = () => {
-          if (settled || currentProcess.pending !== pending || decoder.hasOpenTools()) return;
-          if (pending.timeout !== undefined) clearTimeout(pending.timeout);
-          pending.timeout = setTimeout(() => {
-            const message = `Sparky turn stalled after ${SPARKY_TURN_IDLE_TIMEOUT_MS}ms without provider activity.`;
-            decoder.failOpenTools(message);
-            settle(undefined, new Error(message));
-            destroyProcess();
-          }, SPARKY_TURN_IDLE_TIMEOUT_MS);
-        };
-        pending.onActivity = armTimeout;
         pending.fail = (cause) => settle(undefined, cause);
         if (createdProcess) {
           child.stdout.setEncoding("utf8");
@@ -1169,11 +1122,9 @@ function runPersistentSparky(input: {
             const activeTurn = currentProcess.pending;
             if (!activeTurn) return;
             activeTurn.decoder.push(chunk);
-            if (chunk.length > 0) activeTurn.onActivity?.();
           });
           child.stderr.on("data", (chunk: string) => {
             appendStderr(chunk);
-            if (chunk.length > 0) currentProcess.pending?.onActivity?.();
           });
           child.stdin.on("error", (error) => {
             const activeTurn = currentProcess.pending;
@@ -1208,7 +1159,6 @@ function runPersistentSparky(input: {
             })}\n`,
             "utf8",
           );
-          armTimeout();
         } catch (cause) {
           settle(undefined, cause);
           destroyProcess();

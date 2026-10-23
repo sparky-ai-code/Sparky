@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 
+import { McpIcon } from "./McpIcon";
 import {
   SidebarContent,
   SidebarFooter,
@@ -32,6 +33,7 @@ export type SettingsSectionPath =
   | "/settings/keybindings"
   | "/settings/models"
   | "/settings/plugins"
+  | "/settings/mcp"
   | "/settings/memory"
   | "/settings/archived";
 
@@ -56,6 +58,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   },
   { label: "Models", section: "AI & tools", to: "/settings/models", icon: BoxesIcon },
   { label: "Plugins", section: "AI & tools", to: "/settings/plugins", icon: PlugZapIcon },
+  { label: "MCP", section: "AI & tools", to: "/settings/mcp", icon: McpIcon },
   { label: "Memory", section: "AI & tools", to: "/settings/memory", icon: BrainIcon },
   { label: "Keybindings", section: "Preferences", to: "/settings/keybindings", icon: KeyboardIcon },
   { label: "Archive", section: "Data", to: "/settings/archived", icon: ArchiveIcon },

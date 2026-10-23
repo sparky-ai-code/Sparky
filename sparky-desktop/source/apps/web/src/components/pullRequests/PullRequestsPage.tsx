@@ -1313,8 +1313,22 @@ export function PullRequestsPage() {
           }
           throw squashAtomCommandFailure(reportResponse);
         }
-        const reviewSummary = reportResponse.value.response.trim();
-        if (!reviewSummary) throw new Error("The model returned an empty review summary.");
+        const generatedSummary = reportResponse.value.response.trim();
+        const reviewSummary =
+          generatedSummary ||
+          (validated.findings.length > 0
+            ? [
+                "The review is complete, but the model did not generate a summary.",
+                `${postedCommentCount} inline comment(s) were posted:`,
+                ...validated.findings.map(
+                  (finding) =>
+                    `${finding.path}:${finding.line} — ${finding.title}: ${finding.body}`,
+                ),
+                skippedCount > 0 ? `${skippedCount} finding(s) were omitted.` : "",
+              ]
+                .filter(Boolean)
+                .join("\n\n")
+            : "The review completed without any actionable findings. The PR is good to go.");
         report(
           "success",
           validated.findings.length > 0
@@ -1322,6 +1336,7 @@ export function PullRequestsPage() {
             : "Review complete with no actionable findings.",
           reviewSummary,
         );
+        if (selectedPullRequestKeyRef.current === reviewKey) setReviewSummaryOpen(true);
       } catch (cause) {
         const message = errorMessage(cause, "Could not review this pull request.");
         if (isGitHubAuthError(message)) markAuthRequired(message);

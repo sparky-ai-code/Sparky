@@ -84,6 +84,7 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
+import { listExternalMcpTools } from "./mcp/ExternalMcp.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -1639,6 +1640,42 @@ const makeWsRpcLayer = (
             {
               "rpc.aggregate": "server",
             },
+          ),
+        [WS_METHODS.serverCheckMcpServers]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.serverCheckMcpServers,
+            Effect.gen(function* () {
+              const configs = yield* serverSettings.getSettings.pipe(
+                Effect.map((settings) => settings.mcpServers.filter((server) => server.enabled)),
+              );
+              return yield* Effect.forEach(
+                configs,
+                (config) =>
+                  Effect.tryPromise({
+                    try: async () => {
+                      const tools = await listExternalMcpTools(config);
+                      return {
+                        id: config.id,
+                        status: "online" as const,
+                        checkedAt: Date.now(),
+                        toolCount: Array.isArray(tools) ? tools.length : 0,
+                      };
+                    },
+                    catch: () => new Error("MCP server is unavailable."),
+                  }).pipe(
+                    Effect.catch(() =>
+                      Effect.succeed({
+                        id: config.id,
+                        status: "offline" as const,
+                        checkedAt: Date.now(),
+                        toolCount: 0,
+                      }),
+                    ),
+                  ),
+                { concurrency: 4 },
+              );
+            }),
+            { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.memoryList]: (input) =>
           observeRpcEffect(WS_METHODS.memoryList, memoryStore.list(input), {

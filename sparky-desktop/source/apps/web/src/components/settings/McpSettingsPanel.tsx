@@ -1,8 +1,12 @@
-import { useState, type FormEvent } from "react";
-import { PlusIcon, Trash2Icon } from "lucide-react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import type { McpServerConnectionStatus } from "@sparky/contracts";
 
 import { McpIcon } from "./McpIcon";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { serverEnvironment } from "../../state/server";
+import { usePrimaryEnvironment } from "../../state/environments";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
@@ -16,8 +20,35 @@ export function McpSettingsPanel() {
   const [endpoint, setEndpoint] = useState("");
   const [authorizationToken, setAuthorizationToken] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [serverStatuses, setServerStatuses] = useState<ReadonlyMap<string, McpServerConnectionStatus>>(
+    () => new Map(),
+  );
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const environmentId = usePrimaryEnvironment()?.environmentId ?? null;
+  const checkMcpServers = useAtomCommand(serverEnvironment.checkMcpServers, {
+    reportFailure: false,
+  });
 
   const save = (next: typeof connections) => updateSettings({ mcpServers: next });
+  const refreshServerStatuses = useCallback(async () => {
+    if (!environmentId) return;
+    setCheckingStatus(true);
+    try {
+      const result = await checkMcpServers({ environmentId, input: {} });
+      if (result._tag === "Success") {
+        setServerStatuses(new Map(result.value.map((status) => [status.id, status])));
+      }
+    } finally {
+      setCheckingStatus(false);
+    }
+  }, [checkMcpServers, environmentId]);
+
+  useEffect(() => {
+    if (!environmentId || connections.length === 0) return;
+    void refreshServerStatuses();
+    const interval = setInterval(() => void refreshServerStatuses(), 60_000);
+    return () => clearInterval(interval);
+  }, [connections, environmentId, refreshServerStatuses]);
 
   const addConnection = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -57,7 +88,9 @@ export function McpSettingsPanel() {
       <div>
         <h1 className="text-lg font-semibold tracking-tight text-foreground">MCP</h1>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Add streamable HTTP MCP servers here. Enabled servers are connected by Sparky's agent and their tools are available during a session.
+          Add streamable HTTP MCP servers here. Connections are saved in server settings and restored
+          after restart. Their status is checked when this page opens and periodically; unreachable
+          servers are marked Offline.
         </p>
       </div>
 
@@ -74,7 +107,22 @@ export function McpSettingsPanel() {
         />
       </SettingsSection>
 
-      <SettingsSection title="Your MCP servers" icon={<McpIcon className="size-3.5" />}>
+      <SettingsSection
+        title="Your MCP servers"
+        icon={<McpIcon className="size-3.5" />}
+        headerAction={
+          <Button
+            type="button"
+            size="icon-xs"
+            variant="ghost"
+            aria-label="Refresh MCP server statuses"
+            onClick={() => void refreshServerStatuses()}
+            disabled={checkingStatus || connections.length === 0}
+          >
+            <RefreshCwIcon className={checkingStatus ? "size-3 animate-spin" : "size-3"} />
+          </Button>
+        }
+      >
         {connections.length === 0 ? (
           <div className="px-4 py-5 text-sm text-muted-foreground sm:px-5">
             No MCP servers added yet.
@@ -89,6 +137,26 @@ export function McpSettingsPanel() {
                 <p className="truncate text-[13px] font-semibold text-foreground">{connection.name}</p>
                 <p className="truncate text-xs text-muted-foreground">{connection.url}</p>
               </div>
+              <span
+                role="status"
+                className={
+                  !connection.enabled
+                    ? "inline-flex shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                    : serverStatuses.get(connection.id)?.status === "online"
+                      ? "inline-flex shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
+                      : serverStatuses.get(connection.id)?.status === "offline"
+                        ? "inline-flex shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive"
+                        : "inline-flex shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                }
+              >
+                {!connection.enabled
+                  ? "Disabled"
+                  : serverStatuses.get(connection.id)?.status === "online"
+                    ? `Online · ${serverStatuses.get(connection.id)?.toolCount ?? 0} tools`
+                    : serverStatuses.get(connection.id)?.status === "offline"
+                      ? "Offline"
+                      : "Checking…"}
+              </span>
               <Switch
                 checked={connection.enabled}
                 onCheckedChange={(enabled) =>

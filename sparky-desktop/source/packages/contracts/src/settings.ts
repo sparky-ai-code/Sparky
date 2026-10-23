@@ -435,6 +435,14 @@ export const CheckpointSettings = Schema.Struct({
 });
 export type CheckpointSettings = typeof CheckpointSettings.Type;
 
+export const McpServerConnectionStatus = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  status: Schema.Literals(["online", "offline"]),
+  checkedAt: Schema.Number,
+  toolCount: Schema.Number,
+});
+export type McpServerConnectionStatus = typeof McpServerConnectionStatus.Type;
+
 export const McpServerConfig = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,

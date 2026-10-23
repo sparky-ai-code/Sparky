@@ -86,7 +86,12 @@ export function McpSettingsPanel() {
   return (
     <SettingsPageContainer>
       <div>
-        <h1 className="text-lg font-semibold tracking-tight text-foreground">MCP</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">MCP</h1>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Beta
+          </span>
+        </div>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
           Add streamable HTTP MCP servers here. Connections are saved in server settings and restored
           after restart. Their status is checked when this page opens and periodically; unreachable

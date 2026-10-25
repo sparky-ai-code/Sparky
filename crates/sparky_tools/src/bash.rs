@@ -58,22 +58,19 @@ impl CommandMonitor {
     }
 
     async fn status(&self, id: &str) -> ToolExecutionResult {
-        let Some(mut receiver) = self.jobs.lock().await.get(id).cloned() else {
+        let mut jobs = self.jobs.lock().await;
+        let Some(receiver) = jobs.get(id) else {
             return ToolExecutionResult::error(format!(
                 "Unknown or already completed command_id: {id}"
             ));
         };
-
-        loop {
-            if let Some(result) = receiver.borrow().clone() {
-                self.jobs.lock().await.remove(id);
-                return result.background_completed(id.to_owned());
+        let result = receiver.borrow().clone();
+        match result {
+            Some(result) => {
+                jobs.remove(id);
+                result.background_completed(id.to_owned())
             }
-            if receiver.changed().await.is_err() {
-                return ToolExecutionResult::error(format!(
-                    "Command {id} ended without returning a result"
-                ));
-            }
+            None => ToolExecutionResult::success(format!("Command {id} is still running.")),
         }
     }
 }
@@ -175,7 +172,7 @@ impl Tool for BashMonitorTool {
     }
 
     fn description(&self) -> &str {
-        "Wait for a background bash command to finish and retrieve its output."
+        "Check whether a background bash command is still running and retrieve its output when it completes."
     }
 
     fn parameters(&self) -> serde_json::Value {
@@ -279,10 +276,10 @@ mod tests {
         assert!(!result.is_error);
         let id = result.output.split("command_id: ").nth(1).unwrap();
         assert!(started.elapsed() >= COMMAND_START_WAIT);
+        assert!(monitor.status(id).await.output.contains("still running"));
 
-        let monitor_started = tokio::time::Instant::now();
+        tokio::time::sleep(Duration::from_secs(2)).await;
         let completed = monitor.status(id).await;
-        assert!(monitor_started.elapsed() >= Duration::from_secs(1));
         assert!(!completed.is_error);
         assert!(completed.output.contains("finished"));
     }

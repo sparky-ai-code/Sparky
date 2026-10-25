@@ -579,7 +579,7 @@ function getItemType(item: MessagesTimelineRow) {
   return item.kind === "message" ? `message:${item.message.role}` : item.kind;
 }
 
-interface TimelineMinimapItem {
+export interface TimelineMinimapItem {
   readonly id: string;
   readonly rowIndex: number;
   readonly userText: string | null;
@@ -594,44 +594,41 @@ interface TimelinePositionState {
   readonly sizeAtIndex?: (index: number) => number | undefined;
 }
 
-function deriveTimelineMinimapItems(
+export function deriveTimelineMinimapItems(
   rows: ReadonlyArray<MessagesTimelineRow>,
 ): TimelineMinimapItem[] {
   const items: TimelineMinimapItem[] = [];
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index];
-    if (row?.kind !== "message" || row.message.role !== "user") {
-      continue;
+  let currentItem: TimelineMinimapItem | null = null;
+  let assistantText: string | null = null;
+
+  const pushCurrentItem = () => {
+    if (currentItem) {
+      items.push({ ...currentItem, assistantText: compactMinimapPreview(assistantText) });
     }
+  };
 
-    items.push({
-      id: row.id,
-      rowIndex: index,
-      userText: compactMinimapPreview(row.message.text),
-      assistantText: compactMinimapPreview(resolveFinalAssistantTextForTurn(rows, index)),
-    });
-  }
-  return items;
-}
-
-function resolveFinalAssistantTextForTurn(
-  rows: ReadonlyArray<MessagesTimelineRow>,
-  userRowIndex: number,
-) {
-  let finalAssistantText: string | null = null;
-  for (let index = userRowIndex + 1; index < rows.length; index += 1) {
+  for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
     if (row?.kind !== "message") {
       continue;
     }
+
     if (row.message.role === "user") {
-      break;
-    }
-    if (row.message.role === "assistant") {
-      finalAssistantText = row.message.text ?? null;
+      pushCurrentItem();
+      currentItem = {
+        id: row.id,
+        rowIndex: index,
+        userText: compactMinimapPreview(row.message.text),
+        assistantText: null,
+      };
+      assistantText = null;
+    } else if (row.message.role === "assistant" && currentItem) {
+      assistantText = row.message.text ?? null;
     }
   }
-  return finalAssistantText;
+
+  pushCurrentItem();
+  return items;
 }
 
 function compactMinimapPreview(text: string | null | undefined) {

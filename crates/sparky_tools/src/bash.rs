@@ -7,15 +7,37 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::{watch, Mutex};
 use tokio::time::{timeout, Duration};
 
 const COMMAND_START_WAIT: Duration = Duration::from_secs(5);
 
+#[derive(Debug, Clone, Default)]
+struct CommandMonitorState {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    result: Option<ToolExecutionResult>,
+}
+
+impl CommandMonitorState {
+    fn output(&self) -> String {
+        let stdout = String::from_utf8_lossy(&self.stdout);
+        let stderr = String::from_utf8_lossy(&self.stderr);
+        if stderr.is_empty() {
+            stdout.into_owned()
+        } else if stdout.is_empty() {
+            stderr.into_owned()
+        } else {
+            format!("{stdout}\n--- STDERR ---\n{stderr}")
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct CommandMonitor {
-    jobs: Arc<Mutex<HashMap<String, watch::Receiver<Option<ToolExecutionResult>>>>>,
+    jobs: Arc<Mutex<HashMap<String, watch::Receiver<CommandMonitorState>>>>,
     next_id: Arc<AtomicU64>,
     output_limit: usize,
 }
@@ -31,30 +53,52 @@ impl CommandMonitor {
 
     async fn start(&self, command: &str, cwd: &str, timeout_secs: u64) -> ToolExecutionResult {
         let id = format!("cmd-{}", self.next_id.fetch_add(1, Ordering::Relaxed));
-        let (sender, receiver) = watch::channel(None);
+        let (sender, receiver) = watch::channel(CommandMonitorState::default());
         self.jobs.lock().await.insert(id.clone(), receiver.clone());
         let output_limit = self.output_limit;
         let command = command.to_string();
         let cwd = cwd.to_string();
         tokio::spawn(async move {
-            let result = run_command(&command, &cwd, timeout_secs, output_limit).await;
-            sender.send_replace(Some(result));
+            let result = run_command(
+                &command,
+                &cwd,
+                timeout_secs,
+                output_limit,
+                sender.clone(),
+            )
+            .await;
+            let mut state = sender.borrow().clone();
+            state.result = Some(result);
+            sender.send_replace(state);
         });
         let mut receiver = receiver;
-        if timeout(COMMAND_START_WAIT, receiver.changed())
-            .await
-            .is_ok()
-        {
-            let completed_result = { receiver.borrow().clone() };
-            if let Some(result) = completed_result {
-                self.jobs.lock().await.remove(&id);
-                return result;
+        let completed = timeout(COMMAND_START_WAIT, async {
+            loop {
+                let result = { receiver.borrow().result.clone() };
+                if let Some(result) = result {
+                    return Some(result);
+                }
+                if receiver.changed().await.is_err() {
+                    return None;
+                }
             }
+        })
+        .await
+        .ok()
+        .flatten();
+        if let Some(result) = completed {
+            self.jobs.lock().await.remove(&id);
+            return result;
         }
-        ToolExecutionResult::success(format!(
-            "Command is still running. Monitor it with bash_monitor using command_id: {id}"
-        ))
-        .background_started(id)
+
+        let current = receiver.borrow().clone();
+        let output = truncate_output(current.output(), self.output_limit);
+        let output = if output.is_empty() {
+            format!("Command is still running.\ncommand_id: {id}")
+        } else {
+            format!("Command is still running.\ncommand_id: {id}\nCurrent output:\n{output}")
+        };
+        ToolExecutionResult::success(output).background_started(id)
     }
 
     async fn status(&self, id: &str) -> ToolExecutionResult {
@@ -64,14 +108,19 @@ impl CommandMonitor {
                 "Unknown or already completed command_id: {id}"
             ));
         };
-        let result = receiver.borrow().clone();
-        match result {
-            Some(result) => {
-                jobs.remove(id);
-                result.background_completed(id.to_owned())
-            }
-            None => ToolExecutionResult::success(format!("Command {id} is still running.")),
+        let current = receiver.borrow().clone();
+        if let Some(result) = current.result {
+            jobs.remove(id);
+            return result.background_completed(id.to_owned());
         }
+
+        let output = truncate_output(current.output(), self.output_limit);
+        let message = if output.is_empty() {
+            format!("Command {id} is still running; no output has been produced yet.")
+        } else {
+            format!("Command {id} is still running. Current output:\n{output}")
+        };
+        ToolExecutionResult::success(message)
     }
 }
 
@@ -108,7 +157,7 @@ impl Tool for BashTool {
     }
 
     fn description(&self) -> &str {
-        "Run shell commands. Commands taking longer than five seconds continue in the background; use bash_monitor with the returned command_id to check completion."
+        "Run shell commands. Commands taking longer than five seconds continue in the background with their output available through bash_monitor and the returned command_id."
     }
 
     fn parameters(&self) -> serde_json::Value {
@@ -172,7 +221,7 @@ impl Tool for BashMonitorTool {
     }
 
     fn description(&self) -> &str {
-        "Check whether a background bash command is still running and retrieve its output when it completes."
+        "Check whether a background bash command is still running and return its latest stdout/stderr output; completed commands include their final result."
     }
 
     fn parameters(&self) -> serde_json::Value {
@@ -203,6 +252,7 @@ async fn run_command(
     cwd: &str,
     timeout_secs: u64,
     output_limit: usize,
+    updates: watch::Sender<CommandMonitorState>,
 ) -> ToolExecutionResult {
     let mut cmd = if cfg!(windows) {
         let mut c = Command::new("powershell");
@@ -219,42 +269,76 @@ async fn run_command(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
-    let child = match cmd.spawn() {
+    let mut child = match cmd.spawn() {
         Ok(child) => child,
         Err(error) => {
             return ToolExecutionResult::error(format!("Failed to spawn command: {error}"))
         }
     };
+    let Some(mut stdout) = child.stdout.take() else {
+        return ToolExecutionResult::error("Failed to capture command stdout");
+    };
+    let Some(mut stderr) = child.stderr.take() else {
+        return ToolExecutionResult::error("Failed to capture command stderr");
+    };
 
-    match timeout(Duration::from_secs(timeout_secs), child.wait_with_output()).await {
-        Ok(Ok(output)) => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let mut combined = String::new();
-            if !stdout.is_empty() {
-                combined.push_str(&stdout);
-            }
-            if !stderr.is_empty() {
-                if !combined.is_empty() {
-                    combined.push_str("\n--- STDERR ---\n");
+    let mut wait = Box::pin(child.wait());
+    let mut stdout_closed = false;
+    let mut stderr_closed = false;
+    let mut exit_status = None;
+    let mut state = CommandMonitorState::default();
+    let collect_output = async {
+        let mut stdout_buffer = [0; 4096];
+        let mut stderr_buffer = [0; 4096];
+        while !stdout_closed || !stderr_closed || exit_status.is_none() {
+            tokio::select! {
+                status = &mut wait, if exit_status.is_none() => {
+                    exit_status = Some(status.map_err(|error| {
+                        format!("Command execution error: {error}")
+                    })?);
                 }
-                combined.push_str(&stderr);
+                read = stdout.read(&mut stdout_buffer), if !stdout_closed => {
+                    match read {
+                        Ok(0) => stdout_closed = true,
+                        Ok(size) => {
+                            let available = output_limit.saturating_sub(state.stdout.len() + state.stderr.len());
+                            state.stdout.extend_from_slice(&stdout_buffer[..size.min(available)]);
+                            updates.send_replace(state.clone());
+                        }
+                        Err(error) => return Err(format!("Failed to read command stdout: {error}")),
+                    }
+                }
+                read = stderr.read(&mut stderr_buffer), if !stderr_closed => {
+                    match read {
+                        Ok(0) => stderr_closed = true,
+                        Ok(size) => {
+                            let available = output_limit.saturating_sub(state.stdout.len() + state.stderr.len());
+                            state.stderr.extend_from_slice(&stderr_buffer[..size.min(available)]);
+                            updates.send_replace(state.clone());
+                        }
+                        Err(error) => return Err(format!("Failed to read command stderr: {error}")),
+                    }
+                }
             }
-            let combined = truncate_output(combined, output_limit);
-            if output.status.success() {
-                ToolExecutionResult::success(combined)
+        }
+        Ok::<_, String>(exit_status.expect("child exit status was observed"))
+    };
+
+    match timeout(Duration::from_secs(timeout_secs), collect_output).await {
+        Ok(Ok(status)) => {
+            let output = truncate_output(state.output(), output_limit);
+            if status.success() {
+                ToolExecutionResult::success(output)
             } else {
                 ToolExecutionResult::error(format!(
                     "Command failed with exit code {:?}:\n{}",
-                    output.status.code(),
-                    combined
+                    status.code(),
+                    output
                 ))
             }
         }
-        Ok(Err(error)) => ToolExecutionResult::error(format!("Command execution error: {error}")),
-        Err(_) => {
-            ToolExecutionResult::error(format!("Command timed out after {timeout_secs} seconds"))
-        }
+        Ok(Err(error)) => ToolExecutionResult::error(error),
+        Err(_) => ToolExecutionResult::error(format!("Command timed out after {timeout_secs} seconds")),
     }
 }
 
@@ -266,20 +350,31 @@ mod tests {
     async fn long_commands_return_a_monitor_id_and_can_be_collected() {
         let monitor = CommandMonitor::new(1024);
         let command = if cfg!(windows) {
-            "Start-Sleep -Seconds 6; Write-Output finished"
+            "Write-Output started; Start-Sleep -Seconds 6; Write-Output finished"
         } else {
-            "sleep 6; printf finished"
+            "printf started; sleep 6; printf finished"
         };
 
         let started = tokio::time::Instant::now();
         let result = monitor.start(command, ".", 30).await;
         assert!(!result.is_error);
-        let id = result.output.split("command_id: ").nth(1).unwrap();
+        let id = result
+            .output
+            .lines()
+            .find_map(|line| line.strip_prefix("command_id: "))
+            .unwrap()
+            .to_string();
         assert!(started.elapsed() >= COMMAND_START_WAIT);
-        assert!(monitor.status(id).await.output.contains("still running"));
+        assert!(result.output.contains("started"));
+        assert!(!result.output.contains("finished"));
+
+        let running = monitor.status(&id).await;
+        assert!(!running.is_error);
+        assert!(running.output.contains("started"));
+        assert!(!running.output.contains("finished"));
 
         tokio::time::sleep(Duration::from_secs(2)).await;
-        let completed = monitor.status(id).await;
+        let completed = monitor.status(&id).await;
         assert!(!completed.is_error);
         assert!(completed.output.contains("finished"));
     }

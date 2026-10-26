@@ -1,3 +1,5 @@
+import * as NodeFS from "node:fs";
+
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
@@ -130,19 +132,70 @@ export function buildPullRequestReviewPrompt(context: GitPullRequestReviewContex
 const decodeOutput = Schema.decodeUnknownSync(GitPullRequestReviewOutput);
 const decodeResult = Schema.decodeUnknownSync(GitPullRequestReviewResult);
 
+type ReviewValidationFailureKind = "format" | "anchors";
+
+class ReviewOutputValidationError extends Error {
+  readonly kind: ReviewValidationFailureKind;
+
+  constructor(kind: ReviewValidationFailureKind) {
+    super(
+      kind === "format"
+        ? "response must be JSON matching the required review schema"
+        : "findings must use exact paths and added-line anchors from the supplied diff, without duplicates",
+    );
+    this.kind = kind;
+    this.name = "ReviewOutputValidationError";
+  }
+}
+
+function resolveReviewCwd(cwd: string): string {
+  try {
+    if (NodeFS.statSync(cwd).isDirectory()) return cwd;
+  } catch {
+    // A review uses only the supplied diff, so it can safely run from the server's cwd.
+  }
+  return process.cwd();
+}
+
 function parseOutput(raw: string) {
   const text = raw.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/iu, "$1");
-  // Deliberately strict: prose/summary-only replies must never turn into a clean review.
-  return decodeOutput(JSON.parse(text));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new ReviewOutputValidationError("format");
+  }
+  try {
+    return decodeOutput(parsed);
+  } catch {
+    throw new ReviewOutputValidationError("format");
+  }
 }
 
 function validateOutput(raw: string, diff: string) {
   const review = parseOutput(raw);
   const validated = validatePullRequestReviewFindings(review.findings, diff);
   if (validated.skippedCount > 0) {
-    throw new Error("Some findings have invalid or duplicate added-line anchors.");
+    throw new ReviewOutputValidationError("anchors");
   }
   return { ...review, findings: validated.findings };
+}
+
+function retryGuidance(error: unknown): string {
+  const kind = error instanceof ReviewOutputValidationError ? error.kind : "format";
+  return kind === "anchors"
+    ? "The previous output used invalid or duplicate anchors. Choose only exact repository-relative paths and absolute line numbers listed in the supplied allowed-anchor map. Remove findings that do not match an added line."
+    : 'The previous output was not valid JSON matching the requested schema. Return exactly one JSON object with non-empty "summary" and an explicit "findings" array. Each finding must include path, line, severity, title, and body.';
+}
+
+function invalidReviewAfterRetry(error: unknown): Error {
+  const detail =
+    error instanceof ReviewOutputValidationError
+      ? error.message
+      : "response could not be validated against the required review schema";
+  return new Error(
+    `The model returned an invalid review after a retry: ${detail}. No review was posted; try another review model.`,
+  );
 }
 
 /** Server-owned review pipeline. No threads, tool access, posting, or second AI summary call. */
@@ -180,7 +233,7 @@ export const runPullRequestReview = (
             : `${prompt}\n\nPerform an independent second pass concentrating on edge cases and failure paths. Report only bugs you can substantiate.`;
         const call = (text: string) =>
           generate({
-            cwd: input.cwd,
+            cwd: resolveReviewCwd(input.cwd),
             modelSelection: input.modelSelection,
             systemPrompt,
             prompt: text,
@@ -190,18 +243,17 @@ export const runPullRequestReview = (
           try: () => validateOutput(response.response, segment),
           catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
         }).pipe(
-          Effect.catch(() =>
+          Effect.catch((validationError) =>
             call(
-              `${request}\n\nThe previous output failed validation. Return exactly the requested JSON with an explicit findings array. Use only supplied added-line anchors and remove duplicates. Never replace a bug report with a summary-only response.`,
+              `${request}\n\n${retryGuidance(validationError)} Never replace a bug report with a summary-only response.`,
             ).pipe(
               Effect.flatMap((retry) =>
                 Effect.try({
                   try: () => validateOutput(retry.response, segment),
-                  catch: () =>
-                    new Error(
-                      "The model returned an invalid review after a retry. No review was posted; try another review model.",
-                    ),
-                }),
+                  catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+                }).pipe(
+                  Effect.catch((retryError) => Effect.fail(invalidReviewAfterRetry(retryError))),
+                ),
               ),
             ),
           ),

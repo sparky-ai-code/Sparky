@@ -1,3 +1,5 @@
+import * as NodePath from "node:path";
+
 import { it } from "@effect/vitest";
 import { expect } from "vite-plus/test";
 import * as Effect from "effect/Effect";
@@ -59,6 +61,18 @@ it.effect("returns every validated bug in the report without an extra AI summary
   }),
 );
 
+it.effect("uses a valid server cwd when the PR workspace has disappeared", () =>
+  Effect.gen(function* () {
+    const missingCwd = NodePath.join(process.cwd(), `.missing-pr-review-${Date.now()}`);
+    let observedCwd = "";
+    yield* runPullRequestReview({ ...input, cwd: missingCwd }, (request) => {
+      observedCwd = request.cwd;
+      return Effect.succeed(output([]));
+    });
+    expect(observedCwd).toBe(process.cwd());
+  }),
+);
+
 it.effect("keeps distinct bugs on the same added line", () =>
   Effect.gen(function* () {
     const secondBug = {
@@ -88,15 +102,36 @@ it.effect("retries summary-only output instead of silently claiming a clean revi
   }),
 );
 
-it.effect("fails closed when anchors are still invalid after correction", () =>
+it.effect(
+  "retries anchor failures with specific guidance and explains the final validation failure",
+  () =>
+    Effect.gen(function* () {
+      let calls = 0;
+      const error = yield* runPullRequestReview(input, (request) => {
+        calls += 1;
+        if (calls === 1) return Effect.succeed(output([{ ...bug, line: 8 }]));
+        expect(request.prompt).toContain(
+          "exact repository-relative paths and absolute line numbers",
+        );
+        return Effect.succeed(output([{ ...bug, line: 8 }]));
+      }).pipe(Effect.flip);
+      expect(calls).toBe(2);
+      expect(String(error)).toContain("exact paths and added-line anchors");
+      expect(String(error)).toContain("No review was posted");
+    }),
+);
+
+it.effect("retries invalid model formatting with schema-specific guidance", () =>
   Effect.gen(function* () {
     let calls = 0;
-    const error = yield* runPullRequestReview(input, () => {
+    const result = yield* runPullRequestReview(input, (request) => {
       calls += 1;
-      return Effect.succeed(output([{ ...bug, line: 8 }]));
-    }).pipe(Effect.flip);
+      if (calls === 1) return Effect.succeed({ response: "I found a bug." });
+      expect(request.prompt).toContain('an explicit "findings" array');
+      return Effect.succeed(output());
+    });
     expect(calls).toBe(2);
-    expect(String(error)).toContain("invalid review after a retry");
+    expect(result.findings).toEqual([bug]);
   }),
 );
 

@@ -1242,15 +1242,6 @@ export function PullRequestsPage() {
   const activePullRequestActionBusy =
     pullRequestActionBusy ?? (pullRequestReviewSnapshot.activeKey !== null ? "review" : null);
 
-  useEffect(() => {
-    if (
-      selectedReviewProgress?.reviewSummary &&
-      (selectedReviewProgress.phase === "success" || selectedReviewProgress.phase === "error")
-    ) {
-      setReviewSummaryOpen(true);
-    }
-  }, [selectedReviewProgress?.phase, selectedReviewProgress?.reviewSummary]);
-
   if (!isElectron || getGitHubBridge() === null) {
     return (
       <main className="flex min-h-0 flex-1 items-center justify-center bg-background p-6 text-foreground">
@@ -1579,14 +1570,17 @@ export function PullRequestsPage() {
                             )}
                             Review PR
                           </Button>
-                          {selectedReviewProgress?.reviewSummary ? (
+                          {selectedReviewProgress?.reviewSummary ||
+                          selectedReviewProgress?.phase === "error" ? (
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => setReviewSummaryOpen(true)}
                             >
                               <FileTextIcon className="size-3.5" />
-                              Review summary
+                              {selectedReviewProgress.reviewSummary
+                                ? "Review summary"
+                                : "Review status"}
                             </Button>
                           ) : null}
                           <Button

@@ -46,6 +46,7 @@ import {
 import { GitManagerError, GitPullRequestMaterializationError } from "@sparky/contracts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import { runPullRequestReview } from "./PullRequestReview.ts";
 import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@sparky/contracts";
@@ -1466,12 +1467,17 @@ export const make = Effect.gen(function* () {
   const reviewPullRequest: GitManager["Service"]["reviewPullRequest"] = Effect.fn(
     "reviewPullRequest",
   )(function* (input) {
-    return yield* textGeneration.generatePullRequestReview({
-      cwd: input.cwd,
-      modelSelection: input.modelSelection,
-      prompt: input.prompt,
-      systemPrompt: input.systemPrompt,
-    });
+    return yield* runPullRequestReview(input, textGeneration.generatePullRequestReview).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitManagerError({
+            operation: "reviewPullRequest",
+            cwd: input.cwd,
+            detail: cause instanceof Error ? cause.message : String(cause),
+            cause,
+          }),
+      ),
+    );
   });
 
   const preparePullRequestThread: GitManager["Service"]["preparePullRequestThread"] = Effect.fn(

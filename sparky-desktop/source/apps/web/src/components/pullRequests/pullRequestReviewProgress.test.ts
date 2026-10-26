@@ -22,7 +22,11 @@ describe("pull request review progress", () => {
       report("reviewing", "Analyzing changed code for review findings…");
       await reviewGate;
       report("validating", "Checking findings against changed lines…");
-      report("success", "Review posted.", "The review found no actionable bugs; the PR is good to go.");
+      report(
+        "success",
+        "Review posted.",
+        "The review found no actionable bugs; the PR is good to go.",
+      );
     });
 
     expect(task).not.toBeNull();
@@ -61,6 +65,23 @@ describe("pull request review progress", () => {
     expect(reviewNotifications).toBeGreaterThan(0);
     expect(returningNotifications).toBeGreaterThan(0);
     unsubscribeReturningSubscriber();
+  });
+
+  it("keeps the bug report available when posting fails, but clears it for a new run", async () => {
+    const key = "example/project#posting-failure";
+    await startPullRequestReviewProgress(key, async (report) => {
+      report("posting", "Posting comments…", "Bugs (1): Guard missing input at src/input.ts:9.");
+      throw new Error("GitHub did not confirm posting.");
+    });
+    expect(getPullRequestReviewProgressSnapshot().progressByKey.get(key)).toMatchObject({
+      phase: "error",
+      reviewSummary: "Bugs (1): Guard missing input at src/input.ts:9.",
+    });
+    const retry = startPullRequestReviewProgress(key, async () => {});
+    expect(
+      getPullRequestReviewProgressSnapshot().progressByKey.get(key)?.reviewSummary,
+    ).toBeUndefined();
+    await retry;
   });
 
   it("keeps task failures visible and releases the active slot", async () => {

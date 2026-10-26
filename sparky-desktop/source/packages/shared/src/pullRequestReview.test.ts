@@ -257,6 +257,14 @@ describe("pull request review output", () => {
     ).toEqual({ findings: [finding], skippedCount: 3 });
   });
 
+  it("preserves different bugs on the same added line", () => {
+    const second = { ...finding, title: "Reject invalid input", body: "A distinct defect." };
+    expect(validatePullRequestReviewFindings([finding, second, finding], patch)).toEqual({
+      findings: [finding, second],
+      skippedCount: 1,
+    });
+  });
+
   it("normalizes Git diff path prefixes before validating findings", () => {
     expect(
       validatePullRequestReviewFindings([{ ...finding, path: "b/src/example.ts" }], patch),

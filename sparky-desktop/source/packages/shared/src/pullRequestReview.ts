@@ -730,7 +730,9 @@ export function validatePullRequestReviewFindings(
         : []),
     ];
     const matchedPath = candidatePaths.find((path) => addedLines.get(path)?.has(finding.line));
-    const key = matchedPath ? `${matchedPath}\0${finding.line}` : null;
+    const key = matchedPath
+      ? `${matchedPath}\0${finding.line}\0${finding.title.toLowerCase()}`
+      : null;
     if (!matchedPath || !key || seen.has(key)) {
       skippedCount += 1;
       continue;

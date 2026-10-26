@@ -15,6 +15,7 @@
   - Backend changes must include and run focused tests for the changed behavior.
   - Run targeted formatting, lint, and type checks for the affected scope when available.
 - Do not run repo-wide `vp check`, `vp run typecheck`, `vp run test`, or equivalent full-suite commands locally unless the user explicitly requests them. CI is responsible for the full verification suite.
+- For pull-request reviews involving this desktop workspace, read and follow `.agents/skills/pr-review-high-detail/SKILL.md` before reviewing the diff.
 - After frontend feature development or any user-visible frontend behavior change, the primary agent must run one integrated verification pass for each affected client surface after integrating the work:
   - Web: use the `test-sparky-app` skill. Launch one isolated environment, authenticate through the printed pairing URL, and verify the affected flow in the controlled browser.
   - Mobile: use the `test-sparky-mobile` skill. Connect one representative iOS Simulator or Android Emulator available on the host to one isolated environment and verify the affected flow. On compatible macOS hosts, prefer iOS for cross-platform changes and stream it through serve-sim in the Sparky in-app browser or another available agent browser; use Android when it is the affected or viable platform.

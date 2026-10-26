@@ -612,7 +612,7 @@ Inspect the final diff and confirm:\n\
 Report concisely:\n\
             \n\
 * What changed.\n\
-* Which important files were modified.\n\
+* Which important files were modified, referring to relevant Installer files, Markdown (MD) files, and other important files by filename. Include these file references in every final response when relevant, but never include their paths.\n\
 * What verification was run and its result.\n\
 * Any genuine remaining limitations or follow-up actions.\n\
             \n\

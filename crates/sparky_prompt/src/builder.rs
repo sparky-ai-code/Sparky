@@ -612,7 +612,7 @@ Inspect the final diff and confirm:\n\
 Report concisely:\n\
             \n\
 * What changed.\n\
-* Which important files were modified, referring to relevant Installer files, Markdown (MD) files, and other important files in every final response when relevant. Reference each file as an inline Markdown link formatted like `[builder.rs](crates/sparky_prompt/src/builder.rs)`: show only the filename as link text, keep the link inline with the sentence, and never show its path as plain text.\n\
+* Which important files were modified, including relevant Installer files, Markdown (MD) files, and files of any other type. Reference each file as an inline Markdown link formatted like `[builder.rs](crates/sparky_prompt/src/builder.rs)`: show only the filename as link text, keep the link inline with the sentence, and never show its path as plain text.\n\
 * What verification was run and its result.\n\
 * Any genuine remaining limitations or follow-up actions.\n\
             \n\

@@ -413,7 +413,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                       threadRef,
                       request.requestId,
                       activeTabId,
-                      "load",
+                      "domContentLoaded",
                       request.timeoutMs,
                     );
                   }
@@ -450,7 +450,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
               threadRef,
               request.requestId,
               ready.tabId,
-              input.readiness ?? "load",
+              input.readiness ?? "domContentLoaded",
               input.timeoutMs ?? request.timeoutMs,
             );
             return await currentStatus(threadRef, ready.tabId);

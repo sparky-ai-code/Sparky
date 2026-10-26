@@ -1,6 +1,6 @@
 import { scopedThreadKey, scopeThreadRef } from "@sparky/client-runtime/environment";
 import { type EnvironmentId, type PreviewSessionSnapshot, ThreadId } from "@sparky/contracts";
-import { beforeEach, describe, expect, it } from "vite-plus/test";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   __testing,
@@ -38,6 +38,39 @@ beforeEach(() => {
 });
 
 describe("previewStateStore (single-tab)", () => {
+  it("persists preview tabs so their URLs can be restored after restart", () => {
+    const restoredRef = scopeThreadRef(environmentId, ThreadId.make("restore-thread"));
+    const first = makeSnapshot({ tabId: "restore-a" });
+    const second = makeSnapshot({
+      tabId: "restore-b",
+      navStatus: { _tag: "Success", url: "https://example.com/second", title: "Second" },
+    });
+    const storage = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
+
+    try {
+      __testing.persistPreviewSessions(scopedThreadKey(restoredRef), {
+        [first.tabId]: first,
+        [second.tabId]: second,
+      });
+
+      const restoredState = readThreadPreviewState(restoredRef);
+      expect(Object.keys(restoredState.sessions)).toEqual([first.tabId, second.tabId]);
+      expect(restoredState.snapshot?.tabId).toBe(second.tabId);
+      expect(__testing.readPersistedPreviewSessions()[scopedThreadKey(restoredRef)]).toEqual({
+        [first.tabId]: first,
+        [second.tabId]: second,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps independent state atoms for each thread", () => {
     expect(previewStateAtom(scopedThreadKey(ref))).toBe(previewStateAtom(scopedThreadKey(ref)));
     expect(previewStateAtom(scopedThreadKey(ref))).not.toBe(

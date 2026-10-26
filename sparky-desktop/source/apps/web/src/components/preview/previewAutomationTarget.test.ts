@@ -44,7 +44,16 @@ describe("preview automation target selection", () => {
     ).toEqual({ tabId: null, snapshot: null });
   });
 
-  it("reuses the provider session's pinned tab instead of the mutable UI tab", () => {
+  it("claims a dedicated tab instead of borrowing the UI-selected tab on first open", () => {
+    const uiActive = snapshot("tab-ui-active");
+    const state = { snapshot: uiActive, sessions: { [uiActive.tabId]: uiActive } };
+
+    expect(resolvePreviewAutomationOpenTab(state, undefined, true)).toBeNull();
+    expect(resolvePreviewAutomationOpenTab(state, uiActive.tabId, true)).toBe(uiActive.tabId);
+    expect(resolvePreviewAutomationOpenTab(state, uiActive.tabId, false)).toBeNull();
+  });
+
+  it("reuses the provider session's claimed tab instead of the mutable UI tab", () => {
     const uiActive = snapshot("tab-ui-active");
     const agentTab = snapshot("tab-opened-by-agent");
     const state = {
@@ -53,7 +62,5 @@ describe("preview automation target selection", () => {
     };
 
     expect(resolvePreviewAutomationOpenTab(state, agentTab.tabId, true)).toBe(agentTab.tabId);
-    expect(resolvePreviewAutomationOpenTab(state, undefined, true)).toBe(uiActive.tabId);
-    expect(resolvePreviewAutomationOpenTab(state, agentTab.tabId, false)).toBeNull();
   });
 });

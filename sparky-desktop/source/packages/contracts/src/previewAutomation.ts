@@ -22,8 +22,8 @@ const BoundedUrl = Schema.String.check(Schema.isTrimmed())
 const OptionalTimeoutMs = Schema.optional(
   Schema.Int.check(Schema.isGreaterThan(0))
     .check(Schema.isLessThanOrEqualTo(60_000))
-    .annotate({ description: "Maximum wait in milliseconds. Defaults to 15000; maximum 60000." }),
-).annotate({ description: "Maximum wait in milliseconds. Defaults to 15000; maximum 60000." });
+    .annotate({ description: "Maximum wait in milliseconds. Defaults to 60000; maximum 60000." }),
+).annotate({ description: "Maximum wait in milliseconds. Defaults to 60000; maximum 60000." });
 
 /** Operations understood by desktop hosts predating viewport resizing. */
 export const PREVIEW_AUTOMATION_V1_OPERATIONS = [
@@ -159,11 +159,11 @@ export const PreviewAutomationNavigateInput = Schema.Struct({
   readiness: Schema.optional(
     Schema.Literals(["load", "domContentLoaded", "none"]).annotate({
       description:
-        "Readiness milestone before returning. 'load' waits for loading to stop (default), 'domContentLoaded' waits for an interactive document, and 'none' returns immediately.",
+        "Readiness milestone before returning. 'domContentLoaded' waits for the document to become interactive, 'load' waits for loading to stop, and 'none' returns immediately.",
     }),
   ).annotate({
     description:
-      "Readiness milestone before returning. 'load' is the default; use 'none' only when a later wait call will verify the page.",
+      "Readiness milestone before returning. 'domContentLoaded' is the default; use 'load' to wait for all loading to stop, or 'none' to return immediately.",
   }),
   timeoutMs: OptionalTimeoutMs,
 })

@@ -50,8 +50,71 @@ const emptyPreviewStateAtom = Atom.make<ThreadPreviewState>(EMPTY_THREAD_PREVIEW
   Atom.withLabel("preview:empty-thread"),
 );
 
+const PREVIEW_SESSION_STORAGE_KEY = "sparky:preview-sessions:v1";
+
+const readPersistedPreviewSessions = (): Record<string, Record<string, PreviewSessionSnapshot>> => {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed: unknown = JSON.parse(
+      window.localStorage.getItem(PREVIEW_SESSION_STORAGE_KEY) ?? "{}",
+    );
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([threadKey, rawSessions]) => {
+        if (!rawSessions || typeof rawSessions !== "object" || Array.isArray(rawSessions)) return [];
+        const sessions = Object.fromEntries(
+          Object.entries(rawSessions).filter(([, value]) => {
+            if (!value || typeof value !== "object") return false;
+            const snapshot = value as Partial<PreviewSessionSnapshot>;
+            return (
+              typeof snapshot.tabId === "string" &&
+              typeof snapshot.threadId === "string" &&
+              typeof snapshot.updatedAt === "string" &&
+              typeof snapshot.navStatus === "object" &&
+              snapshot.navStatus !== null
+            );
+          }),
+        ) as Record<string, PreviewSessionSnapshot>;
+        return Object.keys(sessions).length > 0 ? [[threadKey, sessions]] : [];
+      }),
+    );
+  } catch {
+    return {};
+  }
+};
+
+const persistedPreviewSessions = readPersistedPreviewSessions();
+
+const persistPreviewSessions = (
+  threadKey: string,
+  sessions: Record<string, PreviewSessionSnapshot>,
+): void => {
+  if (typeof window === "undefined") return;
+  try {
+    const next = { ...persistedPreviewSessions };
+    if (Object.keys(sessions).length === 0) delete next[threadKey];
+    else next[threadKey] = sessions;
+    window.localStorage.setItem(PREVIEW_SESSION_STORAGE_KEY, JSON.stringify(next));
+    for (const key of Object.keys(persistedPreviewSessions)) delete persistedPreviewSessions[key];
+    Object.assign(persistedPreviewSessions, next);
+  } catch {
+    // Preview restoration is best-effort when browser storage is unavailable/full.
+  }
+};
+
 export const previewStateAtom = Atom.family((threadKey: string) =>
-  Atom.make<ThreadPreviewState>(EMPTY_THREAD_PREVIEW_STATE).pipe(
+  Atom.make<ThreadPreviewState>({
+    ...EMPTY_THREAD_PREVIEW_STATE,
+    sessions: persistedPreviewSessions[threadKey] ?? {},
+    snapshot:
+      Object.values(persistedPreviewSessions[threadKey] ?? {})
+        .toSorted((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+        .at(-1) ?? null,
+    activeTabId:
+      Object.values(persistedPreviewSessions[threadKey] ?? {})
+        .toSorted((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+        .at(-1)?.tabId ?? null,
+  }).pipe(
     Atom.keepAlive,
     Atom.withLabel(`preview:thread:${threadKey}`),
   ),
@@ -105,6 +168,7 @@ function updateThreadPreviewState(
   if (!changed) return;
   changedPreviewThreadKeys.add(threadKey);
   syncActivePreviewThread(threadKey, nextState);
+  persistPreviewSessions(threadKey, nextState.sessions);
 }
 
 const dedupeRecentUrls = (existing: string[], url: string): string[] => {
@@ -404,6 +468,7 @@ export function removePreviewThread(ref: ScopedThreadRef): void {
   const threadKey = scopedThreadKey(ref);
   appAtomRegistry.set(previewStateAtom(threadKey), EMPTY_THREAD_PREVIEW_STATE);
   syncActivePreviewThread(threadKey, EMPTY_THREAD_PREVIEW_STATE);
+  persistPreviewSessions(threadKey, {});
   changedPreviewThreadKeys.delete(threadKey);
 }
 
@@ -423,4 +488,6 @@ export function resetPreviewStateForTests(): void {
 export const __testing = {
   EMPTY_THREAD_PREVIEW_STATE,
   RECENT_URL_LIMIT: PREVIEW_RECENT_URL_LIMIT,
+  persistPreviewSessions,
+  readPersistedPreviewSessions,
 };

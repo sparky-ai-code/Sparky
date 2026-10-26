@@ -13,7 +13,11 @@ import {
   getPullRequestAddedLineMap,
   type PullRequestReviewFinding,
 } from "@sparky/shared/pullRequestReview";
-import { runPullRequestReview, splitPullRequestDiffForReview } from "./PullRequestReview.ts";
+import {
+  buildPullRequestReviewSystemPrompt,
+  runPullRequestReview,
+  splitPullRequestDiffForReview,
+} from "./PullRequestReview.ts";
 
 const input: GitPullRequestReviewInput = {
   cwd: "C:/workspace",
@@ -41,6 +45,15 @@ const bug = {
 };
 const output = (findings: ReadonlyArray<PullRequestReviewFinding> = [bug]) => ({
   response: JSON.stringify({ summary: "Input handling was reviewed.", findings }),
+});
+
+it("includes the app-bundled high-detail review skill in the system prompt", () => {
+  const systemPrompt = buildPullRequestReviewSystemPrompt(input);
+  expect(systemPrompt).toContain("do not depend on project AGENTS.md or skill files");
+  expect(systemPrompt).toContain("Check security and privacy");
+  expect(systemPrompt).toContain("Check contracts and compatibility");
+  expect(systemPrompt).toContain("missing test alone is not a finding");
+  expect(systemPrompt).toContain("exact added line");
 });
 
 it.effect("returns every validated bug in the report without an extra AI summary call", () =>

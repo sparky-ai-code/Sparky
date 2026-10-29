@@ -112,8 +112,14 @@ export interface SparkyAssistantSegmentCallbacks {
   readonly onCompleted: (segmentId: string, text: string) => void;
 }
 
-export const SPARKY_RECONNECT_RETRY_COUNT = 5;
 const SPARKY_RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
+
+// Keep the retry cadence bounded even when a transient outage lasts a long time.
+function sparkyReconnectDelay(retryIndex: number): number {
+  return SPARKY_RECONNECT_BACKOFF_MS[
+    Math.min(retryIndex, SPARKY_RECONNECT_BACKOFF_MS.length - 1)
+  ]!;
+}
 const isSparkyProcessError = Schema.is(ProviderAdapterProcessError);
 
 const RETRYABLE_SPARKY_ERROR_MARKERS = [
@@ -1332,59 +1338,10 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
             );
           }
         };
-        const reconnectItemId = RuntimeItemId.make(`sparky-reconnect:${String(turnId)}`);
-        let reconnectStarted = false;
+        // Keep transient reconnects out of the user timeline; the turn remains
+        // active while retries run, and can still be cancelled normally.
         let successfulRetryCount = 0;
         let attemptProducedOutput = false;
-        const reconnectData = (retryCount: number, error?: unknown) => ({
-          provider: "sparky",
-          retryCount,
-          maxRetries: SPARKY_RECONNECT_RETRY_COUNT,
-          ...(error
-            ? {
-                errorTag: errorTag(error),
-                reason: sanitizeSparkyLogDetail(
-                  error instanceof Error ? error.message : String(error),
-                ),
-              }
-            : {}),
-        });
-        const publishReconnectStarted = (error: unknown) =>
-          publish({
-            type: "item.started",
-            ...stamp(threadId, turnId),
-            itemId: reconnectItemId,
-            payload: {
-              itemType: "dynamic_tool_call",
-              status: "inProgress",
-              title: `Reconnecting with ${SPARKY_RECONNECT_RETRY_COUNT} retries`,
-              data: reconnectData(0, error),
-            },
-          });
-        const publishReconnectUpdated = (retryCount: number, error: unknown) =>
-          publish({
-            type: "item.updated",
-            ...stamp(threadId, turnId),
-            itemId: reconnectItemId,
-            payload: {
-              itemType: "dynamic_tool_call",
-              status: "inProgress",
-              title: `Reconnecting (${retryCount}/${SPARKY_RECONNECT_RETRY_COUNT})`,
-              data: reconnectData(retryCount, error),
-            },
-          });
-        const publishReconnectCompleted = (success: boolean, retryCount: number, error?: unknown) =>
-          publish({
-            type: "item.completed",
-            ...stamp(threadId, turnId),
-            itemId: reconnectItemId,
-            payload: {
-              itemType: "dynamic_tool_call",
-              status: success ? "completed" : "failed",
-              title: success ? "Reconnected" : "Reconnect failed",
-              data: reconnectData(retryCount, error),
-            },
-          });
         const runAttempt = (attempt: number) =>
           Effect.gen(function* () {
             if (isTurnCancelled()) {
@@ -1397,7 +1354,6 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
             attemptProducedOutput = false;
             yield* logAdapterEvent(threadId, "process.start", {
               attempt: attempt + 1,
-              maxAttempts: SPARKY_RECONNECT_RETRY_COUNT + 1,
               model,
               ...(workspaceContext === "none" ? {} : { cwd }),
               workspaceContext,
@@ -1554,33 +1510,15 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
                   errorTag: errorTag(error),
                   detail: sanitizeSparkyLogDetail(detail),
                 });
-                if (!retryable || retryIndex >= SPARKY_RECONNECT_RETRY_COUNT) {
-                  if (reconnectStarted) {
-                    yield* logAdapterEvent(threadId, "reconnect.exhausted", {
-                      retryCount: retryIndex,
-                      errorTag: errorTag(error),
-                    });
-                    yield* publishReconnectCompleted(false, retryIndex, error);
-                  }
+                if (!retryable) {
                   return yield* error;
-                }
-                if (!reconnectStarted) {
-                  reconnectStarted = true;
-                  yield* logAdapterEvent(threadId, "reconnect.started", {
-                    maxRetries: SPARKY_RECONNECT_RETRY_COUNT,
-                    errorTag: errorTag(error),
-                  });
-                  yield* publishReconnectStarted(error);
                 }
                 const nextRetry = retryIndex + 1;
                 yield* logAdapterEvent(threadId, "reconnect.attempt", {
                   retryCount: nextRetry,
-                  maxRetries: SPARKY_RECONNECT_RETRY_COUNT,
+                  errorTag: errorTag(error),
                 });
-                yield* publishReconnectUpdated(nextRetry, error);
-                yield* Effect.sleep(
-                  Duration.millis(SPARKY_RECONNECT_BACKOFF_MS[retryIndex] ?? 16_000),
-                );
+                yield* Effect.sleep(Duration.millis(sparkyReconnectDelay(retryIndex)));
                 return yield* runWithReconnect(nextRetry);
               });
             }),
@@ -1590,11 +1528,10 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
         // also reports a process failure while it is being killed, do not
         // publish a second failed completion for the already-settled turn.
         if (isTurnCancelled()) return;
-        if (reconnectStarted) {
+        if (successfulRetryCount > 0) {
           yield* logAdapterEvent(threadId, "reconnect.succeeded", {
             retryCount: successfulRetryCount,
           });
-          yield* publishReconnectCompleted(true, successfulRetryCount);
         }
         assistantSegments.finish(result.response);
 

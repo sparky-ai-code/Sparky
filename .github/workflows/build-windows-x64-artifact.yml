@@ -38,7 +38,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
       - name: Install desktop dependencies
-        run: pnpm install --no-frozen-lockfile --filter '!t3code-relay'
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
           PUPPETEER_SKIP_DOWNLOAD: 'true'
@@ -84,7 +84,7 @@ jobs:
         run: cargo build --release -p sparky_cli
         working-directory: .
       - name: Install desktop dependencies
-        run: pnpm install --no-frozen-lockfile --filter '!t3code-relay'
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
           PUPPETEER_SKIP_DOWNLOAD: 'true'

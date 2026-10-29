@@ -115,6 +115,17 @@ it.effect("retries summary-only output instead of silently claiming a clean revi
   }),
 );
 
+it.effect("keeps valid findings when the model also returns findings on invalid anchors", () =>
+  Effect.gen(function* () {
+    const result = yield* runPullRequestReview(input, () =>
+      Effect.succeed(output([bug, { ...bug, title: "Wrong line", line: 8 }])),
+    );
+    expect(result.findings).toEqual([bug]);
+    expect(result.skippedFindings).toBe(1);
+    expect(result.report).toContain("1 invalid, duplicate, or out-of-focus finding(s) omitted.");
+  }),
+);
+
 it.effect(
   "retries anchor failures with specific guidance and explains the final validation failure",
   () =>
@@ -145,6 +156,42 @@ it.effect("retries invalid model formatting with schema-specific guidance", () =
     });
     expect(calls).toBe(2);
     expect(result.findings).toEqual([bug]);
+  }),
+);
+
+it.effect("recovers anchored findings from wrapped JSON and common field aliases", () =>
+  Effect.gen(function* () {
+    let calls = 0;
+    const result = yield* runPullRequestReview(input, () => {
+      calls += 1;
+      return Effect.succeed({
+        response: `Review result:\n${JSON.stringify({
+          summary: "One issue found.",
+          findings: [
+            {
+              filePath: bug.path,
+              lineNumber: bug.line,
+              severity: "major",
+              description: bug.body,
+            },
+          ],
+        })}`,
+      });
+    });
+    expect(calls).toBe(1);
+    expect(result.findings).toEqual([{ ...bug, title: "When input.name is absent, trim throws" }]);
+  }),
+);
+
+it.effect("truncates oversized finding bodies to the shared schema limit", () =>
+  Effect.gen(function* () {
+    let calls = 0;
+    const result = yield* runPullRequestReview(input, () => {
+      calls += 1;
+      return Effect.succeed(output([{ ...bug, body: "x".repeat(4_500) }]));
+    });
+    expect(calls).toBe(1);
+    expect(result.findings[0]?.body).toHaveLength(4_000);
   }),
 );
 

@@ -13,6 +13,7 @@ import {
 } from "@sparky/contracts";
 import {
   getPullRequestAddedLineMap,
+  parsePullRequestReviewOutput,
   validatePullRequestReviewFindings,
   type PullRequestReviewFinding,
 } from "@sparky/shared/pullRequestReview";
@@ -174,26 +175,28 @@ function resolveReviewCwd(cwd: string): string {
 
 function parseOutput(raw: string) {
   const text = raw.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/iu, "$1");
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    return decodeOutput(JSON.parse(text));
   } catch {
-    throw new ReviewOutputValidationError("format");
-  }
-  try {
-    return decodeOutput(parsed);
-  } catch {
-    throw new ReviewOutputValidationError("format");
+    try {
+      const recovered = parsePullRequestReviewOutput(raw);
+      // Recovery is only for explicit bug reports; never turn malformed output
+      // into an implicit clean review when the model omitted its findings list.
+      if (recovered.findings.length === 0) throw new Error("No findings to recover");
+      return decodeOutput(recovered);
+    } catch {
+      throw new ReviewOutputValidationError("format");
+    }
   }
 }
 
 function validateOutput(raw: string, diff: string) {
   const review = parseOutput(raw);
   const validated = validatePullRequestReviewFindings(review.findings, diff);
-  if (validated.skippedCount > 0) {
+  if (review.findings.length > 0 && validated.findings.length === 0) {
     throw new ReviewOutputValidationError("anchors");
   }
-  return { ...review, findings: validated.findings };
+  return { ...review, findings: validated.findings, skippedCount: validated.skippedCount };
 }
 
 function retryGuidance(error: unknown): string {
@@ -273,6 +276,7 @@ export const runPullRequestReview = (
             ),
           ),
         );
+        skippedFindings += review.skippedCount;
         for (const finding of review.findings) {
           if (
             input.focus === "critical" &&
@@ -332,7 +336,7 @@ export const runPullRequestReview = (
               `${index + 1}. ${finding.severity.toUpperCase()}: ${finding.title}\n${finding.path}:${finding.line}\n${finding.body}`,
           )),
       ...(skippedFindings > 0
-        ? ["", `${skippedFindings} duplicate or out-of-focus finding(s) omitted.`]
+        ? ["", `${skippedFindings} invalid, duplicate, or out-of-focus finding(s) omitted.`]
         : []),
     ].join("\n\n");
     return yield* Effect.try({

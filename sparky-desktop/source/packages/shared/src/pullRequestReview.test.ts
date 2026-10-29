@@ -209,6 +209,14 @@ describe("pull request review output", () => {
     ).toEqual({ summary: "Review", findings: [finding] });
   });
 
+  it("truncates oversized finding bodies to the review contract limit", () => {
+    const parsed = parsePullRequestReviewOutput(
+      JSON.stringify({ summary: "Review", findings: [{ ...finding, body: "x".repeat(4_500) }] }),
+    );
+
+    expect(parsed.findings[0]?.body).toHaveLength(4_000);
+  });
+
   it("normalizes common and unknown severity labels without dropping findings", () => {
     const response = (severity: unknown) =>
       parsePullRequestReviewOutput(

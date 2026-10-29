@@ -20,7 +20,7 @@ export interface ValidatedPullRequestReviewFindings {
 
 const MAX_SUMMARY_LENGTH = 8_000;
 const MAX_TITLE_LENGTH = 200;
-const MAX_FINDING_BODY_LENGTH = 5_000;
+const MAX_FINDING_BODY_LENGTH = 4_000;
 
 function fail(message: string): never {
   throw new Error(`Invalid AI pull request review: ${message}`);
@@ -616,8 +616,10 @@ export function parsePullRequestReviewOutput(
     if (line === undefined || !Number.isSafeInteger(line) || line < 1) {
       return fail(`finding ${index + 1} line must be a positive integer.`);
     }
+    const rawBody =
+      extractReviewSummaryText(normalized.body) ?? extractReviewSummaryText(normalized.title);
     const body = requireTrimmedString(
-      extractReviewSummaryText(normalized.body) ?? extractReviewSummaryText(normalized.title),
+      typeof rawBody === "string" ? rawBody.slice(0, MAX_FINDING_BODY_LENGTH) : rawBody,
       `finding ${index + 1} body`,
       MAX_FINDING_BODY_LENGTH,
     );

@@ -2,6 +2,9 @@ name: Build Windows Installer
 
 on:
   pull_request:
+  push:
+    branches:
+      - t3code/remove-nightly-update-track
   workflow_dispatch:
 
 permissions:

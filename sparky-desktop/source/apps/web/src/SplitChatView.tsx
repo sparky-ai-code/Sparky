@@ -4,48 +4,38 @@ import { XIcon } from "lucide-react";
 import { useEffect } from "react";
 import { SidebarInset } from "./components/ui/sidebar";
 import ChatView, { type ChatViewProps } from "./components/ChatView";
-import { sameSplitChatThread, useSplitChatStore, type SplitChatSide } from "./splitChatStore";
+import { sameSplitChatThread, useSplitChatStore, type SplitChatPosition } from "./splitChatStore";
 
 function currentRefForProps(props: ChatViewProps): ScopedThreadRef | null {
   return props.routeKind === "server" ? scopeThreadRef(props.environmentId, props.threadId) : null;
 }
 
-function paneProps(props: ChatViewProps, ref: ScopedThreadRef, side: SplitChatSide): ChatViewProps {
+function paneProps(props: ChatViewProps, ref: ScopedThreadRef, side: SplitChatPosition): ChatViewProps {
   return {
     environmentId: ref.environmentId,
     threadId: ref.threadId,
     routeKind: "server",
     ...(props.onDiffPanelOpen ? { onDiffPanelOpen: props.onDiffPanelOpen } : {}),
     forceExpandedMobileComposer: false,
-    reserveTitleBarControlInset: side === "right" && props.reserveTitleBarControlInset !== false,
+    reserveTitleBarControlInset: side.endsWith("right") && props.reserveTitleBarControlInset !== false,
   };
 }
 
 export function SplitChatView(props: ChatViewProps) {
   const currentRef = currentRefForProps(props);
-  const left = useSplitChatStore((state) => state.left);
-  const right = useSplitChatStore((state) => state.right);
+  const panes = useSplitChatStore((state) => state.panes);
   const clearSplit = useSplitChatStore((state) => state.clearSplit);
-  const isSplit =
-    currentRef !== null &&
-    left !== null &&
-    right !== null &&
-    !sameSplitChatThread(left, right) &&
-    (sameSplitChatThread(currentRef, left) || sameSplitChatThread(currentRef, right));
+  const paneEntries = (Object.entries(panes) as [SplitChatPosition, ScopedThreadRef][])
+    .filter(([, ref]) => Boolean(ref));
+  const isSplit = currentRef !== null && paneEntries.length >= 2 && paneEntries.some(([, ref]) => sameSplitChatThread(ref, currentRef));
 
   useEffect(() => {
-    if (
-      currentRef !== null &&
-      left !== null &&
-      right !== null &&
-      !sameSplitChatThread(currentRef, left) &&
-      !sameSplitChatThread(currentRef, right)
-    ) {
+    if (currentRef !== null && paneEntries.length > 0 && !paneEntries.some(([, ref]) => sameSplitChatThread(ref, currentRef))) {
       clearSplit();
     }
-  }, [clearSplit, currentRef, left, right]);
+  }, [clearSplit, currentRef, panes]);
 
-  if (!isSplit || !left || !right || !currentRef) {
+  if (!isSplit || !currentRef) {
     return (
       <SidebarInset className="relative h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
         <ChatView {...props} />
@@ -61,21 +51,18 @@ export function SplitChatView(props: ChatViewProps) {
       data-thread-id={currentRef.threadId}
       aria-label="Split chat view"
     >
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
-        <div
-          className="relative flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden border-r border-border/80"
-          data-split-chat-pane="left"
-          data-testid="split-chat-left"
-        >
-          <ChatView key={scopedThreadKey(left)} {...paneProps(props, left, "left")} />
-        </div>
-        <div
-          className="relative flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden"
-          data-split-chat-pane="right"
-          data-testid="split-chat-right"
-        >
-          <ChatView key={scopedThreadKey(right)} {...paneProps(props, right, "right")} />
-        </div>
+      <div className={`relative grid min-h-0 min-w-0 flex-1 grid-cols-2 overflow-hidden ${paneEntries.length <= 2 ? "grid-rows-1" : "grid-rows-2"}`}>
+        {paneEntries.map(([position, ref]) => (
+          <div
+            key={position}
+            className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden ${position.includes("right") ? "border-l" : ""} ${position.startsWith("bottom") ? "border-t" : ""} border-border/80`}
+            style={{ gridColumn: position.endsWith("left") ? 1 : 2, gridRow: position.startsWith("top") ? 1 : 2 }}
+            data-split-chat-pane={position}
+            data-testid={`split-chat-${position}`}
+          >
+            <ChatView key={scopedThreadKey(ref)} {...paneProps(props, ref, position)} />
+          </div>
+        ))}
       </div>
       <button
         type="button"

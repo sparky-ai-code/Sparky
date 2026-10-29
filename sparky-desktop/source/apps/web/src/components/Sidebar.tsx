@@ -440,12 +440,9 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   const setSplit = useSplitChatStore((state) => state.setSplit);
   const canSplitThread = routeThreadRef !== null && !sameSplitChatThread(routeThreadRef, threadRef);
   const openThreadInSplit = useCallback(
-    (side: "left" | "right") => {
+    (side: "left" | "right" | "bottom-left" | "bottom-right") => {
       if (!routeThreadRef || sameSplitChatThread(routeThreadRef, threadRef)) return;
-      setSplit(
-        side === "left" ? threadRef : routeThreadRef,
-        side === "left" ? routeThreadRef : threadRef,
-      );
+      setSplit(routeThreadRef, threadRef, side);
     },
     [routeThreadRef, setSplit, threadRef],
   );
@@ -955,11 +952,19 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
               <MenuPopup align="end" side="bottom">
                 <MenuItem disabled={!canSplitThread} onClick={() => openThreadInSplit("left")}>
                   <Columns2Icon className="size-3.5" />
-                  Open on left in split view
+                  Left
                 </MenuItem>
                 <MenuItem disabled={!canSplitThread} onClick={() => openThreadInSplit("right")}>
                   <Columns2Icon className="size-3.5" />
-                  Open on right in split view
+                  Right
+                </MenuItem>
+                <MenuItem disabled={!canSplitThread} onClick={() => openThreadInSplit("bottom-left")}>
+                  <Columns2Icon className="size-3.5" />
+                  Bottom left
+                </MenuItem>
+                <MenuItem disabled={!canSplitThread} onClick={() => openThreadInSplit("bottom-right")}>
+                  <Columns2Icon className="size-3.5" />
+                  Bottom right
                 </MenuItem>
                 <MenuItem
                   data-testid={`thread-pin-${thread.id}`}

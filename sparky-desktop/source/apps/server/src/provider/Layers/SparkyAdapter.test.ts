@@ -95,6 +95,17 @@ describe("Sparky reconnect classification", () => {
   });
 });
 
+describe("Sparky process error formatting", () => {
+  it("preserves the detailed runtime error and redacts credentials", () => {
+    expect(
+      formatSparkyProcessError(
+        "Provider request timed out: Authorization: Bearer secret-token api_key=private-key",
+        "project",
+      ),
+    ).toBe("Provider request timed out: Authorization: <redacted> api_key=<redacted>");
+  });
+});
+
 describe("makeSparkyStreamDecoder", () => {
   it("allows the result callback to finish the decoder synchronously", () => {
     let finished: unknown;

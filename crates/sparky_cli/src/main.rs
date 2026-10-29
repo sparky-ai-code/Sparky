@@ -460,7 +460,7 @@ async fn run_persistent_json_stream(
                 tracing::error!("Persistent Sparky turn failed: {error:#}");
                 write_json_line(serde_json::json!({
                     "type": "error",
-                    "message": "Sparky could not complete this turn. Check the server logs for details.",
+                    "message": format!("{error:#}"),
                     "sessionId": session.session_id(),
                 }));
             }

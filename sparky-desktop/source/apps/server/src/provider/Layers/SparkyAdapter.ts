@@ -167,13 +167,17 @@ export function isRetryableSparkyProcessError(error: unknown): boolean {
   return RETRYABLE_SPARKY_ERROR_MARKERS.some((marker) => detail.includes(marker));
 }
 
-function sanitizeSparkyLogDetail(value: string): string {
+function sanitizeSparkyErrorDetail(value: string): string {
   return value
     .replace(
-      /((?:api[_-]?key|authorization|bearer|token|password|secret)\s*[:=]\s*)([^\s,;]+)/giu,
+      /((?:api[_-]?key|authorization|token|password|secret)\s*[:=]\s*)(?:Bearer\s+)?(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
       "$1<redacted>",
     )
-    .slice(0, 1_000);
+    .replace(/\bBearer\s+[^\s,;]+/giu, "Bearer <redacted>");
+}
+
+function sanitizeSparkyLogDetail(value: string): string {
+  return sanitizeSparkyErrorDetail(value).slice(0, 1_000);
 }
 
 export function formatSparkyProcessError(
@@ -190,7 +194,7 @@ export function formatSparkyProcessError(
   ) {
     return "The configured Sparky runtime is outdated and does not support project-free chats. Rebuild or update the Sparky binary, then retry.";
   }
-  return detail;
+  return sanitizeSparkyErrorDetail(detail);
 }
 
 export function isHiddenSparkyControlTool(toolName: string): boolean {

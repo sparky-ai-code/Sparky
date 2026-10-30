@@ -353,10 +353,22 @@ async fn bind_callback_listener(preferred_port: u16) -> anyhow::Result<TcpListen
     }
 }
 
-fn is_invalid_grant_error(error: &anyhow::Error) -> bool {
-    error
-        .chain()
-        .any(|cause| cause.to_string().contains("invalid_grant"))
+fn resolve_issued_client_id(
+    requested_client_id: &str,
+    callback_client_id: Option<&str>,
+    is_new_registration: bool,
+) -> anyhow::Result<String> {
+    let client_id = if is_new_registration {
+        callback_client_id.unwrap_or_default()
+    } else {
+        requested_client_id
+    }
+    .trim();
+    anyhow::ensure!(
+        !client_id.is_empty() && client_id != OAUTH_DYNAMIC_CLIENT_ID,
+        "OpenAI did not return the registered ChatGPT client id"
+    );
+    Ok(client_id.to_owned())
 }
 
 async fn oauth_login_attempt() -> anyhow::Result<()> {
@@ -396,7 +408,7 @@ async fn oauth_login_attempt() -> anyhow::Result<()> {
     );
     open_oauth_browser(&auth_url);
 
-    let (code, issued_client_id, callback_scope) = loop {
+    let (code, callback_client_id, callback_scope) = loop {
         let (mut stream, _) = listener.accept().await?;
         let mut request = vec![0u8; 8192];
         let size = stream.read(&mut request).await?;
@@ -422,14 +434,17 @@ async fn oauth_login_attempt() -> anyhow::Result<()> {
         }
         let code = params.get("code").filter(|value| !value.is_empty()).cloned()
             .ok_or_else(|| anyhow::anyhow!("ChatGPT sign-in did not return an authorization code"))?;
-        let returned_client_id = params.get("client_id").cloned().unwrap_or_else(|| client_id.clone());
+        let callback_client_id = params.get("client_id").cloned();
         let scope = params.get("scope").cloned().unwrap_or_default();
         write_oauth_response(&mut stream, "Sign-in complete. You can return to Sparky.", "200 OK").await?;
-        break (code, returned_client_id, scope);
+        break (code, callback_client_id, scope);
     };
 
-    anyhow::ensure!(!issued_client_id.trim().is_empty() && issued_client_id != OAUTH_DYNAMIC_CLIENT_ID,
-        "OpenAI did not return the registered ChatGPT client id");
+    let issued_client_id = resolve_issued_client_id(
+        &client_id,
+        callback_client_id.as_deref(),
+        is_new_registration,
+    )?;
     // Keep the issued registration even if this one-time authorization code is rejected.
     // The next authorization must reuse the same client ID rather than register again.
     save_codex_registered_client_id(&issued_client_id)?;
@@ -482,20 +497,7 @@ async fn oauth_login_attempt() -> anyhow::Result<()> {
 }
 
 async fn oauth_login() -> anyhow::Result<()> {
-    match oauth_login_attempt().await {
-        Err(error) if is_invalid_grant_error(&error) => {
-            eprintln!(
-                "OpenAI rejected the authorization code; starting a fresh ChatGPT authorization."
-            );
-            match oauth_login_attempt().await {
-                Err(retry_error) if is_invalid_grant_error(&retry_error) => Err(anyhow::anyhow!(
-                    "OpenAI rejected the fresh authorization code as invalid_grant; please retry ChatGPT sign-in: {retry_error:#}"
-                )),
-                result => result,
-            }
-        }
-        result => result,
-    }
+    oauth_login_attempt().await
 }
 
 async fn write_oauth_response(
@@ -652,13 +654,30 @@ mod tests {
     }
 
     #[test]
-    fn retries_only_invalid_grant_token_exchange_errors() {
-        assert!(is_invalid_grant_error(&anyhow::anyhow!(
-            "ChatGPT token exchange failed: HTTP 400: {\"error\":\"invalid_grant\"}"
-        )));
-        assert!(!is_invalid_grant_error(&anyhow::anyhow!(
-            "ChatGPT token exchange failed: HTTP 400: invalid_request"
-        )));
+    fn reauthorization_uses_the_client_id_from_its_request() {
+        assert_eq!(
+            resolve_issued_client_id(
+                "oaiapp_requested-client",
+                Some("oaiapp_callback-client"),
+                false,
+            )
+            .unwrap(),
+            "oaiapp_requested-client"
+        );
+    }
+
+    #[test]
+    fn new_registration_uses_the_issued_callback_client_id() {
+        assert_eq!(
+            resolve_issued_client_id(
+                OAUTH_DYNAMIC_CLIENT_ID,
+                Some("oaiapp_issued-client"),
+                true,
+            )
+            .unwrap(),
+            "oaiapp_issued-client"
+        );
+        assert!(resolve_issued_client_id(OAUTH_DYNAMIC_CLIENT_ID, None, true).is_err());
     }
 
     #[test]

@@ -139,6 +139,7 @@ const CODEX_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
 
 const CHATGPT_CODEX_MODELS = [
   { id: "gpt-6.1-sol", name: "GPT-6.1 Sol" },
+  { id: "gpt-6.1-terra", name: "GPT-6.1 Terra" },
   { id: "gpt-6-astra", name: "GPT-6 Astra" },
   { id: "gpt-6-sol", name: "GPT-6 Sol" },
   { id: "gpt-6-luna", name: "GPT-6 Luna" },

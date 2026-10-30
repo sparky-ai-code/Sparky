@@ -230,6 +230,9 @@ describe("discoverSparkyModels", () => {
         "gpt-5.6-terra",
         "gpt-5.6-luna",
       ]);
+      expect(models.find((model) => model.id === "gpt-6.1-terra")).toMatchObject({
+        name: "GPT-6.1 Terra",
+      });
       expect(models[0]).toMatchObject({
         name: "GPT-6.1 Sol",
         reasoningSupported: true,

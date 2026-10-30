@@ -353,7 +353,13 @@ async fn bind_callback_listener(preferred_port: u16) -> anyhow::Result<TcpListen
     }
 }
 
-async fn oauth_login() -> anyhow::Result<()> {
+fn is_invalid_grant_error(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("invalid_grant"))
+}
+
+async fn oauth_login_attempt() -> anyhow::Result<()> {
     let existing = codex_auth_path()
         .ok()
         .and_then(|path| read_managed_credentials(&path).ok());
@@ -473,6 +479,23 @@ async fn oauth_login() -> anyhow::Result<()> {
     };
     save_credentials(&credentials)?;
     Ok(())
+}
+
+async fn oauth_login() -> anyhow::Result<()> {
+    match oauth_login_attempt().await {
+        Err(error) if is_invalid_grant_error(&error) => {
+            eprintln!(
+                "OpenAI rejected the authorization code; starting a fresh ChatGPT authorization."
+            );
+            match oauth_login_attempt().await {
+                Err(retry_error) if is_invalid_grant_error(&retry_error) => Err(anyhow::anyhow!(
+                    "OpenAI rejected the fresh authorization code as invalid_grant; please retry ChatGPT sign-in: {retry_error:#}"
+                )),
+                result => result,
+            }
+        }
+        result => result,
+    }
 }
 
 async fn write_oauth_response(
@@ -626,6 +649,16 @@ mod tests {
         ));
         assert!(!has_chatgpt_plan_scope("openid profile email"));
         assert!(!has_chatgpt_plan_scope("openid offline_access resource.invoke"));
+    }
+
+    #[test]
+    fn retries_only_invalid_grant_token_exchange_errors() {
+        assert!(is_invalid_grant_error(&anyhow::anyhow!(
+            "ChatGPT token exchange failed: HTTP 400: {\"error\":\"invalid_grant\"}"
+        )));
+        assert!(!is_invalid_grant_error(&anyhow::anyhow!(
+            "ChatGPT token exchange failed: HTTP 400: invalid_request"
+        )));
     }
 
     #[test]

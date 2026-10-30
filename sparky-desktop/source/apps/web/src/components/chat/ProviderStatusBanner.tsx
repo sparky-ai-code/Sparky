@@ -1,8 +1,8 @@
 import { type ServerProvider } from "@sparky/contracts";
 import { memo } from "react";
 import { InfoIcon } from "lucide-react";
-import { cn } from "~/lib/utils";
 import { formatProviderDriverKindLabel } from "../../providerModels";
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const isDemoRenderer = () => {
@@ -24,12 +24,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
 }: {
   status: ServerProvider | null;
 }) {
-  if (
-    isDemoRenderer() ||
-    !status ||
-    status.status === "ready" ||
-    status.status === "disabled"
-  ) {
+  if (isDemoRenderer() || !status || status.status === "ready" || status.status === "disabled") {
     return null;
   }
 
@@ -47,28 +42,20 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
 
   return (
     <div className="mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">
-      <div
-        className={cn(
-          "inline-flex items-center gap-3 rounded-xl border px-3.5 py-3 text-card-foreground text-sm",
-          status.status === "warning"
-            ? "border-warning/32 bg-warning/4 [&_svg]:text-warning"
-            : "border-destructive/32 bg-destructive/4 text-destructive-foreground [&_svg]:text-destructive",
-        )}
-        role="alert"
-      >
+      <Alert className="gap-3" variant={status.status === "warning" ? "warning" : "error"}>
         <InfoIcon className="size-4 shrink-0" aria-hidden />
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="font-medium">{title}</div>
+        <AlertTitle>{title}</AlertTitle>
+        <AlertDescription>
           <Tooltip>
-            <TooltipTrigger
-              render={<div className="line-clamp-3 text-muted-foreground">{message}</div>}
-            />
+            <TooltipTrigger render={<div className="line-clamp-3 text-muted-foreground" />}>
+              {message}
+            </TooltipTrigger>
             <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap">
               {message}
             </TooltipPopup>
           </Tooltip>
-        </div>
-      </div>
+        </AlertDescription>
+      </Alert>
     </div>
   );
 });

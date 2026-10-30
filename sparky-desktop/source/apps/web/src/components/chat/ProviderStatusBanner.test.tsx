@@ -23,6 +23,8 @@ describe("ProviderStatusBanner", () => {
 
     expect(markup).toContain("provider status");
     expect(markup).toContain("The provider is limited.");
+    expect(markup).toContain("bg-popover");
+    expect(markup).toContain("shadow-lg/5");
   });
 
   it("keeps provider error banners visible", () => {

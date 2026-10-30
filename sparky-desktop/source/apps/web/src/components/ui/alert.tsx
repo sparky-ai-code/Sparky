@@ -4,21 +4,24 @@ import type * as React from "react";
 
 import { cn } from "~/lib/utils";
 
-const alertVariants = cva("relative rounded-xl border px-3.5 py-3 text-card-foreground text-sm", {
-  defaultVariants: {
-    variant: "default",
-  },
-  variants: {
-    variant: {
-      default: "bg-transparent dark:bg-input/32 [&_svg]:text-muted-foreground",
-      error:
-        "border-destructive/32 bg-destructive/4 text-destructive-foreground [&_[data-slot=alert-description]]:text-destructive-foreground/80 [&_svg]:text-destructive",
-      info: "border-info/32 bg-info/4 [&_svg]:text-info",
-      success: "border-success/32 bg-success/4 [&_svg]:text-success",
-      warning: "border-warning/32 bg-warning/4 [&_svg]:text-warning",
+const alertVariants = cva(
+  "relative rounded-lg border bg-popover px-3.5 py-3 text-popover-foreground text-sm shadow-lg/5",
+  {
+    defaultVariants: {
+      variant: "default",
+    },
+    variants: {
+      variant: {
+        default: "[&_svg]:text-muted-foreground",
+        error:
+          "border-destructive/32 [&_[data-slot=alert-description]]:text-muted-foreground [&_svg]:text-destructive",
+        info: "border-info/32 [&_svg]:text-info",
+        success: "border-success/32 [&_svg]:text-success",
+        warning: "border-warning/32 [&_svg]:text-warning",
+      },
     },
   },
-});
+);
 
 function alertChildSlot(child: React.ReactElement): string | undefined {
   const propsSlot = (child.props as Record<string, string | undefined>)["data-slot"];

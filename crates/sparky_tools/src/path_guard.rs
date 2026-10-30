@@ -9,6 +9,11 @@ fn canonical_cwd(cwd: &str) -> Result<PathBuf> {
 }
 
 fn normalized_candidate(canonical_cwd: &Path, user_path: &str) -> Result<PathBuf> {
+    let path = Path::new(user_path);
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+
     let mut candidate = canonical_cwd.to_path_buf();
 
     for component in Path::new(user_path).components() {
@@ -44,17 +49,26 @@ pub(crate) fn canonicalize_existing(cwd: &str, user_path: &str) -> Result<PathBu
     let canonical_path = std::fs::canonicalize(&candidate)
         .with_context(|| format!("Failed to canonicalize path: {}", candidate.display()))?;
 
-    ensure_contained(&canonical_cwd, canonical_path)
+    if Path::new(user_path).is_absolute() {
+        Ok(canonical_path)
+    } else {
+        ensure_contained(&canonical_cwd, canonical_path)
+    }
 }
 
 pub(crate) fn resolve_write_path(cwd: &str, user_path: &str) -> Result<PathBuf> {
     let canonical_cwd = canonical_cwd(cwd)?;
     let candidate = normalized_candidate(&canonical_cwd, user_path)?;
+    let allow_external = Path::new(user_path).is_absolute();
 
     if candidate.exists() {
         let canonical_path = std::fs::canonicalize(&candidate)
             .with_context(|| format!("Failed to canonicalize path: {}", candidate.display()))?;
-        return ensure_contained(&canonical_cwd, canonical_path);
+        return if allow_external {
+            Ok(canonical_path)
+        } else {
+            ensure_contained(&canonical_cwd, canonical_path)
+        };
     }
 
     let parent = candidate
@@ -73,12 +87,15 @@ pub(crate) fn resolve_write_path(cwd: &str, user_path: &str) -> Result<PathBuf> 
             existing_ancestor.display()
         )
     })?;
-    ensure_contained(&canonical_cwd, canonical_ancestor)?;
-
-    Ok(candidate)
+    if allow_external {
+        Ok(candidate)
+    } else {
+        ensure_contained(&canonical_cwd, canonical_ancestor)?;
+        Ok(candidate)
+    }
 }
 
-pub(crate) fn validate_created_parent(cwd: &str, path: &Path) -> Result<()> {
+pub(crate) fn validate_created_parent(cwd: &str, path: &Path, allow_external: bool) -> Result<()> {
     let canonical_cwd = canonical_cwd(cwd)?;
     let parent = path
         .parent()
@@ -89,7 +106,11 @@ pub(crate) fn validate_created_parent(cwd: &str, path: &Path) -> Result<()> {
             parent.display()
         )
     })?;
-    ensure_contained(&canonical_cwd, canonical_parent).map(|_| ())
+    if allow_external {
+        Ok(())
+    } else {
+        ensure_contained(&canonical_cwd, canonical_parent).map(|_| ())
+    }
 }
 
 pub(crate) fn should_skip_directory(path: &Path) -> bool {

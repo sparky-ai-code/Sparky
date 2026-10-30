@@ -440,6 +440,7 @@ export const McpServerConnectionStatus = Schema.Struct({
   status: Schema.Literals(["online", "offline"]),
   checkedAt: Schema.Number,
   toolCount: Schema.Number,
+  message: Schema.optionalKey(Schema.String),
 });
 export type McpServerConnectionStatus = typeof McpServerConnectionStatus.Type;
 
@@ -447,14 +448,24 @@ export const McpServerConfig = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
   url: Schema.String.check(Schema.isPattern(/^https?:\/\//u)),
+  authorizationHeaderName: TrimmedNonEmptyString.pipe(
+    Schema.withDecodingDefault(Effect.succeed("Authorization")),
+  ),
   authorizationToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   authorizationTokenRedacted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type McpServerConfig = typeof McpServerConfig.Type;
 
+export const BlenderMcpSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  directoryPath: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+});
+export type BlenderMcpSettings = typeof BlenderMcpSettings.Type;
+
 export const ServerSettings = Schema.Struct({
   mcpServers: Schema.Array(McpServerConfig).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  blenderMcp: BlenderMcpSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   customInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   sparkyPersonality: SparkyPersonality.pipe(
     Schema.withDecodingDefault(Effect.succeed("coding" as const)),
@@ -617,6 +628,7 @@ const CheckpointSettingsPatch = Schema.Struct({
 
 export const ServerSettingsPatch = Schema.Struct({
   mcpServers: Schema.optionalKey(Schema.Array(McpServerConfig)),
+  blenderMcp: Schema.optionalKey(BlenderMcpSettings),
   // Server settings
   customInstructions: Schema.optionalKey(TrimmedString),
   sparkyPersonality: Schema.optionalKey(SparkyPersonality),

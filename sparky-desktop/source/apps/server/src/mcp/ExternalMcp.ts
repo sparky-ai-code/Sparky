@@ -43,7 +43,12 @@ async function send(
     "content-type": "application/json",
   };
   if (sessionId) headers["mcp-session-id"] = sessionId;
-  if (config.authorizationToken) headers.authorization = `Bearer ${config.authorizationToken}`;
+  if (config.authorizationToken) {
+    headers[config.authorizationHeaderName] =
+      config.authorizationHeaderName.toLowerCase() === "authorization"
+        ? `Bearer ${config.authorizationToken}`
+        : config.authorizationToken;
+  }
   const response = await fetch(config.url, {
     method: "POST",
     headers,

@@ -16,6 +16,20 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 
+describe("Blender MCP settings", () => {
+  it("defaults to disabled with no installation path", () => {
+    expect(decodeServerSettings({}).blenderMcp).toEqual({ enabled: false, directoryPath: "" });
+  });
+
+  it("accepts the Blender MCP directory and enabled state in settings patches", () => {
+    expect(
+      decodeServerSettingsPatch({
+        blenderMcp: { enabled: true, directoryPath: "C:\\blender_mcp\\mcp" },
+      }).blenderMcp,
+    ).toEqual({ enabled: true, directoryPath: "C:\\blender_mcp\\mcp" });
+  });
+});
+
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
     expect(decodeClientSettings({}).wordWrap).toBe(true);

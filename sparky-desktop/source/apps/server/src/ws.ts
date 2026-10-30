@@ -85,6 +85,7 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import { listExternalMcpTools } from "./mcp/ExternalMcp.ts";
+import { blenderMcpConnectionHint, listBlenderMcpTools } from "./mcp/BlenderMcp.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -1645,10 +1646,9 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.serverCheckMcpServers,
             Effect.gen(function* () {
-              const configs = yield* serverSettings.getSettings.pipe(
-                Effect.map((settings) => settings.mcpServers.filter((server) => server.enabled)),
-              );
-              return yield* Effect.forEach(
+              const settings = yield* serverSettings.getSettings;
+              const configs = settings.mcpServers.filter((server) => server.enabled);
+              const statuses = yield* Effect.forEach(
                 configs,
                 (config) =>
                   Effect.tryPromise({
@@ -1674,6 +1674,30 @@ const makeWsRpcLayer = (
                   ),
                 { concurrency: 4 },
               );
+              if (!settings.blenderMcp.enabled) return statuses;
+              const blenderStatus = yield* Effect.tryPromise({
+                try: async () => {
+                  const tools = await listBlenderMcpTools(settings.blenderMcp);
+                  return {
+                    id: "blender-mcp",
+                    status: "online" as const,
+                    checkedAt: Date.now(),
+                    toolCount: Array.isArray(tools) ? tools.length : 0,
+                  };
+                },
+                catch: (error) => error,
+              }).pipe(
+                Effect.catch((error) =>
+                  Effect.succeed({
+                    id: "blender-mcp",
+                    status: "offline" as const,
+                    checkedAt: Date.now(),
+                    toolCount: 0,
+                    message: blenderMcpConnectionHint(error),
+                  }),
+                ),
+              );
+              return [...statuses, blenderStatus];
             }),
             { "rpc.aggregate": "server" },
           ),

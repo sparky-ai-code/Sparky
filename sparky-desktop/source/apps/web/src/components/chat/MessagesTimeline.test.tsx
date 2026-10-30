@@ -377,6 +377,45 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("lucide-hammer");
   });
 
+  it("shows Blender MCP tool names as readable labels with the official favicon", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-blender-mcp",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "work-blender-mcp",
+              createdAt: MESSAGE_CREATED_AT,
+              label: "Call configured MCP tool",
+              toolTitle: "Call configured MCP tool",
+              toolName: "sparky_mcp_call_tool",
+              toolData: {
+                kind: "sparky_mcp_call_tool",
+                rawInput: {
+                  serverName: "Blender MCP",
+                  toolName: "create_object",
+                  arguments: { name: "Cube" },
+                },
+              },
+              tone: "tool",
+              itemType: "dynamic_tool_call",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Create object");
+    expect(markup).not.toContain("create_object");
+    expect(markup).toContain(
+      "https://www.blender.org/wp-content/themes/bthree/assets/icons/favicon.svg",
+    );
+    expect(markup).not.toContain("lucide-hammer");
+  });
+
   it("renders live file-change stats while the tool is running", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

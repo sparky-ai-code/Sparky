@@ -1885,6 +1885,7 @@ function formatWorkingTimerNow(startIso: string): string {
 }
 
 type WorkEntryIconName =
+  | "blender"
   | "bot"
   | "check"
   | "circle-alert"
@@ -1918,6 +1919,15 @@ type WorkEntryIconName =
 
 function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; className: string }) {
   switch (name) {
+    case "blender":
+      return (
+        <img
+          src="https://www.blender.org/wp-content/themes/bthree/assets/icons/favicon.svg"
+          alt=""
+          aria-hidden
+          className={className}
+        />
+      );
     case "bot":
       return <BotIcon className={className} aria-hidden />;
     case "check":
@@ -2291,6 +2301,39 @@ function resolvePluginToolId(toolName: string | undefined): PluginId | undefined
   return PLUGINS.find((plugin) => normalizedName.startsWith(`${plugin.id}_`))?.id;
 }
 
+function resolveBlenderMcpToolName(
+  workEntry: Pick<TimelineWorkEntry, "toolName" | "toolData">,
+): string | undefined {
+  if (workEntry.toolName?.trim().toLowerCase() !== "sparky_mcp_call_tool") return undefined;
+  if (
+    workEntry.toolData === undefined ||
+    workEntry.toolData === null ||
+    typeof workEntry.toolData !== "object" ||
+    Array.isArray(workEntry.toolData)
+  ) {
+    return undefined;
+  }
+
+  const toolData = workEntry.toolData as Record<string, unknown>;
+  const rawInput =
+    toolData.rawInput && typeof toolData.rawInput === "object" && !Array.isArray(toolData.rawInput)
+      ? (toolData.rawInput as Record<string, unknown>)
+      : null;
+  if (
+    typeof rawInput?.serverName !== "string" ||
+    rawInput.serverName.trim().toLowerCase() !== "blender mcp"
+  ) {
+    return undefined;
+  }
+  return typeof rawInput.toolName === "string" && rawInput.toolName.trim()
+    ? rawInput.toolName.trim()
+    : undefined;
+}
+
+function humanizeBlenderToolName(toolName: string): string {
+  return capitalizePhrase(toolName.replace(/_+/gu, " ").replace(/\s+/gu, " ").trim());
+}
+
 function pluginToolPresentationTitle(
   workEntry: Pick<TimelineWorkEntry, "toolName" | "toolData">,
 ): string | undefined {
@@ -2371,6 +2414,7 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
+  if (resolveBlenderMcpToolName(workEntry)) return "blender";
   const toolIconName = resolveWorkEntryToolIconName(workEntry.toolName);
   if (toolIconName) return toolIconName;
   if (workEntry.requestKind === "command") return "terminal";
@@ -2426,6 +2470,8 @@ function capitalizePhrase(value: string): string {
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
   const pluginTitle = pluginToolPresentationTitle(workEntry);
   if (pluginTitle) return pluginTitle;
+  const blenderToolName = resolveBlenderMcpToolName(workEntry);
+  if (blenderToolName) return humanizeBlenderToolName(blenderToolName);
   if (workEntry.itemType === "web_search") {
     return workEntry.toolLifecycleStatus === "inProgress"
       ? "Finding relevant sources"

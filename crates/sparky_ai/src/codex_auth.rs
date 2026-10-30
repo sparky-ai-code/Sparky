@@ -78,18 +78,38 @@ pub fn codex_auth_path() -> anyhow::Result<PathBuf> {
     Ok(codex_home()?.join("auth.json"))
 }
 
+fn normalize_agent_host_id(value: &str) -> anyhow::Result<String> {
+    if let Some(uuid) = value.strip_prefix("urn:uuid:") {
+        return Ok(format!("urn:uuid:{}", uuid::Uuid::parse_str(uuid)?));
+    }
+    if let Ok(uuid) = uuid::Uuid::parse_str(value) {
+        return Ok(format!("urn:uuid:{uuid}"));
+    }
+    if value.starts_with("urn:ietf:params:oauth:jwk-thumbprint:") || value.starts_with("did:key:") {
+        return Ok(value.to_owned());
+    }
+    anyhow::bail!("Stored ChatGPT host ID is not in a supported format")
+}
+
 fn codex_agent_host_id() -> anyhow::Result<String> {
     let path = codex_home()?.join("ext-agent-host-id");
-    if let Ok(value) = std::fs::read_to_string(&path) {
-        let value = value.trim();
-        if !value.is_empty() {
-            return Ok(value.to_owned());
+    match std::fs::read_to_string(&path) {
+        Ok(value) if !value.trim().is_empty() => {
+            let value = value.trim();
+            let host_id = normalize_agent_host_id(value)?;
+            if host_id != value {
+                std::fs::write(&path, format!("{host_id}\n"))?;
+            }
+            return Ok(host_id);
         }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
     }
 
     let directory = path.parent().ok_or_else(|| anyhow::anyhow!("Invalid ChatGPT host ID path"))?;
     std::fs::create_dir_all(directory)?;
-    let host_id = uuid::Uuid::new_v4().to_string();
+    let host_id = format!("urn:uuid:{}", uuid::Uuid::new_v4());
     std::fs::write(&path, format!("{host_id}\n"))?;
     #[cfg(unix)]
     {
@@ -565,6 +585,14 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_legacy_bare_host_uuids_to_the_openai_uri_format() {
+        assert_eq!(
+            normalize_agent_host_id("00000000-0000-4000-8000-000000000000").unwrap(),
+            "urn:uuid:00000000-0000-4000-8000-000000000000"
+        );
+    }
+
+    #[test]
     fn builds_official_plan_usage_authorization_request() {
         let url = build_oauth_authorize_url(
             "http://127.0.0.1:1455/auth/callback",
@@ -572,7 +600,7 @@ mod tests {
             "nonce",
             "challenge",
             OAUTH_DYNAMIC_CLIENT_ID,
-            "stable-host-id",
+            "urn:uuid:00000000-0000-4000-8000-000000000000",
             true,
         );
         let parsed = url::Url::parse(&url).unwrap();
@@ -586,7 +614,10 @@ mod tests {
         assert_eq!(params.get("code_challenge_method").map(String::as_str), Some("S256"));
         assert_eq!(params.get("state").map(String::as_str), Some("state"));
         assert_eq!(params.get("nonce").map(String::as_str), Some("nonce"));
-        assert_eq!(params.get("ext_agent_host_id").map(String::as_str), Some("stable-host-id"));
+        assert_eq!(
+            params.get("ext_agent_host_id").map(String::as_str),
+            Some("urn:uuid:00000000-0000-4000-8000-000000000000")
+        );
         assert_eq!(params.get("agent_name_hint").map(String::as_str), Some(OAUTH_AGENT_NAME));
     }
 }

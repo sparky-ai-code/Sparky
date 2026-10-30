@@ -2,7 +2,9 @@ import { assert, describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { VcsRepositoryDetectionError } from "@sparky/contracts";
+import { VcsRepositoryDetectionError, ProviderInstanceId } from "@sparky/contracts";
+import type { GitPullRequestReviewInput, GitPullRequestReviewResult } from "@sparky/contracts";
+import { createModelSelection } from "@sparky/shared/model";
 
 import * as GitManager from "./GitManager.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
@@ -134,6 +136,61 @@ describe("GitWorkflowService", () => {
       ),
     ),
   );
+
+  it.effect("runs pull request reviews without resolving a VCS driver", () => {
+    const reviewResult: GitPullRequestReviewResult = {
+      summary: "No actionable bugs.",
+      findings: [],
+      report: "No actionable bugs.",
+      reviewedSegments: 1,
+      skippedFindings: 0,
+    };
+    const reviewPullRequest = vi.fn(() => Effect.succeed(reviewResult));
+    const resolve = vi.fn(() =>
+      Effect.fail(
+        new VcsRepositoryDetectionError({
+          operation: "VcsDriverRegistry.resolve",
+          cwd: "/not-a-repo",
+          detail: "No VCS driver available.",
+        }),
+      ),
+    );
+    const input: GitPullRequestReviewInput = {
+      cwd: "/not-a-repo",
+      modelSelection: createModelSelection(
+        ProviderInstanceId.make("sparky_review"),
+        "openai/gpt-4o-mini",
+      ),
+      focus: "all",
+      effort: "quick",
+      context: {
+        title: "Test review",
+        body: null,
+        url: "https://github.com/owner/repo/pull/1",
+        baseBranch: "main",
+        headBranch: "feature",
+        diff: "",
+      },
+    };
+    const testLayer = GitWorkflowService.layer.pipe(
+      Layer.provide(
+        Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+          resolve,
+        }),
+      ),
+      Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+      Layer.provide(Layer.mock(GitManager.GitManager)({ reviewPullRequest })),
+    );
+
+    return Effect.gen(function* () {
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      const result = yield* workflow.reviewPullRequest(input);
+
+      expect(result).toEqual(reviewResult);
+      expect(reviewPullRequest).toHaveBeenCalledWith(input);
+      expect(resolve).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(testLayer));
+  });
 
   it.effect("structures workflow detection failures without exposing upstream details", () => {
     const cause = new VcsRepositoryDetectionError({

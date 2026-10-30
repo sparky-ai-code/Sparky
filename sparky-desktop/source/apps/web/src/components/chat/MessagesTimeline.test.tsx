@@ -315,6 +315,34 @@ describe("MessagesTimeline", () => {
     }
   });
 
+  it("shows Sparky MCP tools with friendly names and a dedicated icon", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-spawn-thread",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "work-spawn-thread",
+              createdAt: MESSAGE_CREATED_AT,
+              label: "sparky_spawn_thread",
+              toolTitle: "sparky_spawn_thread",
+              toolName: "sparky_spawn_thread",
+              tone: "tool",
+              itemType: "mcp_tool_call",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Spawn thread");
+    expect(markup).not.toContain("sparky_spawn_thread");
+    expect(markup).toContain("lucide-messages-square");
+  });
+
   it("labels plugin calls with the provider integration and logo", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

@@ -2301,6 +2301,17 @@ function pluginToolPresentationTitle(
   return `Use ${pluginName} integration`;
 }
 
+function sparkyMcpToolPresentationTitle(toolName: string | undefined): string | undefined {
+  const normalizedName = toolName?.trim().toLowerCase() ?? "";
+  if (!normalizedName.startsWith("sparky_")) return undefined;
+  const label = normalizedName
+    .slice("sparky_".length)
+    .split("_")
+    .filter(Boolean)
+    .join(" ");
+  return label ? capitalizePhrase(label) : undefined;
+}
+
 function resolveWorkEntryPluginId(
   workEntry: Pick<TimelineWorkEntry, "toolName" | "toolData">,
 ): PluginId | undefined {
@@ -2342,6 +2353,8 @@ export function resolveWorkEntryToolIconName(
       return "messages-square";
     case "review_pull_request":
       return "git-pull-request";
+    case "sparky_spawn_thread":
+      return "messages-square";
     case "write":
       return "file-plus-2";
     case "edit":
@@ -2360,7 +2373,7 @@ export function resolveWorkEntryToolIconName(
     case "automation_delete":
       return "trash-2";
     default:
-      return undefined;
+      return toolName?.trim().toLowerCase().startsWith("sparky_") ? "messages-square" : undefined;
   }
 }
 
@@ -2371,7 +2384,7 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
-  const toolIconName = resolveWorkEntryToolIconName(workEntry.toolName);
+  const toolIconName = resolveWorkEntryToolIconName(workEntry.toolName ?? workEntry.toolTitle);
   if (toolIconName) return toolIconName;
   if (workEntry.requestKind === "command") return "terminal";
   if (workEntry.requestKind === "file-read") return "eye";
@@ -2426,6 +2439,8 @@ function capitalizePhrase(value: string): string {
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
   const pluginTitle = pluginToolPresentationTitle(workEntry);
   if (pluginTitle) return pluginTitle;
+  const sparkyToolTitle = sparkyMcpToolPresentationTitle(workEntry.toolName ?? workEntry.toolTitle);
+  if (sparkyToolTitle) return sparkyToolTitle;
   if (workEntry.itemType === "web_search") {
     return workEntry.toolLifecycleStatus === "inProgress"
       ? "Finding relevant sources"

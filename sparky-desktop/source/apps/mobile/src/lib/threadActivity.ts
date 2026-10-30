@@ -48,6 +48,7 @@ export interface ThreadFeedActivity {
     | "globe"
     | "hammer"
     | "message"
+    | "thread"
     | "warning"
     | "wrench"
     | "zap";
@@ -518,6 +519,7 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.itemType === "file_change" || (entry.changedFiles?.length ?? 0) > 0) return "edit";
   if (entry.itemType === "web_search") return "globe";
   if (entry.itemType === "image_view") return "eye";
+  if (entry.toolTitle?.trim().toLowerCase().startsWith("sparky_")) return "thread";
   if (entry.itemType === "mcp_tool_call") return "wrench";
   if (entry.itemType === "dynamic_tool_call" || entry.itemType === "collab_agent_tool_call") {
     return "hammer";
@@ -571,6 +573,11 @@ function capitalizePhrase(value: string): string {
 }
 
 function workEntryHeading(workEntry: WorkLogEntry): string {
+  const toolTitle = workEntry.toolTitle?.trim();
+  if (toolTitle?.toLowerCase().startsWith("sparky_")) {
+    const label = toolTitle.slice("sparky_".length).replace(/_/g, " ");
+    return capitalizePhrase(normalizeCompactToolLabel(label));
+  }
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }

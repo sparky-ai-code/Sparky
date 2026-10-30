@@ -225,6 +225,43 @@ describe("buildThreadFeed", () => {
     expect(group.activities[0]?.fullDetail).toContain("repository.search");
   });
 
+  it("formats Sparky MCP tools with a friendly title and thread icon", () => {
+    const turnId = TurnId.make("turn-spawn-thread");
+    const thread = makeThread({
+      id: ThreadId.make("thread-spawn-thread"),
+      projectId: ProjectId.make("project-1"),
+      title: "Spawned thread",
+      latestTurn: {
+        turnId,
+        state: "completed",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt: "2026-04-01T00:00:01.000Z",
+        completedAt: "2026-04-01T00:00:03.000Z",
+        assistantMessageId: null,
+      },
+      activities: [
+        makeActivity({
+          id: EventId.make("spawn-thread-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "sparky_spawn_thread completed",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId,
+          payload: {
+            title: "sparky_spawn_thread",
+            itemType: "mcp_tool_call",
+            status: "completed",
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") return;
+    expect(group.activities[0]).toMatchObject({ summary: "Spawn thread", icon: "thread" });
+  });
+
   it("folds settled turn work while leaving the terminal answer visible", () => {
     const turnId = TurnId.make("turn-1");
     const thread = makeThread({

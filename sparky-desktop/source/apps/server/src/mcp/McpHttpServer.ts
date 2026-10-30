@@ -21,6 +21,8 @@ import { ExternalMcpToolkitHandlersLive } from "./toolkits/externalMcpHandlers.t
 import { ExternalMcpToolkit } from "./toolkits/externalMcpTools.ts";
 import { PluginToolkitHandlersLive } from "./toolkits/plugins/handlers.ts";
 import { PluginToolkit } from "./toolkits/plugins/tools.ts";
+import { SpawnThreadToolkitHandlersLive } from "./toolkits/spawnThread/handlers.ts";
+import { SpawnThreadToolkit } from "./toolkits/spawnThread/tools.ts";
 import { reviewPullRequest } from "./toolkits/pullRequestReview/handlers.ts";
 import { ReviewPullRequestTool } from "./toolkits/pullRequestReview/tools.ts";
 import {
@@ -298,10 +300,15 @@ const ExternalMcpToolkitRegistrationLive = McpServer.toolkit(ExternalMcpToolkit)
   Layer.provide(ExternalMcpToolkitHandlersLive),
 );
 
+const SpawnThreadToolkitRegistrationLive = McpServer.toolkit(SpawnThreadToolkit).pipe(
+  Layer.provide(SpawnThreadToolkitHandlersLive),
+);
+
 const ToolkitRegistrationLive = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   ExternalMcpToolkitRegistrationLive,
   PluginToolkitRegistrationLive,
+  SpawnThreadToolkitRegistrationLive,
   PullRequestReviewToolkitRegistrationLive,
 );
 

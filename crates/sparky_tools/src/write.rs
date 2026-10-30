@@ -26,7 +26,7 @@ impl Tool for WriteTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to file to create/write"
+                    "description": "Path to file to create/write, relative to the current working directory or absolute"
                 },
                 "content": {
                     "type": "string",
@@ -72,7 +72,11 @@ impl Tool for WriteTool {
             }
         }
 
-        if let Err(err) = validate_created_parent(cwd, &full_path) {
+        if let Err(err) = validate_created_parent(
+            cwd,
+            &full_path,
+            std::path::Path::new(rel_path).is_absolute(),
+        ) {
             return Ok(ToolExecutionResult::error(err.to_string()));
         }
 

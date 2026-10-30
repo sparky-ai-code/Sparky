@@ -91,6 +91,43 @@ fn normalize_agent_host_id(value: &str) -> anyhow::Result<String> {
     anyhow::bail!("Stored ChatGPT host ID is not in a supported format")
 }
 
+fn read_registered_client_id(path: &Path) -> anyhow::Result<Option<String>> {
+    match std::fs::read_to_string(path) {
+        Ok(value) => {
+            let client_id = value.trim();
+            anyhow::ensure!(
+                !client_id.is_empty() && client_id != OAUTH_DYNAMIC_CLIENT_ID,
+                "Stored ChatGPT client registration is invalid"
+            );
+            Ok(Some(client_id.to_owned()))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn save_registered_client_id(path: &Path, client_id: &str) -> anyhow::Result<()> {
+    let client_id = client_id.trim();
+    anyhow::ensure!(
+        !client_id.is_empty() && client_id != OAUTH_DYNAMIC_CLIENT_ID,
+        "OpenAI did not return the registered ChatGPT client id"
+    );
+    let directory = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("Invalid ChatGPT client ID path"))?;
+    std::fs::create_dir_all(directory)?;
+    std::fs::write(path, format!("{client_id}\n"))?;
+    Ok(())
+}
+
+fn codex_registered_client_id() -> anyhow::Result<Option<String>> {
+    read_registered_client_id(&codex_home()?.join("client-id"))
+}
+
+fn save_codex_registered_client_id(client_id: &str) -> anyhow::Result<()> {
+    save_registered_client_id(&codex_home()?.join("client-id"), client_id)
+}
+
 fn codex_agent_host_id() -> anyhow::Result<String> {
     let path = codex_home()?.join("ext-agent-host-id");
     match std::fs::read_to_string(&path) {
@@ -320,12 +357,16 @@ async fn oauth_login() -> anyhow::Result<()> {
     let existing = codex_auth_path()
         .ok()
         .and_then(|path| read_managed_credentials(&path).ok());
+    let registered_client_id = codex_registered_client_id()?;
     // The redirect URI must stay identical throughout this OAuth attempt; the
     // actual listener port is included in both the authorize request and token exchange.
     let listener = bind_callback_listener(OAUTH_CALLBACK_PORT).await?;
     let port = listener.local_addr()?.port();
     let redirect_uri = format!("http://127.0.0.1:{port}{OAUTH_CALLBACK_PATH}");
-    let client_id = existing.as_ref().map(|credentials| credentials.client_id.clone())
+    let client_id = existing
+        .as_ref()
+        .map(|credentials| credentials.client_id.clone())
+        .or(registered_client_id)
         .unwrap_or_else(|| OAUTH_DYNAMIC_CLIENT_ID.to_owned());
     let is_new_registration = client_id == OAUTH_DYNAMIC_CLIENT_ID;
     let agent_host_id = codex_agent_host_id()?;
@@ -383,6 +424,9 @@ async fn oauth_login() -> anyhow::Result<()> {
 
     anyhow::ensure!(!issued_client_id.trim().is_empty() && issued_client_id != OAUTH_DYNAMIC_CLIENT_ID,
         "OpenAI did not return the registered ChatGPT client id");
+    // Keep the issued registration even if this one-time authorization code is rejected.
+    // The next authorization must reuse the same client ID rather than register again.
+    save_codex_registered_client_id(&issued_client_id)?;
     #[derive(Deserialize)]
     struct TokenResponse {
         id_token: String,
@@ -582,6 +626,38 @@ mod tests {
         ));
         assert!(!has_chatgpt_plan_scope("openid profile email"));
         assert!(!has_chatgpt_plan_scope("openid offline_access resource.invoke"));
+    }
+
+    #[test]
+    fn retains_issued_client_id_for_a_fresh_authorization_after_invalid_grant() {
+        let directory =
+            std::env::temp_dir().join(format!("sparky-auth-test-{}", uuid::Uuid::new_v4()));
+        let path = directory.join("client-id");
+
+        assert_eq!(read_registered_client_id(&path).unwrap(), None);
+        save_registered_client_id(&path, "oaiapp_registered-client").unwrap();
+
+        let registered_client_id = read_registered_client_id(&path).unwrap().unwrap();
+        assert_eq!(registered_client_id, "oaiapp_registered-client");
+        let url = build_oauth_authorize_url(
+            "http://127.0.0.1:1455/auth/callback",
+            "state",
+            "nonce",
+            "challenge",
+            &registered_client_id,
+            "urn:uuid:00000000-0000-4000-8000-000000000000",
+            false,
+        );
+        let parsed = url::Url::parse(&url).unwrap();
+        let params: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
+        assert_eq!(
+            params.get("client_id").map(String::as_str),
+            Some("oaiapp_registered-client")
+        );
+        assert!(!params.contains_key("agent_name_hint"));
+
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
     }
 
     #[test]

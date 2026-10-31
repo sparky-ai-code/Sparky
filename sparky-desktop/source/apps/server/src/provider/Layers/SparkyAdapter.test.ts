@@ -17,6 +17,7 @@ import {
   makeSparkyStreamDecoder,
   normalizeSparkyContextWindow,
   parseSparkyContextWindowTokens,
+  parseSparkyModelSelection,
   formatSparkyProcessError,
   resolveSparkyRuntimeContextWindow,
   captureSparkySessionIdentity,
@@ -456,6 +457,21 @@ describe("Sparky session continuity", () => {
         "project",
       ),
     ).toContain("unexpected argument");
+  });
+
+  it("routes the legacy default model label through Codex OAuth", () => {
+    expect(parseSparkyModelSelection(undefined)).toEqual({
+      provider: "openai-codex",
+      model: "gpt-5.6-sol",
+    });
+    expect(parseSparkyModelSelection("GPT-5.6 Sol")).toEqual({
+      provider: "openai-codex",
+      model: "gpt-5.6-sol",
+    });
+    expect(parseSparkyModelSelection("openai/gpt-4o-mini")).toEqual({
+      provider: "openai",
+      model: "gpt-4o-mini",
+    });
   });
 
   it("uses the provider-native text-only path for metadata generation", () => {

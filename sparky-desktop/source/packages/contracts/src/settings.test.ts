@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { ProviderInstanceId } from "./providerInstance.ts";
+import {
+  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  DEFAULT_MODEL_BY_PROVIDER,
+} from "./model.ts";
+import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
   ClientSettingsPatch,
@@ -115,6 +119,15 @@ describe("ClientSettings pull request review preferences", () => {
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
+  });
+
+  it("defaults Sparky chat and metadata models to the OAuth Codex provider", () => {
+    const sparky = ProviderDriverKind.make("sparky");
+    expect(DEFAULT_MODEL_BY_PROVIDER[sparky]).toBe("openai-codex/gpt-5.6-sol");
+    expect(DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[sparky]).toBe("openai-codex/gpt-5.6-luna");
+    expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model).toBe(
+      "openai-codex/gpt-5.6-luna",
+    );
   });
 
   it("decodes a fully empty config (legacy on-disk shape) without complaint", () => {

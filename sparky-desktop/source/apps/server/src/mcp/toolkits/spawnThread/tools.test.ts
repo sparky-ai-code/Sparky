@@ -13,9 +13,9 @@ it("exposes configurable thread, model, project, and workspace fields", () => {
 
   expect(tool.description?.length ?? 0).toBeGreaterThan(40);
   expect(schema.type).toBe("object");
-  expect(schema.required).toEqual(
-    expect.arrayContaining(["projectId", "prompt", "instanceId", "model", "workspaceMode"]),
-  );
+  expect(schema.required).toEqual(expect.arrayContaining(["prompt", "instanceId", "model"]));
+  expect(schema.required).not.toContain("projectId");
+  expect(schema.required).not.toContain("workspaceMode");
   expect(schema.properties).toMatchObject({
     projectId: expect.any(Object),
     prompt: expect.any(Object),

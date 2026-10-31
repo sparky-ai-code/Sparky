@@ -222,6 +222,7 @@ describe("discoverSparkyModels", () => {
       });
       expect(models.map((model) => model.id)).toEqual([
         "gpt-6.1-sol",
+        "gpt-6.1-terra",
         "gpt-6-astra",
         "gpt-6-sol",
         "gpt-6-luna",
@@ -229,6 +230,9 @@ describe("discoverSparkyModels", () => {
         "gpt-5.6-terra",
         "gpt-5.6-luna",
       ]);
+      expect(models.find((model) => model.id === "gpt-6.1-terra")).toMatchObject({
+        name: "GPT-6.1 Terra",
+      });
       expect(models[0]).toMatchObject({
         name: "GPT-6.1 Sol",
         reasoningSupported: true,
@@ -292,6 +296,7 @@ describe("discoverSparkyModels", () => {
       });
       expect(models.map((model) => model.id)).toEqual([
         "gpt-6.1-sol",
+        "gpt-6.1-terra",
         "gpt-6-astra",
         "gpt-6-sol",
         "gpt-6-luna",

@@ -584,7 +584,10 @@ export function parseSparkyModelSelection(model: string | undefined): {
   readonly model: string;
   readonly baseUrl?: string | undefined;
 } {
-  const selected = model?.trim() || "GPT-5.6 Sol";
+  const selected = model?.trim() || "openai-codex/gpt-5.6-sol";
+  if (selected.toLowerCase() === "gpt-5.6 sol" || selected.toLowerCase() === "gpt-5.6-sol") {
+    return { provider: "openai-codex", model: "gpt-5.6-sol" };
+  }
   const slash = selected.indexOf("/");
   if (slash <= 0 || slash === selected.length - 1) {
     return { provider: "openai", model: selected };
@@ -1041,7 +1044,10 @@ function runPersistentSparky(input: {
           .update(JSON.stringify(input.environment))
           .digest("hex");
         let processState = input.processes.get(input.processKey);
-        if (processState && (processState.signature !== signature || processState.child.exitCode !== null)) {
+        if (
+          processState &&
+          (processState.signature !== signature || processState.child.exitCode !== null)
+        ) {
           input.processes.delete(input.processKey);
           processState.child.kill();
           processState = undefined;
@@ -1146,7 +1152,8 @@ function runPersistentSparky(input: {
             }
             const activeTurn = currentProcess.pending;
             if (!activeTurn) return;
-            const detail = currentProcess.stderr.trim() || `Sparky exited (exit code ${code ?? "unknown"}).`;
+            const detail =
+              currentProcess.stderr.trim() || `Sparky exited (exit code ${code ?? "unknown"}).`;
             activeTurn.decoder.failOpenTools(detail);
             activeTurn.fail?.(new Error(detail));
           });
@@ -1820,7 +1827,8 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
                 return { path, mimeType: attachment.mimeType };
               }),
           );
-          const model = input.modelSelection?.model ?? state.session.model ?? "GPT-5.6 Sol";
+          const model =
+            input.modelSelection?.model ?? state.session.model ?? "openai-codex/gpt-5.6-sol";
           const reasoningEffort = input.modelSelection
             ? getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort")
             : undefined;

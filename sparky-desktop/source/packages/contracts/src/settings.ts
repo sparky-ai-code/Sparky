@@ -448,7 +448,9 @@ export const McpServerConfig = Schema.Struct({
   name: TrimmedNonEmptyString,
   url: Schema.String.check(Schema.isPattern(/^https?:\/\//u)),
   authorizationToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  authorizationTokenRedacted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  authorizationTokenRedacted: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type McpServerConfig = typeof McpServerConfig.Type;
@@ -483,7 +485,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(
       Effect.succeed({
         instanceId: ProviderInstanceId.make("sparky"),
-        model: "openai/gpt-4o-mini",
+        model: "openai-codex/gpt-5.6-luna",
       }),
     ),
   ),

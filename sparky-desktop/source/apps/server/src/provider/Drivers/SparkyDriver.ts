@@ -31,7 +31,11 @@ import {
   runSparkyTextGeneration,
 } from "../Layers/SparkyAdapter.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
-import { discoverSparkyModels, type SparkyModelDiscovery } from "./SparkyModelCatalog.ts";
+import {
+  discoverSparkyModels,
+  hasCodexOAuthAuthentication,
+  type SparkyModelDiscovery,
+} from "./SparkyModelCatalog.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ServerConfig } from "../../config.ts";
 import packageJson from "../../../package.json" with { type: "json" };
@@ -137,6 +141,23 @@ export function resolveSparkyTextGenerationRuntimeOptions(input: {
   };
 }
 
+export function resolveSparkyTextGenerationModelSelection(input: {
+  readonly modelSelection: ModelSelection;
+  readonly environment: NodeJS.ProcessEnv;
+}): ModelSelection {
+  if (
+    input.modelSelection.model !== "openai/gpt-4o-mini" ||
+    input.environment.OPENAI_API_KEY?.trim() ||
+    !hasCodexOAuthAuthentication(input.environment)
+  ) {
+    return input.modelSelection;
+  }
+  // Older persisted Sparky settings used an OpenAI API-key model as the
+  // metadata default. Migrate that exact default to the OAuth-backed Codex
+  // model when this account has no API key.
+  return { ...input.modelSelection, model: "openai-codex/gpt-5.6-luna" };
+}
+
 export function makeSparkyThreadTitlePrompt(message: string): string {
   return [
     "You are a dedicated conversation-title generator running in a separate metadata request.",
@@ -160,16 +181,20 @@ function makeTextGeneration(input: {
     prompt: string,
     workspaceContext: ProviderWorkspaceContext = "project",
     systemPrompt?: string,
-  ) =>
-    runSparkyTextGeneration({
+  ) => {
+    const effectiveModelSelection = resolveSparkyTextGenerationModelSelection({
+      modelSelection,
+      environment: input.environment,
+    });
+    return runSparkyTextGeneration({
       binaryPath: input.binaryPath,
       cwd,
       prompt,
-      model: modelSelection.model,
+      model: effectiveModelSelection.model,
       ...(workspaceContext === "none" ? { workspaceContext } : {}),
       ...(systemPrompt ? { customInstructions: systemPrompt } : {}),
       ...resolveSparkyTextGenerationRuntimeOptions({
-        modelSelection,
+        modelSelection: effectiveModelSelection,
         environment: input.environment,
       }),
       environment: input.environment,
@@ -183,6 +208,7 @@ function makeTextGeneration(input: {
           }),
       ),
     );
+  };
 
   return {
     generateCommitMessage: (request) =>

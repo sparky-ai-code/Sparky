@@ -78,6 +78,84 @@ pub fn codex_auth_path() -> anyhow::Result<PathBuf> {
     Ok(codex_home()?.join("auth.json"))
 }
 
+fn normalize_agent_host_id(value: &str) -> anyhow::Result<String> {
+    if let Some(uuid) = value.strip_prefix("urn:uuid:") {
+        return Ok(format!("urn:uuid:{}", uuid::Uuid::parse_str(uuid)?));
+    }
+    if let Ok(uuid) = uuid::Uuid::parse_str(value) {
+        return Ok(format!("urn:uuid:{uuid}"));
+    }
+    if value.starts_with("urn:ietf:params:oauth:jwk-thumbprint:") || value.starts_with("did:key:") {
+        return Ok(value.to_owned());
+    }
+    anyhow::bail!("Stored ChatGPT host ID is not in a supported format")
+}
+
+fn read_registered_client_id(path: &Path) -> anyhow::Result<Option<String>> {
+    match std::fs::read_to_string(path) {
+        Ok(value) => {
+            let client_id = value.trim();
+            anyhow::ensure!(
+                !client_id.is_empty() && client_id != OAUTH_DYNAMIC_CLIENT_ID,
+                "Stored ChatGPT client registration is invalid"
+            );
+            Ok(Some(client_id.to_owned()))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn save_registered_client_id(path: &Path, client_id: &str) -> anyhow::Result<()> {
+    let client_id = client_id.trim();
+    anyhow::ensure!(
+        !client_id.is_empty() && client_id != OAUTH_DYNAMIC_CLIENT_ID,
+        "OpenAI did not return the registered ChatGPT client id"
+    );
+    let directory = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("Invalid ChatGPT client ID path"))?;
+    std::fs::create_dir_all(directory)?;
+    std::fs::write(path, format!("{client_id}\n"))?;
+    Ok(())
+}
+
+fn codex_registered_client_id() -> anyhow::Result<Option<String>> {
+    read_registered_client_id(&codex_home()?.join("client-id"))
+}
+
+fn save_codex_registered_client_id(client_id: &str) -> anyhow::Result<()> {
+    save_registered_client_id(&codex_home()?.join("client-id"), client_id)
+}
+
+fn codex_agent_host_id() -> anyhow::Result<String> {
+    let path = codex_home()?.join("ext-agent-host-id");
+    match std::fs::read_to_string(&path) {
+        Ok(value) if !value.trim().is_empty() => {
+            let value = value.trim();
+            let host_id = normalize_agent_host_id(value)?;
+            if host_id != value {
+                std::fs::write(&path, format!("{host_id}\n"))?;
+            }
+            return Ok(host_id);
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+
+    let directory = path.parent().ok_or_else(|| anyhow::anyhow!("Invalid ChatGPT host ID path"))?;
+    std::fs::create_dir_all(directory)?;
+    let host_id = format!("urn:uuid:{}", uuid::Uuid::new_v4());
+    std::fs::write(&path, format!("{host_id}\n"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(host_id)
+}
+
 fn has_chatgpt_plan_scope(scope: &str) -> bool {
     let scopes: std::collections::HashSet<_> = scope.split_whitespace().collect();
     ["offline_access", "resource.invoke", "chatgpt.tokens.use.direct"]
@@ -185,6 +263,7 @@ fn build_oauth_authorize_url(
     nonce: &str,
     challenge: &str,
     client_id: &str,
+    agent_host_id: &str,
     is_new_registration: bool,
 ) -> String {
     let mut query = url::form_urlencoded::Serializer::new(String::new());
@@ -197,6 +276,7 @@ fn build_oauth_authorize_url(
     query.append_pair("code_challenge_method", "S256");
     query.append_pair("state", state);
     query.append_pair("nonce", nonce);
+    query.append_pair("ext_agent_host_id", agent_host_id);
     if is_new_registration {
         query.append_pair("agent_name_hint", OAUTH_AGENT_NAME);
     }
@@ -257,18 +337,63 @@ async fn validate_id_token(
     Ok(claims.sub)
 }
 
-async fn oauth_login() -> anyhow::Result<()> {
+async fn bind_callback_listener(preferred_port: u16) -> anyhow::Result<TcpListener> {
+    match TcpListener::bind(("127.0.0.1", preferred_port)).await {
+        Ok(listener) => Ok(listener),
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+            TcpListener::bind(("127.0.0.1", 0)).await.map_err(|fallback_error| {
+                anyhow::anyhow!(
+                    "ChatGPT callback port {preferred_port} is already in use, and a fallback port could not be opened: {fallback_error}"
+                )
+            })
+        }
+        Err(error) => Err(anyhow::anyhow!(
+            "Could not open the Sign in with ChatGPT loopback callback: {error}"
+        )),
+    }
+}
+
+fn resolve_issued_client_id(
+    requested_client_id: &str,
+    callback_client_id: Option<&str>,
+    is_new_registration: bool,
+) -> anyhow::Result<String> {
+    let client_id = if is_new_registration {
+        callback_client_id.unwrap_or_default()
+    } else {
+        requested_client_id
+    }
+    .trim();
+    anyhow::ensure!(
+        !client_id.is_empty() && client_id != OAUTH_DYNAMIC_CLIENT_ID,
+        "OpenAI did not return the registered ChatGPT client id"
+    );
+    Ok(client_id.to_owned())
+}
+
+fn is_invalid_grant_error(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("invalid_grant"))
+}
+
+async fn oauth_login_attempt() -> anyhow::Result<()> {
     let existing = codex_auth_path()
         .ok()
         .and_then(|path| read_managed_credentials(&path).ok());
-    let callback_port = if existing.is_some() { 0 } else { OAUTH_CALLBACK_PORT };
-    let listener = TcpListener::bind(("127.0.0.1", callback_port)).await
-        .map_err(|error| anyhow::anyhow!("Could not open the Sign in with ChatGPT loopback callback: {error}"))?;
+    let registered_client_id = codex_registered_client_id()?;
+    // The redirect URI must stay identical throughout this OAuth attempt; the
+    // actual listener port is included in both the authorize request and token exchange.
+    let listener = bind_callback_listener(OAUTH_CALLBACK_PORT).await?;
     let port = listener.local_addr()?.port();
     let redirect_uri = format!("http://127.0.0.1:{port}{OAUTH_CALLBACK_PATH}");
-    let client_id = existing.as_ref().map(|credentials| credentials.client_id.clone())
+    let client_id = existing
+        .as_ref()
+        .map(|credentials| credentials.client_id.clone())
+        .or(registered_client_id)
         .unwrap_or_else(|| OAUTH_DYNAMIC_CLIENT_ID.to_owned());
     let is_new_registration = client_id == OAUTH_DYNAMIC_CLIENT_ID;
+    let agent_host_id = codex_agent_host_id()?;
 
     let mut random = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut random);
@@ -278,10 +403,18 @@ async fn oauth_login() -> anyhow::Result<()> {
     rand::thread_rng().fill_bytes(&mut random);
     let verifier = URL_SAFE_NO_PAD.encode(random);
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-    let auth_url = build_oauth_authorize_url(&redirect_uri, &state, &nonce, &challenge, &client_id, is_new_registration);
+    let auth_url = build_oauth_authorize_url(
+        &redirect_uri,
+        &state,
+        &nonce,
+        &challenge,
+        &client_id,
+        &agent_host_id,
+        is_new_registration,
+    );
     open_oauth_browser(&auth_url);
 
-    let (code, issued_client_id, callback_scope) = loop {
+    let (code, callback_client_id, callback_scope) = loop {
         let (mut stream, _) = listener.accept().await?;
         let mut request = vec![0u8; 8192];
         let size = stream.read(&mut request).await?;
@@ -307,14 +440,20 @@ async fn oauth_login() -> anyhow::Result<()> {
         }
         let code = params.get("code").filter(|value| !value.is_empty()).cloned()
             .ok_or_else(|| anyhow::anyhow!("ChatGPT sign-in did not return an authorization code"))?;
-        let returned_client_id = params.get("client_id").cloned().unwrap_or_else(|| client_id.clone());
+        let callback_client_id = params.get("client_id").cloned();
         let scope = params.get("scope").cloned().unwrap_or_default();
         write_oauth_response(&mut stream, "Sign-in complete. You can return to Sparky.", "200 OK").await?;
-        break (code, returned_client_id, scope);
+        break (code, callback_client_id, scope);
     };
 
-    anyhow::ensure!(!issued_client_id.trim().is_empty() && issued_client_id != OAUTH_DYNAMIC_CLIENT_ID,
-        "OpenAI did not return the registered ChatGPT client id");
+    let issued_client_id = resolve_issued_client_id(
+        &client_id,
+        callback_client_id.as_deref(),
+        is_new_registration,
+    )?;
+    // Keep the issued registration even if this one-time authorization code is rejected.
+    // The next authorization must reuse the same client ID rather than register again.
+    save_codex_registered_client_id(&issued_client_id)?;
     #[derive(Deserialize)]
     struct TokenResponse {
         id_token: String,
@@ -332,8 +471,13 @@ async fn oauth_login() -> anyhow::Result<()> {
             ("code_verifier", verifier.as_str()),
             ("resource", OAUTH_RESOURCE),
         ])
-        .send().await?.error_for_status()
-        .map_err(|error| anyhow::anyhow!("ChatGPT token exchange failed: {error}"))?;
+        .send().await?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let detail = response.text().await
+            .unwrap_or_else(|error| format!("could not read OpenAI's error response: {error}"));
+        anyhow::bail!("ChatGPT token exchange failed: HTTP {status}: {detail}");
+    }
     let tokens: TokenResponse = response.json().await?;
     let subject = validate_id_token(&tokens.id_token, &issued_client_id, &nonce).await?;
     let granted_scope = tokens
@@ -356,6 +500,23 @@ async fn oauth_login() -> anyhow::Result<()> {
     };
     save_credentials(&credentials)?;
     Ok(())
+}
+
+async fn oauth_login() -> anyhow::Result<()> {
+    match oauth_login_attempt().await {
+        Err(error) if is_invalid_grant_error(&error) => {
+            eprintln!(
+                "OpenAI rejected the authorization code; starting a fresh ChatGPT authorization with the registered client ID."
+            );
+            match oauth_login_attempt().await {
+                Err(retry_error) if is_invalid_grant_error(&retry_error) => Err(anyhow::anyhow!(
+                    "OpenAI rejected the fresh authorization code as invalid_grant; please retry ChatGPT sign-in: {retry_error:#}"
+                )),
+                result => result,
+            }
+        }
+        result => result,
+    }
 }
 
 async fn write_oauth_response(
@@ -492,6 +653,16 @@ pub async fn valid_codex_credentials() -> anyhow::Result<CodexCredentials> {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn falls_back_to_an_available_port_when_preferred_callback_port_is_busy() {
+        let occupied = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let occupied_port = occupied.local_addr().unwrap().port();
+
+        let fallback = bind_callback_listener(occupied_port).await.unwrap();
+
+        assert_ne!(fallback.local_addr().unwrap().port(), occupied_port);
+    }
+
     #[test]
     fn requires_explicit_chatgpt_plan_usage_scopes() {
         assert!(has_chatgpt_plan_scope(
@@ -502,6 +673,83 @@ mod tests {
     }
 
     #[test]
+    fn retries_only_invalid_grant_token_exchange_errors() {
+        assert!(is_invalid_grant_error(&anyhow::anyhow!(
+            "ChatGPT token exchange failed: HTTP 400: {\"error\":\"invalid_grant\"}"
+        )));
+        assert!(!is_invalid_grant_error(&anyhow::anyhow!(
+            "ChatGPT token exchange failed: HTTP 400: invalid_request"
+        )));
+    }
+
+    #[test]
+    fn reauthorization_uses_the_client_id_from_its_request() {
+        assert_eq!(
+            resolve_issued_client_id(
+                "oaiapp_requested-client",
+                Some("oaiapp_callback-client"),
+                false,
+            )
+            .unwrap(),
+            "oaiapp_requested-client"
+        );
+    }
+
+    #[test]
+    fn new_registration_uses_the_issued_callback_client_id() {
+        assert_eq!(
+            resolve_issued_client_id(
+                OAUTH_DYNAMIC_CLIENT_ID,
+                Some("oaiapp_issued-client"),
+                true,
+            )
+            .unwrap(),
+            "oaiapp_issued-client"
+        );
+        assert!(resolve_issued_client_id(OAUTH_DYNAMIC_CLIENT_ID, None, true).is_err());
+    }
+
+    #[test]
+    fn retains_issued_client_id_for_a_fresh_authorization_after_invalid_grant() {
+        let directory =
+            std::env::temp_dir().join(format!("sparky-auth-test-{}", uuid::Uuid::new_v4()));
+        let path = directory.join("client-id");
+
+        assert_eq!(read_registered_client_id(&path).unwrap(), None);
+        save_registered_client_id(&path, "oaiapp_registered-client").unwrap();
+
+        let registered_client_id = read_registered_client_id(&path).unwrap().unwrap();
+        assert_eq!(registered_client_id, "oaiapp_registered-client");
+        let url = build_oauth_authorize_url(
+            "http://127.0.0.1:1455/auth/callback",
+            "state",
+            "nonce",
+            "challenge",
+            &registered_client_id,
+            "urn:uuid:00000000-0000-4000-8000-000000000000",
+            false,
+        );
+        let parsed = url::Url::parse(&url).unwrap();
+        let params: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
+        assert_eq!(
+            params.get("client_id").map(String::as_str),
+            Some("oaiapp_registered-client")
+        );
+        assert!(!params.contains_key("agent_name_hint"));
+
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn normalizes_legacy_bare_host_uuids_to_the_openai_uri_format() {
+        assert_eq!(
+            normalize_agent_host_id("00000000-0000-4000-8000-000000000000").unwrap(),
+            "urn:uuid:00000000-0000-4000-8000-000000000000"
+        );
+    }
+
+    #[test]
     fn builds_official_plan_usage_authorization_request() {
         let url = build_oauth_authorize_url(
             "http://127.0.0.1:1455/auth/callback",
@@ -509,6 +757,7 @@ mod tests {
             "nonce",
             "challenge",
             OAUTH_DYNAMIC_CLIENT_ID,
+            "urn:uuid:00000000-0000-4000-8000-000000000000",
             true,
         );
         let parsed = url::Url::parse(&url).unwrap();
@@ -522,6 +771,10 @@ mod tests {
         assert_eq!(params.get("code_challenge_method").map(String::as_str), Some("S256"));
         assert_eq!(params.get("state").map(String::as_str), Some("state"));
         assert_eq!(params.get("nonce").map(String::as_str), Some("nonce"));
+        assert_eq!(
+            params.get("ext_agent_host_id").map(String::as_str),
+            Some("urn:uuid:00000000-0000-4000-8000-000000000000")
+        );
         assert_eq!(params.get("agent_name_hint").map(String::as_str), Some(OAUTH_AGENT_NAME));
     }
 }

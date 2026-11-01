@@ -352,7 +352,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     () =>
       workspaceContextEnabled
         ? rawRows
-        : rawRows.filter((row) => row.kind !== "work" && row.kind !== "work-toggle"),
+        : rawRows.filter(
+            (row) => row.kind !== "work" && row.kind !== "work-live" && row.kind !== "work-toggle",
+          ),
     [rawRows, workspaceContextEnabled],
   );
   const rows = useStableRows(rowsForDisplay);
@@ -872,6 +874,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         // they sit closer to the work that follows them.
         (row.kind === "message" && row.message.role === "assistant" && !row.showAssistantMeta) ||
           row.kind === "work" ||
+          row.kind === "work-live" ||
           row.kind === "work-toggle"
           ? "pb-2"
           : "pb-4",
@@ -883,6 +886,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       data-message-role={row.kind === "message" ? row.message.role : undefined}
     >
       {row.kind === "work" ? <WorkGroupSection groupedEntries={row.groupedEntries} /> : null}
+      {row.kind === "work-live" ? <LiveWorkTimelineRow row={row} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
@@ -1288,6 +1292,58 @@ const WorkGroupSection = memo(function WorkGroupSection({
   );
 });
 
+const LiveWorkTimelineRow = memo(function LiveWorkTimelineRow({
+  row,
+}: {
+  row: Extract<MessagesTimelineRow, { kind: "work-live" }>;
+}) {
+  const { workspaceRoot, onToggleWorkGroup } = use(TimelineRowCtx);
+  const previousEntries = row.groupedEntries.slice(0, -1);
+
+  return (
+    <section className="-mx-1 space-y-0.5 px-1 py-0.5" aria-label="Active tool calls">
+      <div className="flex min-w-0 items-center gap-1">
+        <div className="min-w-0 flex-1">
+          <SimpleWorkEntryRow workEntry={row.entry} workspaceRoot={workspaceRoot} />
+        </div>
+        {previousEntries.length > 0 ? (
+          <button
+            type="button"
+            className="flex shrink-0 cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-[10px] text-muted-foreground/65 transition-colors hover:bg-accent/30 hover:text-foreground/80"
+            aria-expanded={row.expanded}
+            aria-label={`${row.expanded ? "Hide" : "Show"} ${previousEntries.length} earlier active tool calls`}
+            onClick={(event) => {
+              const anchorElement =
+                event.currentTarget.closest<HTMLElement>("[data-timeline-row-id]") ??
+                event.currentTarget;
+              onToggleWorkGroup(row.groupId, anchorElement);
+            }}
+          >
+            <ChevronDownIcon
+              className={cn(
+                "size-3 transition-transform duration-200",
+                row.expanded && "rotate-180",
+              )}
+            />
+            +{previousEntries.length}
+          </button>
+        ) : null}
+      </div>
+      {row.expanded && previousEntries.length > 0 ? (
+        <div className="space-y-px">
+          {previousEntries.map((workEntry) => (
+            <SimpleWorkEntryRow
+              key={workEntry.id}
+              workEntry={workEntry}
+              workspaceRoot={workspaceRoot}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+});
+
 function WorkGroupToggleTimelineRow({
   row,
 }: {
@@ -1321,15 +1377,22 @@ function WorkGroupToggleTimelineRow({
           )}
         />
       </span>
-      {row.expanded ? (
-        <span className="font-medium text-foreground/82">
-          Show fewer {row.onlyToolEntries ? "tool calls" : "log entries"}
-        </span>
-      ) : (
-        <span className="font-medium text-foreground/82">
-          +{row.hiddenCount} previous {labelNoun}
-        </span>
-      )}
+      <span className="flex min-w-0 items-center gap-1.5 font-medium text-foreground/82">
+        {row.expanded ? (
+          `Show fewer ${row.onlyToolEntries ? "tool calls" : "log entries"}`
+        ) : (
+          <>
+            <span className="truncate">
+              {row.summary ?? `+${row.hiddenCount} previous ${labelNoun}`}
+            </span>
+            {row.summary ? (
+              <span className="shrink-0 text-[10px] font-normal text-muted-foreground/60">
+                +{row.hiddenCount}
+              </span>
+            ) : null}
+          </>
+        )}
+      </span>
     </button>
   );
 }
@@ -2597,7 +2660,15 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <div className="min-w-0 flex-1 overflow-hidden">
             <p className="flex min-w-0 w-full items-baseline gap-1.5 text-[12px] leading-5">
-              <span className={cn("min-w-0 shrink truncate", headingClass)}>{heading}</span>
+              <span
+                className={cn(
+                  "min-w-0 shrink truncate",
+                  headingClass,
+                  workEntry.toolLifecycleStatus === "inProgress" && "tool-activity-live",
+                )}
+              >
+                {heading}
+              </span>
               {preview && (
                 <span className="min-w-0 flex-1 truncate text-muted-foreground/55">{preview}</span>
               )}

@@ -647,6 +647,37 @@ label:has(> select#reasoning-effort) select {
   }
 }
 
+@keyframes tool-activity-focus {
+  0%,
+  100% {
+    background-position: 100% 50%;
+  }
+  50% {
+    background-position: 0% 50%;
+  }
+}
+
+.tool-activity-live {
+  color: transparent;
+  background: linear-gradient(
+    100deg,
+    var(--muted-foreground) 15%,
+    var(--foreground) 45%,
+    var(--muted-foreground) 75%
+  );
+  background-size: 220% 100%;
+  background-clip: text;
+  animation: tool-activity-focus 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-activity-live {
+    animation: none;
+    color: var(--foreground);
+    background: none;
+  }
+}
+
 .chat-streaming-tail-lift,
 .chat-streaming-tail-word {
   display: inline-block;

@@ -1161,6 +1161,7 @@ describe("deriveMessagesTimelineRows", () => {
       hiddenCount: 2,
       expanded: false,
       onlyToolEntries: true,
+      summary: "Used 2 tools",
     });
     expect(expandedRows.map((row) => row.id)).toEqual([
       "work-1",
@@ -1170,6 +1171,91 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
     expect(expandedRows.find((row) => row.kind === "work-toggle")).toMatchObject({
       expanded: true,
+    });
+  });
+
+  it("keeps active tool calls together while collapsing older work", () => {
+    const timelineEntries = [
+      {
+        id: "work-old",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:01Z",
+        entry: {
+          id: "old",
+          createdAt: "2026-01-01T00:00:01Z",
+          turnId: "turn-1" as never,
+          label: "read",
+          tone: "tool" as const,
+          toolLifecycleStatus: "completed" as const,
+        },
+      },
+      {
+        id: "work-recent",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:02Z",
+        entry: {
+          id: "recent",
+          createdAt: "2026-01-01T00:00:02Z",
+          turnId: "turn-1" as never,
+          label: "edit",
+          tone: "tool" as const,
+          toolLifecycleStatus: "completed" as const,
+        },
+      },
+      {
+        id: "work-active",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:03Z",
+        entry: {
+          id: "active",
+          createdAt: "2026-01-01T00:00:03Z",
+          turnId: "turn-1" as never,
+          label: "test",
+          tone: "tool" as const,
+          toolLifecycleStatus: "inProgress" as const,
+        },
+      },
+      {
+        id: "work-active-2",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:04Z",
+        entry: {
+          id: "active-2",
+          createdAt: "2026-01-01T00:00:04Z",
+          turnId: "turn-1" as never,
+          label: "run tests",
+          tone: "tool" as const,
+          toolLifecycleStatus: "inProgress" as const,
+        },
+      },
+    ];
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      latestTurn: {
+        turnId: "turn-1" as never,
+        state: "running",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      },
+      isWorking: true,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.id)).toEqual([
+      "recent",
+      "work-live:work-old",
+      "work-toggle:work-old",
+      "working-indicator-row",
+    ]);
+    expect(rows.find((row) => row.kind === "work-live")).toMatchObject({
+      entry: { id: "active-2" },
+      groupedEntries: [{ id: "active" }, { id: "active-2" }],
+    });
+    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
+      hiddenCount: 1,
+      summary: "Used 1 tool",
     });
   });
 });

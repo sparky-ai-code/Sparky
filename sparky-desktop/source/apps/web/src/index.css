@@ -648,56 +648,26 @@ label:has(> select#reasoning-effort) select {
 }
 
 @keyframes tool-activity-focus {
-  from {
-    background-position: 120% 50%;
+  0%,
+  100% {
+    background-position: 100% 50%;
   }
-  to {
-    background-position: -120% 50%;
+  50% {
+    background-position: 0% 50%;
   }
 }
 
 .tool-activity-live {
   color: transparent;
   background: linear-gradient(
-    105deg,
-    var(--muted-foreground) 0%,
-    var(--muted-foreground) 39%,
-    color-mix(in srgb, var(--foreground) 70%, var(--muted-foreground)) 47%,
-    var(--foreground) 50%,
-    color-mix(in srgb, var(--foreground) 70%, var(--muted-foreground)) 53%,
-    var(--muted-foreground) 61%,
-    var(--muted-foreground) 100%
-  );
-  background-size: 280% 100%;
-  background-clip: text;
-  animation: tool-activity-focus 2.2s linear infinite;
-}
-
-.tool-activity-live-row {
-  position: relative;
-  overflow: hidden;
-  border-radius: 0.25rem;
-}
-
-.tool-activity-live-row::after {
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    105deg,
-    transparent 0%,
-    transparent 41%,
-    color-mix(in srgb, var(--foreground) 8%, transparent) 47%,
-    color-mix(in srgb, var(--foreground) 24%, transparent) 50%,
-    color-mix(in srgb, var(--foreground) 8%, transparent) 53%,
-    transparent 59%,
-    transparent 100%
+    100deg,
+    var(--muted-foreground) 15%,
+    var(--foreground) 45%,
+    var(--muted-foreground) 75%
   );
   background-size: 220% 100%;
-  animation: tool-activity-focus 2.2s linear infinite;
-  content: "";
-  mix-blend-mode: screen;
+  background-clip: text;
+  animation: tool-activity-focus 1.8s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -705,10 +675,6 @@ label:has(> select#reasoning-effort) select {
     animation: none;
     color: var(--foreground);
     background: none;
-  }
-
-  .tool-activity-live-row::after {
-    display: none;
   }
 }
 

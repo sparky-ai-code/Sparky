@@ -2643,12 +2643,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
       )}
       {...rowToggleProps}
     >
-      <div
-        className={cn(
-          "flex select-none items-center gap-1.5 transition-[opacity,translate] duration-200",
-          workEntry.toolLifecycleStatus === "inProgress" && "tool-activity-live-row",
-        )}
-      >
+      <div className="flex select-none items-center gap-1.5 transition-[opacity,translate] duration-200">
         <span className={iconWrapperClass}>
           {webSearchSources.length > 0 || webSearchIsLoading ? (
             <WebSearchSourceLogos sources={webSearchSources} loading={webSearchIsLoading} />

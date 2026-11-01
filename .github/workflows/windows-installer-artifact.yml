@@ -80,7 +80,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Build Sparky CLI
         run: cargo build --release -p sparky_cli
-        working-directory: ../..
+        working-directory: ${{ github.workspace }}
       - name: Install desktop dependencies
         run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
         env:

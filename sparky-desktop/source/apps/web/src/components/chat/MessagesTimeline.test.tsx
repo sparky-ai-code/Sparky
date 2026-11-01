@@ -402,6 +402,7 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("Running");
+    expect(markup).toContain("tool-activity-live-row");
     expect(markup).toContain("+7");
     expect(markup).toContain("-3");
   });
@@ -857,6 +858,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('viewBox="0 0 24 24"');
     expect(markup).not.toContain("lucide-globe");
     expect(markup).not.toContain("Completed");
+    expect(markup).not.toContain("tool-activity-live-row");
   });
 
   it("renders an empty favicon placeholder while web search is loading", () => {

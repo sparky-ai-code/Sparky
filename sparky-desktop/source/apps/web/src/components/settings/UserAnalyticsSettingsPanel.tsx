@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ActivityIcon, BarChart3Icon, CoinsIcon, RefreshCwIcon, SparklesIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { RefreshCwIcon } from "lucide-react";
 
 import {
   readLocalModelAnalyticsEvents,
   type LocalModelUsageEvent,
 } from "../../account/modelAnalytics";
 import { Button } from "../ui/button";
-import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { SettingsPageContainer } from "./settingsLayout";
 
 const WINDOWS = [7, 30, 90] as const;
 type WindowDays = (typeof WINDOWS)[number];
@@ -22,6 +23,7 @@ type ModelUsage = {
   readonly model: string;
   readonly turns: number;
   readonly tokens: number;
+  readonly costUsd: number;
 };
 
 function numberOrZero(value: number | undefined): number {
@@ -41,12 +43,30 @@ function formatDate(date: string): string {
   );
 }
 
-function MiniTrend({ rows }: { rows: ReadonlyArray<DailyUsage> }) {
-  const max = Math.max(1, ...rows.map((row) => row.tokens));
+function formatUsd(value: number): string {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(value);
+}
+
+function formatPercent(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    style: "percent",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function MiniTrend({
+  rows,
+  metric,
+}: {
+  rows: ReadonlyArray<DailyUsage>;
+  metric: "tokens" | "cost";
+}) {
+  const valueFor = (row: DailyUsage) => (metric === "tokens" ? row.tokens : row.costUsd);
+  const max = Math.max(1, ...rows.map(valueFor));
   const points = rows
     .map((row, index) => {
-      const x = rows.length < 2 ? 0 : (index / (rows.length - 1)) * 100;
-      const y = 34 - (row.tokens / max) * 30;
+      const x = rows.length < 2 ? 50 : (index / (rows.length - 1)) * 100;
+      const y = 236 - (valueFor(row) / max) * 216;
       return `${x},${y}`;
     })
     .join(" ");
@@ -60,32 +80,45 @@ function MiniTrend({ rows }: { rows: ReadonlyArray<DailyUsage> }) {
   return (
     <div className="space-y-2">
       <svg
-        viewBox="0 0 100 40"
+        viewBox="0 0 100 240"
         preserveAspectRatio="none"
         role="img"
-        aria-label="Daily token usage trend"
-        className="h-44 w-full overflow-visible"
+        aria-label={`Daily ${metric === "tokens" ? "token usage" : "estimated cost"} trend`}
+        className="h-56 w-full overflow-visible"
       >
         <defs>
           <linearGradient id="usage-chart-fill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" className="[stop-color:var(--color-primary)]" stopOpacity=".24" />
+            <stop offset="0%" className="[stop-color:var(--color-primary)]" stopOpacity=".12" />
             <stop offset="100%" className="[stop-color:var(--color-primary)]" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <polygon points={`0,40 ${points} 100,40`} fill="url(#usage-chart-fill)" />
+        {[20, 74, 128, 182, 236].map((y) => (
+          <line
+            key={y}
+            x1="0"
+            x2="100"
+            y1={y}
+            y2={y}
+            stroke="currentColor"
+            strokeWidth="1"
+            className="text-border"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        <polygon points={`0,240 ${points} 100,240`} fill="url(#usage-chart-fill)" />
         <polyline
           points={points}
           fill="none"
           stroke="var(--color-primary)"
-          strokeWidth=".8"
+          strokeWidth="2"
           vectorEffect="non-scaling-stroke"
         />
         {rows.map((row, index) => {
           const x = rows.length < 2 ? 50 : (index / (rows.length - 1)) * 100;
-          const y = 34 - (row.tokens / max) * 30;
+          const y = 236 - (valueFor(row) / max) * 216;
           return (
             <circle key={row.date} cx={x} cy={y} r="1.4" fill="var(--color-primary)">
-              <title>{`${formatDate(row.date)}: ${formatCount(row.tokens)} tokens, ${row.turns} turns`}</title>
+              <title>{`${formatDate(row.date)}: ${metric === "tokens" ? `${formatCount(row.tokens)} tokens` : formatUsd(row.costUsd)}`}</title>
             </circle>
           );
         })}
@@ -94,29 +127,6 @@ function MiniTrend({ rows }: { rows: ReadonlyArray<DailyUsage> }) {
         <span>{formatDate(rows[0]!.date)}</span>
         <span>{formatDate(rows[rows.length - 1]!.date)}</span>
       </div>
-    </div>
-  );
-}
-
-function MetricCard({
-  icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  hint: string;
-}) {
-  return (
-    <div className="rounded-xl border border-border/70 bg-card p-4">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-3 text-2xl font-semibold tracking-tight">{value}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
     </div>
   );
 }
@@ -183,22 +193,25 @@ export function UserAnalyticsSettingsPanel() {
         model: event.model,
         turns: 0,
         tokens: 0,
+        costUsd: 0,
       };
       byModel.set(key, {
         ...current,
         turns: current.turns + 1,
         tokens: current.tokens + numberOrZero(event.totalTokens),
+        costUsd: current.costUsd + numberOrZero(event.costUsd),
       });
     }
     return [...byModel.values()].sort((a, b) => b.turns - a.turns || b.tokens - a.tokens);
   }, [periodEvents]);
 
   const providerRows = useMemo(() => {
-    const totalsByProvider = new Map<string, { turns: number; tokens: number }>();
+    const totalsByProvider = new Map<string, { turns: number; tokens: number; costUsd: number }>();
     for (const item of modelRows) {
-      const current = totalsByProvider.get(item.provider) ?? { turns: 0, tokens: 0 };
+      const current = totalsByProvider.get(item.provider) ?? { turns: 0, tokens: 0, costUsd: 0 };
       current.turns += item.turns;
       current.tokens += item.tokens;
+      current.costUsd += item.costUsd;
       totalsByProvider.set(item.provider, current);
     }
     return [...totalsByProvider.entries()]
@@ -206,166 +219,248 @@ export function UserAnalyticsSettingsPanel() {
       .sort((a, b) => b.turns - a.turns);
   }, [modelRows]);
 
-  const maxProviderTurns = Math.max(1, ...providerRows.map((row) => row.turns));
-  const maxModelTurns = Math.max(1, ...modelRows.map((row) => row.turns));
+  const [metric, setMetric] = useState<"tokens" | "cost">("tokens");
+  const [breakdown, setBreakdown] = useState<"model" | "time">("model");
 
   return (
     <SettingsPageContainer className="max-w-5xl gap-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">Usage analytics</h1>
-          <p className="text-sm text-muted-foreground">
-            A private view of your provider, model, and token usage.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div
-            className="flex rounded-lg border border-border/70 p-0.5"
-            role="group"
-            aria-label="Analytics time range"
-          >
-            {WINDOWS.map((window) => (
-              <button
-                key={window}
-                type="button"
-                aria-pressed={days === window}
-                onClick={() => setDays(window)}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${days === window ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                {window} days
-              </button>
-            ))}
+      <header className="@container/usage-header flex min-h-12 shrink-0 items-center gap-1 border-b pb-2">
+        <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 py-2 @4xl/usage-header:flex">
+          <h1 className="min-w-0 truncate text-base font-medium text-foreground">Usage</h1>
+          <div className="ms-auto flex shrink-0 items-center justify-end gap-2">
+            <ToggleGroup
+              aria-label="Usage period"
+              variant="segmented"
+              value={[String(days)]}
+              onValueChange={(next) => {
+                const value = next[0];
+                if (value && WINDOWS.some((window) => String(window) === value)) {
+                  setDays(Number(value) as WindowDays);
+                }
+              }}
+            >
+              {WINDOWS.map((window) => (
+                <Toggle key={window} value={String(window)}>
+                  {window} days
+                </Toggle>
+              ))}
+            </ToggleGroup>
+            <ToggleGroup
+              aria-label="Usage metric"
+              variant="segmented"
+              value={[metric]}
+              onValueChange={(next) => {
+                const value = next[0];
+                if (value === "tokens" || value === "cost") setMetric(value);
+              }}
+            >
+              <Toggle value="tokens">Tokens</Toggle>
+              <Toggle value="cost">Cost</Toggle>
+            </ToggleGroup>
+            <Button
+              onClick={() => setRefreshToken((value) => value + 1)}
+              aria-label="Refresh usage"
+              aria-busy={loading}
+              disabled={loading}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <RefreshCwIcon className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+            </Button>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label="Refresh analytics"
-            onClick={() => setRefreshToken((value) => value + 1)}
-            disabled={loading}
-          >
-            <RefreshCwIcon className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
-          </Button>
         </div>
       </header>
 
       {loading ? (
-        <div className="rounded-xl border border-border/70 bg-card p-8 text-center text-sm text-muted-foreground">
-          Loading your usage…
-        </div>
+        <p className="text-sm text-muted-foreground">Loading usage…</p>
       ) : (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <MetricCard
-              icon={<ActivityIcon className="size-3.5" />}
-              label="Turns"
-              value={formatCount(totals.turns)}
-              hint={`Across the last ${days} days`}
-            />
-            <MetricCard
-              icon={<SparklesIcon className="size-3.5" />}
-              label="Tokens"
-              value={formatCount(totals.tokens)}
-              hint="Reported by your providers"
-            />
-            <MetricCard
-              icon={<CoinsIcon className="size-3.5" />}
-              label="Estimated cost"
-              value={totals.costEvents > 0 ? `$${totals.cost.toFixed(2)}` : "—"}
-              hint={
-                totals.costEvents > 0
-                  ? `Reported for ${formatCount(totals.costEvents)} turns`
-                  : "No provider cost data available"
-              }
-            />
-            <MetricCard
-              icon={<BarChart3Icon className="size-3.5" />}
-              label="Saved turns"
-              value={formatCount(events.length)}
-              hint="Up to 5,000 recent turns on this device"
-            />
-          </div>
-
-          <SettingsSection title="Daily activity" className="space-y-0">
-            <div className="p-4 sm:p-5">
-              <div className="mb-3 flex items-baseline justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-medium">Token usage</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Daily totals over the selected period
-                  </p>
-                </div>
+        <div className="flex flex-col gap-6">
+          <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+            <div className="flex min-w-0 flex-col gap-5">
+              <div className="flex flex-col gap-1">
+                <span className="text-4xl font-semibold text-foreground tabular-nums">
+                  {metric === "tokens" ? formatCount(totals.tokens) : formatUsd(totals.cost)}
+                </span>
                 <span className="text-xs text-muted-foreground">
-                  {formatCount(totals.tokens)} tokens
+                  {formatCount(totals.turns)} turns
+                  {metric === "cost" && " · API estimate"}
                 </span>
               </div>
-              <MiniTrend rows={usageRows} />
-            </div>
-          </SettingsSection>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <SettingsSection title="Providers" className="space-y-0">
-              <div className="space-y-4 p-4 sm:p-5">
-                {providerRows.length === 0 ? (
-                  <p className="py-5 text-center text-sm text-muted-foreground">
-                    No provider usage recorded yet.
-                  </p>
-                ) : (
-                  providerRows.map((row) => (
-                    <div key={row.provider} className="space-y-1.5">
-                      <div className="flex justify-between gap-3 text-xs">
-                        <span className="truncate font-medium">{row.provider}</span>
-                        <span className="shrink-0 text-muted-foreground">
-                          {formatCount(row.turns)} turns · {formatCount(row.tokens)} tokens
-                        </span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-primary"
-                          style={{ width: `${Math.max(3, (row.turns / maxProviderTurns) * 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </SettingsSection>
-            <SettingsSection title="Models" className="space-y-0">
-              <div className="space-y-4 p-4 sm:p-5">
-                {modelRows.length === 0 ? (
-                  <p className="py-5 text-center text-sm text-muted-foreground">
-                    No model usage recorded yet.
-                  </p>
-                ) : (
-                  modelRows.map((row) => (
-                    <div key={`${row.provider}:${row.model}`} className="space-y-1.5">
-                      <div className="flex justify-between gap-3 text-xs">
-                        <span className="min-w-0 truncate font-medium">
-                          {row.model}
-                          <span className="ml-1.5 font-normal text-muted-foreground">
-                            {row.provider}
+              {providerRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No provider usage recorded yet.</p>
+              ) : (
+                providerRows.map((row) => {
+                  const value = metric === "tokens" ? row.tokens : row.costUsd;
+                  const share = metric === "tokens" ? totals.tokens : totals.cost;
+                  return (
+                    <div key={row.provider} className="flex flex-col gap-1">
+                      <div className="flex items-baseline justify-between gap-4">
+                        <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
+                          <span aria-hidden className="size-2 shrink-0 rounded-full bg-primary" />
+                          <span className="truncate">{row.provider}</span>
+                          <span className="shrink-0 whitespace-nowrap text-2xs text-muted-foreground tabular-nums">
+                            {formatCount(row.turns)} turns
                           </span>
                         </span>
-                        <span className="shrink-0 text-muted-foreground">
-                          {formatCount(row.turns)} · {formatCount(row.tokens)} tokens
+                        <span className="shrink-0 text-sm font-medium text-foreground tabular-nums">
+                          {metric === "tokens" ? formatCount(value) : formatUsd(value)}
                         </span>
                       </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-primary/75"
-                          style={{ width: `${Math.max(3, (row.turns / maxModelTurns) * 100)}%` }}
-                        />
-                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {formatPercent(share > 0 ? value / share : 0)} of {metric}
+                      </span>
                     </div>
-                  ))
-                )}
+                  );
+                })
+              )}
+            </div>
+
+            <div className="flex min-w-0 flex-col gap-3">
+              <h2 className="text-sm font-medium text-foreground">
+                Daily {metric === "tokens" ? "processed tokens" : "cost"}
+              </h2>
+              <MiniTrend rows={usageRows} metric={metric} />
+            </div>
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <h2 className="text-sm font-medium text-foreground">Totals</h2>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-4">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-xs text-muted-foreground">Turns</span>
+                <span className="text-base font-medium text-foreground tabular-nums">
+                  {formatCount(totals.turns)}
+                </span>
               </div>
-            </SettingsSection>
-          </div>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-xs text-muted-foreground">Processed tokens</span>
+                <span className="text-base font-medium text-foreground tabular-nums">
+                  {formatCount(totals.tokens)}
+                </span>
+              </div>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-xs text-muted-foreground">Estimated cost</span>
+                <span className="text-base font-medium text-foreground tabular-nums">
+                  {totals.costEvents > 0 ? formatUsd(totals.cost) : "—"}
+                </span>
+              </div>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-xs text-muted-foreground">Saved turns</span>
+                <span className="text-base font-medium text-foreground tabular-nums">
+                  {formatCount(events.length)}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-medium text-foreground">Breakdown</h2>
+              <ToggleGroup
+                aria-label="Usage breakdown"
+                variant="segmented"
+                value={[breakdown]}
+                onValueChange={(next) => {
+                  const value = next[0];
+                  if (value === "model" || value === "time") setBreakdown(value);
+                }}
+              >
+                <Toggle value="model">Model</Toggle>
+                <Toggle value="time">Day</Toggle>
+              </ToggleGroup>
+            </div>
+
+            {breakdown === "model" ? (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-right text-xs text-muted-foreground">
+                    <th className="py-2 pr-3 text-left font-normal">#</th>
+                    <th className="w-full py-2 text-left font-normal">Model</th>
+                    <th className="py-2 pl-6 font-normal">Turns</th>
+                    <th className="py-2 pl-6 font-normal">Cost</th>
+                    <th className="py-2 pl-6 font-normal">Tokens</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {modelRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-muted-foreground">
+                        No activity in this window.
+                      </td>
+                    </tr>
+                  ) : (
+                    modelRows.map((row, index) => (
+                      <tr
+                        key={`${row.provider}:${row.model}`}
+                        className="border-b border-border/50 text-right whitespace-nowrap text-muted-foreground tabular-nums transition-colors hover:bg-muted/50"
+                      >
+                        <td className="py-2.5 pr-3 text-left text-xs">{index + 1}</td>
+                        <td className="py-2.5 text-left whitespace-normal text-foreground">
+                          {row.model}
+                          <span className="ml-2 text-xs text-muted-foreground">{row.provider}</span>
+                        </td>
+                        <td className="py-2.5 pl-6">{formatCount(row.turns)}</td>
+                        <td className="py-2.5 pl-6 text-foreground">
+                          {row.costUsd > 0 ? formatUsd(row.costUsd) : "—"}
+                        </td>
+                        <td className="py-2.5 pl-6">{formatCount(row.tokens)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            ) : (
+              <div
+                className="overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                role="region"
+                aria-label="Usage breakdown by day"
+                tabIndex={0}
+              >
+                <table className="w-full text-sm whitespace-nowrap">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                      <th className="py-2 font-normal">Day</th>
+                      <th className="py-2 pl-4 text-right font-normal">Turns</th>
+                      <th className="py-2 pl-4 text-right font-normal">Cost</th>
+                      <th className="py-2 pl-4 text-right font-normal">Tokens</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usageRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-6 text-center text-muted-foreground">
+                          No activity in this window.
+                        </td>
+                      </tr>
+                    ) : (
+                      [...usageRows].reverse().map((row) => (
+                        <tr
+                          key={row.date}
+                          className="border-b border-border/50 transition-colors hover:bg-muted/50"
+                        >
+                          <td className="py-2 text-foreground">{formatDate(row.date)}</td>
+                          <td className="py-2 pl-4 text-right text-muted-foreground tabular-nums">
+                            {formatCount(row.turns)}
+                          </td>
+                          <td className="py-2 pl-4 text-right text-muted-foreground tabular-nums">
+                            {row.costUsd > 0 ? formatUsd(row.costUsd) : "—"}
+                          </td>
+                          <td className="py-2 pl-4 text-right text-muted-foreground tabular-nums">
+                            {formatCount(row.tokens)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
           <p className="text-xs text-muted-foreground">
-            This page reads model-call metadata saved in this browser. Prompts and responses are
-            never included.
+            Usage metadata is stored on this device. Prompts and responses are never included.
           </p>
-        </>
+        </div>
       )}
     </SettingsPageContainer>
   );

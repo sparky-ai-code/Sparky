@@ -15,6 +15,7 @@ import { expect } from "vite-plus/test";
 import type {
   GitActionProgressEvent,
   GitPreparePullRequestThreadInput,
+  GitPullRequestReviewInput,
   ModelSelection,
   ThreadId,
 } from "@sparky/contracts";
@@ -647,12 +648,7 @@ function resolvePullRequest(
 
 function reviewPullRequest(
   manager: GitManager.GitManager["Service"],
-  input: {
-    cwd: string;
-    modelSelection: ModelSelection;
-    prompt: string;
-    systemPrompt: string;
-  },
+  input: GitPullRequestReviewInput,
 ) {
   return manager.reviewPullRequest(input);
 }
@@ -728,25 +724,30 @@ it.effect("runs pull request review generation without any thread setup", () =>
       textGeneration: {
         generatePullRequestReview: (input) => {
           calls.push({ cwd: input.cwd, prompt: input.prompt, systemPrompt: input.systemPrompt });
-          return Effect.succeed({ response: "review complete" });
+          return Effect.succeed({ response: '{"summary":"No actionable bugs.","findings":[]}' });
         },
       },
     });
     const result = yield* reviewPullRequest(manager, {
       cwd: process.cwd(),
       modelSelection,
-      prompt: "Review the diff",
-      systemPrompt: "Use the dedicated review instructions",
+      focus: "security",
+      effort: "quick",
+      context: {
+        title: "Test review",
+        body: null,
+        url: "https://github.com/owner/repo/pull/1",
+        baseBranch: "main",
+        headBranch: "feature",
+        diff: "diff --git a/file.ts b/file.ts\n--- a/file.ts\n+++ b/file.ts\n@@ -0,0 +1 @@\n+const value = 1;",
+      },
     });
 
-    expect(result.response).toBe("review complete");
-    expect(calls).toEqual([
-      {
-        cwd: process.cwd(),
-        prompt: "Review the diff",
-        systemPrompt: "Use the dedicated review instructions",
-      },
-    ]);
+    expect(result.report).toContain("Bugs (0)");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.cwd).toBe(process.cwd());
+    expect(calls[0]?.prompt).toContain("const value = 1;");
+    expect(calls[0]?.systemPrompt).toContain("security vulnerabilities");
   }),
 );
 

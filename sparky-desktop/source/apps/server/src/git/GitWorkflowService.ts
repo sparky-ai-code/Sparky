@@ -290,10 +290,7 @@ export const make = Effect.gen(function* () {
       "GitWorkflowService.resolvePullRequest",
       gitManager.resolvePullRequest,
     ),
-    reviewPullRequest: routeGitManager(
-      "GitWorkflowService.reviewPullRequest",
-      gitManager.reviewPullRequest,
-    ),
+    reviewPullRequest: gitManager.reviewPullRequest,
     preparePullRequestThread: routeGitManager(
       "GitWorkflowService.preparePullRequestThread",
       gitManager.preparePullRequestThread,

@@ -340,6 +340,7 @@ jobs:
           required=(Sparky-x64.exe beta.yml nightly.yml Sparky-x64.dmg beta-mac-x64.yml nightly-mac-x64.yml Sparky-arm64.dmg beta-mac-arm64.yml nightly-mac-arm64.yml Sparky-x64.AppImage Sparky-amd64.deb)
           for asset in "${required[@]}"; do test -s "beta-assets/$asset" || { echo "Missing beta release asset: $asset" >&2; exit 1; }; done
           gh release create "v$RELEASE_VERSION" beta-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
             --target "$SOURCE_SHA" \
             --title "Sparky $RELEASE_VERSION (Developer Beta)" \
             --notes "Developer beta built from $SOURCE_SHA. Select the beta update track in Sparky to receive this release." \

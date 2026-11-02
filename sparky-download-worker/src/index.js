@@ -139,6 +139,32 @@ const REQUIRED_GITHUB_RELEASE_ASSETS = [
   "Sparky-x64.AppImage", "Sparky-amd64.deb", "latest-linux.yml",
 ];
 
+const GITHUB_BETA_RELEASE_ASSETS = new Map([
+  ["Sparky-x64.exe", "windows-x64"],
+  ["Sparky-x64.exe.blockmap", "windows-x64"],
+  ["beta.yml", "windows-x64"],
+  ["nightly.yml", "windows-x64"],
+  ["Sparky-arm64.zip", "macos-arm64"],
+  ["Sparky-arm64.dmg", "macos-arm64"],
+  ["Sparky-arm64.dmg.blockmap", "macos-arm64"],
+  ["beta-mac-arm64.yml", "macos-arm64"],
+  ["nightly-mac-arm64.yml", "macos-arm64"],
+  ["Sparky-x64.zip", "macos-x64"],
+  ["Sparky-x64.dmg", "macos-x64"],
+  ["Sparky-x64.dmg.blockmap", "macos-x64"],
+  ["beta-mac-x64.yml", "macos-x64"],
+  ["nightly-mac-x64.yml", "macos-x64"],
+  ["Sparky-x64.AppImage", "linux-x64"],
+  ["Sparky-amd64.deb", "linux-x64"],
+]);
+
+const REQUIRED_GITHUB_BETA_RELEASE_ASSETS = [
+  "Sparky-x64.exe", "Sparky-x64.exe.blockmap", "beta.yml", "nightly.yml",
+  "Sparky-arm64.dmg", "Sparky-arm64.dmg.blockmap", "Sparky-arm64.zip", "beta-mac-arm64.yml", "nightly-mac-arm64.yml",
+  "Sparky-x64.dmg", "Sparky-x64.dmg.blockmap", "Sparky-x64.zip", "beta-mac-x64.yml", "nightly-mac-x64.yml",
+  "Sparky-x64.AppImage", "Sparky-amd64.deb",
+];
+
 function githubLatestReleaseConfig(release) {
   if (!release || typeof release !== "object" || release.draft || release.prerelease || typeof release.tag_name !== "string") {
     throw new Error("GitHub latest release has an invalid shape.");
@@ -176,6 +202,58 @@ function githubLatestReleaseConfig(release) {
     files,
     githubLatestRelease: true,
   };
+}
+
+function githubBetaReleaseConfig(release) {
+  if (!release || typeof release !== "object" || release.draft || !release.prerelease || typeof release.tag_name !== "string" || !/^v?\d+\.\d+\.\d+-beta\.\d+$/u.test(release.tag_name)) {
+    throw new Error("GitHub beta release has an invalid shape.");
+  }
+  const version = release.tag_name.replace(/^v/u, "");
+  const assets = new Map((Array.isArray(release.assets) ? release.assets : []).map((asset) => [asset.name, asset]));
+  for (const name of REQUIRED_GITHUB_BETA_RELEASE_ASSETS) {
+    if (!assets.has(name)) throw new Error(`GitHub beta release is missing ${name}.`);
+  }
+  const files = [];
+  for (const [name, platform] of GITHUB_BETA_RELEASE_ASSETS) {
+    const asset = assets.get(name);
+    if (!asset) continue;
+    if (!Number.isSafeInteger(asset.size) || asset.size <= 0 || typeof asset.browser_download_url !== "string") {
+      throw new Error(`GitHub beta release contains invalid metadata for ${name}.`);
+    }
+    files.push({
+      name,
+      platform,
+      size: asset.size,
+      contentType: typeof asset.content_type === "string" ? asset.content_type : "application/octet-stream",
+      sha256: null,
+      url: requiredHttpsUrl(asset.browser_download_url, `URL for ${name}`),
+    });
+  }
+  return {
+    schemaVersion: 0,
+    id: String(release.id ?? version),
+    version,
+    name: release.name || `Sparky ${version} (Developer Beta)`,
+    channel: "beta",
+    changelog: typeof release.body === "string" ? release.body : "",
+    publishedAt: release.published_at || null,
+    files,
+    githubLatestRelease: true,
+  };
+}
+
+function betaReleaseApiUrl(env) {
+  const configuredUrl = env.RELEASE_BETA_API_URL?.trim();
+  if (configuredUrl) return requiredHttpsUrl(configuredUrl, "RELEASE_BETA_API_URL");
+  const latestUrl = env.RELEASE_LATEST_API_URL?.trim();
+  if (!latestUrl) return null;
+  const parsed = new URL(requiredHttpsUrl(latestUrl, "RELEASE_LATEST_API_URL"));
+  if (!parsed.pathname.endsWith("/releases/latest")) {
+    throw new Error("RELEASE_LATEST_API_URL must end in /releases/latest to discover beta releases.");
+  }
+  parsed.pathname = parsed.pathname.slice(0, -"/latest".length);
+  parsed.search = "?per_page=100";
+  return parsed.toString();
 }
 
 function validateManifest(raw) {
@@ -228,6 +306,31 @@ async function loadManifest(env) {
   }
 }
 
+async function loadBetaRelease(env) {
+  const betaUrl = betaReleaseApiUrl(env);
+  if (!betaUrl) return null;
+  try {
+    const response = await fetch(betaUrl, {
+      headers: {
+        accept: "application/vnd.github+json",
+        "user-agent": "Sparky-download-worker",
+        "x-github-api-version": "2022-11-28",
+      },
+      cf: { cacheTtl: 60, cacheEverything: true },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const releases = Array.isArray(payload) ? payload : [payload];
+    const latestBeta = releases.find((release) =>
+      release && !release.draft && release.prerelease && /^v?\d+\.\d+\.\d+-beta\.\d+$/u.test(release.tag_name ?? ""),
+    );
+    return latestBeta ? githubBetaReleaseConfig(latestBeta) : null;
+  } catch (error) {
+    console.error(JSON.stringify({ event: "github_beta_release_fetch_failed", message: error instanceof Error ? error.message : String(error) }));
+    return null;
+  }
+}
+
 function publicManifest(release) {
   return {
     id: release.id ?? release.version,
@@ -258,7 +361,7 @@ function updateRequest(path) {
   const decoded = suffix.split("/").map(decodeURIComponent);
   if (decoded.some((part) => !part || part === "." || part === ".." || part.includes("\\"))) return null;
   if (decoded.length === 1) {
-    if (decoded[0] === "latest-mac.yml") return { platform: "macos-arm64", name: decoded[0] };
+    if (decoded[0] === "latest-mac.yml" || decoded[0] === "beta-mac.yml" || decoded[0] === "nightly-mac.yml") return { platform: "macos-arm64", name: decoded[0] === "beta-mac.yml" ? "beta-mac-arm64.yml" : decoded[0] === "nightly-mac.yml" ? "nightly-mac-arm64.yml" : decoded[0] };
     if (decoded[0] === "latest-linux.yml") return { platform: "linux-x64", name: decoded[0] };
     return { platform: "windows-x64", name: decoded[0] };
   }
@@ -271,8 +374,12 @@ function updateRequest(path) {
   }
   if (decoded[0] === "linux" && decoded.length === 2 && (decoded[1] === "latest-linux.yml" || decoded[1].endsWith(".AppImage") || decoded[1].endsWith(".asc") || decoded[1].endsWith(".deb") || decoded[1].endsWith(".zsync"))) return { platform: "linux-x64", name: decoded[1] };
   if (decoded[0] === "macos" && decoded.length === 3 && (decoded[1] === "arm64" || decoded[1] === "x64")) {
-    const name = decoded[2] === "latest-mac.yml" ? `latest-mac-${decoded[1]}.yml` : decoded[2];
-    return { platform: `macos-${decoded[1]}`, name };
+    const arch = decoded[1];
+    const name = decoded[2] === "latest-mac.yml" ? `latest-mac-${arch}.yml`
+      : decoded[2] === "beta-mac.yml" ? `beta-mac-${arch}.yml`
+        : decoded[2] === "nightly-mac.yml" ? `nightly-mac-${arch}.yml`
+          : decoded[2];
+    return { platform: `macos-${arch}`, name };
   }
   return null;
 }
@@ -358,16 +465,19 @@ async function handleRequest(request, env, executionContext) {
   const path = url.pathname.replace(/\/+$/u, "") || "/";
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: publicHeaders() });
   if (request.method !== "GET" && request.method !== "HEAD") return errorResponse("Method not allowed.", 405);
-  if (url.searchParams.get("channel") === "beta") return errorResponse("No published beta release.", 404);
   if (env.DOWNLOADS_DISABLED === "true") return errorResponse("Downloads are temporarily unavailable.", 503);
 
-  const release = await loadManifest(env);
+  const update = path.startsWith("/get/updates/") ? updateRequest(path) : null;
+  const legacyBetaFeed = update && /^(?:beta|nightly)(?:-mac(?:-(?:arm64|x64))?)?\.yml$/u.test(update.name);
+  const betaChannel = url.searchParams.get("channel") === "beta" || Boolean(legacyBetaFeed);
+  const release = betaChannel ? await loadBetaRelease(env) : await loadManifest(env);
+  if (!release) return errorResponse("No published beta release.", 404);
   if (path === "/get/manifest") return json(publicManifest(release));
   if (path === "/get/releases") return json([publicManifest(release)]);
   if (path.startsWith("/get/updates/")) {
     // Desktop auto-updaters poll these feeds in the background. They are not
     // user-initiated installer calls, so keep them out of download analytics.
-    const requested = updateRequest(path);
+    const requested = update;
     if (!requested) return errorResponse("Update asset not found.", 404);
     const file = release.files.find((candidate) => candidate.platform === requested.platform && candidate.name === requested.name);
     if (!file) return errorResponse("Update asset not found.", 404);

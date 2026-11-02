@@ -1,0 +1,346 @@
+name: Release Sparky beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Branch, tag, or commit to build (for example the PR head SHA)
+        required: true
+        type: string
+      version:
+        description: Beta version in X.Y.Z-beta.N format
+        required: true
+        type: string
+
+run-name: Publish Sparky ${{ inputs.version }} from ${{ inputs.source_ref }}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-beta-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_VERSION: ${{ inputs.version }}
+  SPARKY_GITHUB_CLIENT_ID: ${{ vars.SPARKY_GITHUB_CLIENT_ID }}
+  SPARKY_GITHUB_AUTH_BROKER_URL: ${{ vars.SPARKY_GITHUB_AUTH_BROKER_URL }}
+  SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
+  VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.SPARKY_CLERK_PUBLISHABLE_KEY }}
+  VITE_SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 0
+      - id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]] || { echo 'Version must be X.Y.Z-beta.N.' >&2; exit 1; }
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if git tag -l "v$RELEASE_VERSION" | grep -q .; then
+            echo "Tag v$RELEASE_VERSION already exists." >&2
+            exit 1
+          fi
+
+  build-wsl-node-pty:
+    needs: validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Build WSL node-pty prebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: [process.cwd() + '/apps/server'] }))")"
+          pty_dir="$(dirname "$pty_pkg")"
+          (cd "$pty_dir" && npx --yes node-gyp rebuild)
+          mkdir -p "$RUNNER_TEMP/wsl-prebuild"
+          cp "$pty_dir/build/Release/pty.node" "$RUNNER_TEMP/wsl-prebuild/pty.node"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wsl-node-pty-x64
+          path: ${{ runner.temp }}/wsl-prebuild/pty.node
+          if-no-files-found: error
+          retention-days: 1
+
+  build-macos-x64:
+    needs: validate
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-apple-darwin
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install dependencies and set beta version
+        run: |
+          pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+          node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Build desktop and Intel macOS installer
+        run: |
+          pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+          pnpm --config.verify-deps-before-run=false dist:desktop:dmg:x64
+        env:
+          NODE_ENV: production
+          SPARKY_UPDATE_URL: https://sparky.llc/get/updates/macos/x64
+      - name: Prepare beta and legacy nightly feeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release/beta-mac.yml
+          grep -Fq "$RELEASE_VERSION" release/beta-mac.yml
+          cp release/beta-mac.yml release/beta-mac-x64.yml
+          cp release/beta-mac.yml release/nightly-mac-x64.yml
+          test -s release/Sparky-x64.dmg && test -s release/Sparky-x64.dmg.blockmap && test -s release/Sparky-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beta-macos-x64
+          path: |
+            sparky-desktop/source/release/Sparky-x64.dmg
+            sparky-desktop/source/release/Sparky-x64.dmg.blockmap
+            sparky-desktop/source/release/Sparky-x64.zip
+            sparky-desktop/source/release/beta-mac-x64.yml
+            sparky-desktop/source/release/nightly-mac-x64.yml
+          if-no-files-found: error
+          retention-days: 1
+
+  build-macos-arm64:
+    needs: validate
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-apple-darwin
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install dependencies and set beta version
+        run: |
+          pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+          node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Build desktop and Apple Silicon macOS installer
+        run: |
+          pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+          pnpm --config.verify-deps-before-run=false dist:desktop:dmg:arm64
+        env:
+          NODE_ENV: production
+          SPARKY_UPDATE_URL: https://sparky.llc/get/updates/macos/arm64
+      - name: Prepare beta and legacy nightly feeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release/beta-mac.yml
+          grep -Fq "$RELEASE_VERSION" release/beta-mac.yml
+          cp release/beta-mac.yml release/beta-mac-arm64.yml
+          cp release/beta-mac.yml release/nightly-mac-arm64.yml
+          test -s release/Sparky-arm64.dmg && test -s release/Sparky-arm64.dmg.blockmap && test -s release/Sparky-arm64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beta-macos-arm64
+          path: |
+            sparky-desktop/source/release/Sparky-arm64.dmg
+            sparky-desktop/source/release/Sparky-arm64.dmg.blockmap
+            sparky-desktop/source/release/Sparky-arm64.zip
+            sparky-desktop/source/release/beta-mac-arm64.yml
+            sparky-desktop/source/release/nightly-mac-arm64.yml
+          if-no-files-found: error
+          retention-days: 1
+
+  build-linux-x64:
+    needs: validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-unknown-linux-gnu
+      - run: sudo apt-get update && sudo apt-get install -y imagemagick xvfb
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install dependencies and set beta version
+        run: |
+          pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+          node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Build desktop and Linux packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+          mkdir -p release-appimage release-deb release
+          T3CODE_DESKTOP_OUTPUT_DIR=release-appimage SPARKY_UPDATE_URL=https://sparky.llc/get/updates/linux pnpm --config.verify-deps-before-run=false dist:desktop:linux
+          T3CODE_DESKTOP_OUTPUT_DIR=release-deb pnpm --config.verify-deps-before-run=false dist:desktop:linux:deb
+          appimage="$(find release-appimage -maxdepth 1 -name '*.AppImage' -print -quit)"
+          deb="$(find release-deb -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$appimage" && test -n "$deb"
+          cp "$appimage" release/Sparky-x64.AppImage
+          cp "$deb" release/Sparky-amd64.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beta-linux-x64
+          path: |
+            sparky-desktop/source/release/Sparky-x64.AppImage
+            sparky-desktop/source/release/Sparky-amd64.deb
+          if-no-files-found: error
+          retention-days: 1
+
+  build-windows-x64:
+    needs: [validate, build-wsl-node-pty]
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    env:
+      SPARKY_UPDATE_URL: https://sparky.llc/get/updates/windows
+      T3CODE_DESKTOP_SIGNED: 'false'
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - run: cargo build --release -p sparky_cli
+        working-directory: .
+      - name: Install dependencies and set beta version
+        run: |
+          pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+          node scripts/update-release-package-versions.ts "$env:RELEASE_VERSION"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: wsl-node-pty-x64
+          path: wsl-prebuild
+      - name: Build desktop and Windows installer
+        run: |
+          pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
+          pnpm --config.verify-deps-before-run=false dist:desktop:win:x64 --output-dir release --wsl-prebuild "$env:GITHUB_WORKSPACE/wsl-prebuild/pty.node" --verbose
+      - name: Prepare beta and legacy nightly feeds
+        shell: pwsh
+        run: |
+          $feed = 'release/beta.yml'
+          if (!(Test-Path $feed)) { throw 'beta.yml was not produced by electron-builder.' }
+          if (!(Select-String -Path $feed -SimpleMatch $env:RELEASE_VERSION -Quiet)) { throw 'beta feed has the wrong version.' }
+          Copy-Item $feed 'release/nightly.yml'
+          if (!(Test-Path 'release/Sparky-x64.exe') -or !(Test-Path 'release/Sparky-x64.exe.blockmap')) { throw 'Windows installer output is incomplete.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beta-windows-x64
+          path: |
+            sparky-desktop/source/release/Sparky-x64.exe
+            sparky-desktop/source/release/Sparky-x64.exe.blockmap
+            sparky-desktop/source/release/beta.yml
+            sparky-desktop/source/release/nightly.yml
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-beta:
+    needs: [validate, build-macos-x64, build-macos-arm64, build-linux-x64, build-windows-x64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: beta-*
+          path: beta-assets
+          merge-multiple: true
+      - name: Verify required beta update feeds and create prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(Sparky-x64.exe beta.yml nightly.yml Sparky-x64.dmg beta-mac-x64.yml nightly-mac-x64.yml Sparky-arm64.dmg beta-mac-arm64.yml nightly-mac-arm64.yml Sparky-x64.AppImage Sparky-amd64.deb)
+          for asset in "${required[@]}"; do test -s "beta-assets/$asset" || { echo "Missing beta release asset: $asset" >&2; exit 1; }; done
+          gh release create "v$RELEASE_VERSION" beta-assets/* \
+            --target "$SOURCE_SHA" \
+            --title "Sparky $RELEASE_VERSION (Developer Beta)" \
+            --notes "Developer beta built from $SOURCE_SHA. Select the beta update track in Sparky to receive this release." \
+            --prerelease

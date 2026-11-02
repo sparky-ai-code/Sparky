@@ -108,6 +108,9 @@ test("architecture-specific updater paths cannot cross platforms", () => {
   assert.deepEqual(updateRequest("/get/updates/linux/latest-linux.yml"), { platform: "linux-x64", name: "latest-linux.yml" });
   assert.deepEqual(updateRequest("/get/updates/macos/arm64/latest-mac.yml"), { platform: "macos-arm64", name: "latest-mac-arm64.yml" });
   assert.deepEqual(updateRequest("/get/updates/macos/x64/latest-mac.yml"), { platform: "macos-x64", name: "latest-mac-x64.yml" });
+  assert.deepEqual(updateRequest("/get/updates/macos/x64/beta-mac.yml"), { platform: "macos-x64", name: "beta-mac-x64.yml" });
+  assert.deepEqual(updateRequest("/get/updates/macos/arm64/nightly-mac.yml"), { platform: "macos-arm64", name: "nightly-mac-arm64.yml" });
+  assert.deepEqual(updateRequest("/get/updates/windows/nightly.yml"), { platform: "windows-x64", name: "nightly.yml" });
   assert.deepEqual(updateRequest("/get/updates/macos/x64/Sparky-x64.zip"), { platform: "macos-x64", name: "Sparky-x64.zip" });
   assert.equal(updateRequest("/get/updates/macos/arm64/../secret"), null);
 });
@@ -252,9 +255,71 @@ files:
   }
 });
 
-test("beta never replaces the stable launch build", async () => {
-  const response = await handleRequest(new Request("https://sparky.llc/get?channel=beta"), env);
-  assert.equal(response.status, 404);
+test("beta feeds resolve legacy 1.1.31 nightly paths and the beta channel to prereleases", async () => {
+  const releaseTag = "v1.1.33-beta.1";
+  const releaseBase = `https://github.com/sparky-ai-code/Sparky/releases/download/${releaseTag}`;
+  const assetNames = [
+    "Sparky-x64.exe", "Sparky-x64.exe.blockmap", "beta.yml", "nightly.yml",
+    "Sparky-arm64.zip", "Sparky-arm64.dmg", "Sparky-arm64.dmg.blockmap", "beta-mac-arm64.yml", "nightly-mac-arm64.yml",
+    "Sparky-x64.zip", "Sparky-x64.dmg", "Sparky-x64.dmg.blockmap", "beta-mac-x64.yml", "nightly-mac-x64.yml",
+    "Sparky-x64.AppImage", "Sparky-amd64.deb",
+  ];
+  const release = {
+    id: 133,
+    tag_name: releaseTag,
+    name: "Sparky 1.1.33 Beta 1",
+    body: "Beta update.",
+    published_at: "2026-10-05T00:00:00Z",
+    draft: false,
+    prerelease: true,
+    assets: assetNames.map((name) => ({ name, size: 1024, content_type: "application/octet-stream", browser_download_url: `${releaseBase}/${name}` })),
+  };
+  const feeds = new Map([
+    ["beta.yml", "version: 1.1.33-beta.1\nfiles:\n  - url: Sparky-x64.exe\n"],
+    ["nightly.yml", "version: 1.1.33-beta.1\nfiles:\n  - url: Sparky-x64.exe\n"],
+    ["beta-mac-x64.yml", "version: 1.1.33-beta.1\nfiles:\n  - url: Sparky-x64.zip\n"],
+    ["nightly-mac-x64.yml", "version: 1.1.33-beta.1\nfiles:\n  - url: Sparky-x64.zip\n"],
+  ]);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const requestUrl = String(input);
+    if (requestUrl === "https://api.github.com/repos/sparky-ai-code/Sparky/releases?per_page=100") return Response.json([release]);
+    const assetName = decodeURIComponent(new URL(requestUrl).pathname.split("/").at(-1));
+    const feed = feeds.get(assetName);
+    return feed ? new Response(feed, { headers: { "content-type": "application/yaml" } }) : new Response("Not found", { status: 404 });
+  };
+  try {
+    const updateEnv = { RELEASE_LATEST_API_URL: "https://api.github.com/repos/sparky-ai-code/Sparky/releases/latest" };
+    for (const [path, assetName] of [
+      ["/get/updates/windows/nightly.yml", "Sparky-x64.exe"],
+      ["/get/updates/macos/x64/nightly-mac.yml", "Sparky-x64.zip"],
+      ["/get/updates/macos/x64/beta-mac.yml", "Sparky-x64.zip"],
+    ]) {
+      const response = await handleRequest(new Request(`https://sparky.llc${path}`), updateEnv);
+      assert.equal(response.status, 200, path);
+      assert((await response.text()).includes(`${releaseBase}/${assetName}`), path);
+    }
+    const manifest = await handleRequest(new Request("https://sparky.llc/get/manifest?channel=beta"), updateEnv);
+    assert.equal((await manifest.json()).version, "1.1.33-beta.1");
+    const installer = await handleRequest(new Request("https://sparky.llc/get?platform=windows&channel=beta"), updateEnv);
+    assert.equal(installer.headers.get("location"), `${releaseBase}/Sparky-x64.exe`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("beta requests return 404 until a valid prerelease exists", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json([]);
+  try {
+    const response = await handleRequest(
+      new Request("https://sparky.llc/get?channel=beta"),
+      { RELEASE_LATEST_API_URL: "https://api.github.com/repos/sparky-ai-code/Sparky/releases/latest" },
+    );
+    assert.equal(response.status, 404);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("invalid AWS release configuration fails closed", async () => {

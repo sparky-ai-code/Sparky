@@ -6,6 +6,7 @@ import {
   SlidersHorizontalIcon,
   PaletteIcon,
   BrainIcon,
+  ChartNoAxesCombinedIcon,
   KeyboardIcon,
   PlugZapIcon,
   SearchIcon,
@@ -35,6 +36,7 @@ export type SettingsSectionPath =
   | "/settings/plugins"
   | "/settings/mcp"
   | "/settings/memory"
+  | "/settings/analytics"
   | "/settings/archived";
 
 export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
@@ -60,6 +62,12 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   { label: "Plugins", section: "AI & tools", to: "/settings/plugins", icon: PlugZapIcon },
   { label: "MCP", section: "AI & tools", to: "/settings/mcp", icon: McpIcon },
   { label: "Memory", section: "AI & tools", to: "/settings/memory", icon: BrainIcon },
+  {
+    label: "Analytics",
+    section: "Data",
+    to: "/settings/analytics",
+    icon: ChartNoAxesCombinedIcon,
+  },
   { label: "Keybindings", section: "Preferences", to: "/settings/keybindings", icon: KeyboardIcon },
   { label: "Archive", section: "Data", to: "/settings/archived", icon: ArchiveIcon },
 ];

@@ -28,6 +28,7 @@ import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
+import { Route as SettingsAnalyticsRouteImport } from './routes/settings.analytics'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 
@@ -125,6 +126,11 @@ const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
   path: '/appearance',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsAnalyticsRoute = SettingsAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   id: '/draft/$draftId',
   path: '/draft/$draftId',
@@ -144,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/pull-requests': typeof PullRequestsRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/settings/analytics': typeof SettingsAnalyticsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
@@ -165,6 +172,7 @@ export interface FileRoutesByTo {
   '/pull-requests': typeof PullRequestsRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/settings/analytics': typeof SettingsAnalyticsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
@@ -189,6 +197,7 @@ export interface FileRoutesById {
   '/pull-requests': typeof PullRequestsRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/settings/analytics': typeof SettingsAnalyticsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
@@ -214,6 +223,7 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/schedules'
     | '/settings'
+    | '/settings/analytics'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/diagnostics'
@@ -235,6 +245,7 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/schedules'
     | '/settings'
+    | '/settings/analytics'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/diagnostics'
@@ -258,6 +269,7 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/schedules'
     | '/settings'
+    | '/settings/analytics'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/diagnostics'
@@ -419,6 +431,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAppearanceRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/analytics': {
+      id: '/settings/analytics'
+      path: '/analytics'
+      fullPath: '/settings/analytics'
+      preLoaderRoute: typeof SettingsAnalyticsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
       path: '/draft/$draftId'
@@ -451,6 +470,7 @@ const ChatRouteChildren: ChatRouteChildren = {
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
 interface SettingsRouteChildren {
+  SettingsAnalyticsRoute: typeof SettingsAnalyticsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
@@ -466,6 +486,7 @@ interface SettingsRouteChildren {
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAnalyticsRoute: SettingsAnalyticsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsArchivedRoute: SettingsArchivedRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,

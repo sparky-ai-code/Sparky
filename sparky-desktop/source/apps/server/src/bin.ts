@@ -8,17 +8,18 @@ import * as NetService from "@sparky/shared/Net";
 import packageJson from "../package.json" with { type: "json" };
 import { sharedServerCommandFlags } from "./cli/config.ts";
 import { projectCommand } from "./cli/project.ts";
-import { runServerCommand, serveCommand, startCommand } from "./cli/server.ts";
+import { runServerCommand, acpCommand, serveCommand, startCommand } from "./cli/server.ts";
 
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
 export const makeCli = (_options: { readonly cloudEnabled?: boolean } = {}) =>
-  Command.make("t3", { ...sharedServerCommandFlags }).pipe(
+  Command.make("sparky", { ...sharedServerCommandFlags }).pipe(
     Command.withDescription("Run the Sparky server."),
     Command.withHandler((flags) => runServerCommand(flags)),
     Command.withSubcommands([
       startCommand,
       serveCommand,
+      acpCommand,
       projectCommand,
     ]),
   );

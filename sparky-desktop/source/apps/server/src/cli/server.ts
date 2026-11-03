@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import { Command, GlobalFlag } from "effect/unstable/cli";
 
 import { ServerConfig, type StartupPresentation } from "../config.ts";
-import { runServer } from "../server.ts";
+import { runAcpAgent, runServer } from "../server.ts";
 import { type CliServerFlags, resolveServerConfig, sharedServerCommandFlags } from "./config.ts";
 
 export const runServerCommand = (
@@ -21,6 +21,20 @@ export const runServerCommand = (
 export const startCommand = Command.make("start", { ...sharedServerCommandFlags }).pipe(
   Command.withDescription("Run the Sparky server."),
   Command.withHandler((flags) => runServerCommand(flags)),
+);
+
+export const acpCommand = Command.make("acp", { ...sharedServerCommandFlags }).pipe(
+  Command.withDescription("Run Sparky as an Agent Client Protocol (ACP) agent over stdio."),
+  Command.withHandler((flags) =>
+    Effect.gen(function* () {
+      const logLevel = yield* GlobalFlag.LogLevel;
+      const config = yield* resolveServerConfig(flags, logLevel, {
+        startupPresentation: "headless",
+        forceAutoBootstrapProjectFromCwd: false,
+      });
+      yield* runAcpAgent.pipe(Effect.provideService(ServerConfig, config));
+    }),
+  ),
 );
 
 export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(

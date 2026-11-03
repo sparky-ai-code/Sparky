@@ -21,6 +21,7 @@ glob.workspace = true
 similar.workspace = true
 reqwest.workspace = true
 url.workspace = true
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3.8"

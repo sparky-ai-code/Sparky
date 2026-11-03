@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { ScopedThreadRef, ServerProviderSkill } from "@sparky/contracts";
 import type { StreamingTextAnimation } from "@sparky/contracts/settings";
+import { ImageGeneration } from "img-fx";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -65,6 +66,7 @@ import { remarkNormalizeListItemIndentation } from "../markdown-list-indentation
 import {
   normalizeMarkdownLinkDestination,
   resolveMarkdownFileLinkMeta,
+  resolveMarkdownFileLinkTarget,
   rewriteMarkdownFileUriHref,
 } from "../markdown-links";
 import { readLocalApi } from "../localApi";
@@ -74,6 +76,7 @@ import { useActiveEnvironmentId } from "../state/entities";
 import { serverEnvironment } from "../state/server";
 import { assetEnvironment } from "../state/assets";
 import { usePreparedConnection } from "../state/session";
+import { useAssetUrlState } from "../assets/assetUrls";
 import { previewEnvironment } from "../state/preview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
@@ -1268,6 +1271,50 @@ function areMarkdownFileLinkPropsEqual(
   );
 }
 
+function WorkspaceMarkdownImage({
+  path,
+  alt,
+  threadRef,
+}: {
+  path: string;
+  alt: string;
+  threadRef: ScopedThreadRef;
+}) {
+  const imageState = useAssetUrlState(threadRef.environmentId, {
+    _tag: "workspace-file",
+    threadId: threadRef.threadId,
+    path,
+  });
+  if (imageState._tag !== "Success") {
+    return <span className="block py-2 text-xs text-muted-foreground">Loading image…</span>;
+  }
+  return (
+    <ImageGeneration preset="pixels-organic" images={[imageState.url]} autoReveal>
+      <span className="inline-block max-w-full overflow-hidden rounded-xl">
+        <img src={imageState.url} alt={alt} loading="lazy" className="block h-auto max-w-full" />
+      </span>
+    </ImageGeneration>
+  );
+}
+
+function MarkdownImage({
+  src,
+  alt,
+  cwd,
+  threadRef,
+}: {
+  src: string | undefined;
+  alt: string;
+  cwd: string | undefined;
+  threadRef: ScopedThreadRef | undefined;
+}) {
+  const workspacePath = resolveMarkdownFileLinkTarget(src, cwd);
+  if (workspacePath && threadRef) {
+    return <WorkspaceMarkdownImage path={workspacePath} alt={alt} threadRef={threadRef} />;
+  }
+  return src ? <img src={src} alt={alt} className="max-w-full rounded-xl" /> : null;
+}
+
 function ChatMarkdown({
   text,
   cwd,
@@ -1388,6 +1435,9 @@ function ChatMarkdown({
   );
   const markdownComponents = useMemo<Components>(
     () => ({
+      img({ src, alt = "" }) {
+        return <MarkdownImage src={src} alt={alt} cwd={cwd} threadRef={threadRef} />;
+      },
       p({ node: _node, children, ...props }) {
         return <p {...props}>{renderSkillInlineMarkdownChildren(children, skills)}</p>;
       },
@@ -1581,6 +1631,7 @@ function ChatMarkdown({
     }),
     [
       diffThemeName,
+      cwd,
       fileLinkParentSuffixByPath,
       isStreaming,
       markdownFileLinkMetaByHref,

@@ -39,6 +39,7 @@ import {
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
 import ChatMarkdown from "../ChatMarkdown";
+import { ImageGenerationActivity } from "./ImageGenerationActivity";
 import {
   BotIcon,
   BrainIcon,
@@ -1966,6 +1967,7 @@ type WorkEntryIconName =
   | "keyboard"
   | "list-checks"
   | "brain"
+  | "paintbrush"
   | "calendar-clock"
   | "message-circle"
   | "messages-square"
@@ -2037,6 +2039,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <ListChecksIcon className={className} aria-hidden />;
     case "brain":
       return <BrainIcon className={className} aria-hidden />;
+    case "paintbrush":
+      return <PaintbrushIcon className={className} aria-hidden />;
     case "calendar-clock":
       return <CalendarClockIcon className={className} aria-hidden />;
     case "message-circle":
@@ -2409,6 +2413,8 @@ export function resolveWorkEntryToolIconName(
       return "file-plus-2";
     case "edit":
       return "file-pen-line";
+    case "image_generation":
+      return "paintbrush";
     case "image_view":
     case "t3-code_image_view":
       return "eye";
@@ -2513,6 +2519,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const pluginId = resolveWorkEntryPluginId(workEntry);
   const isWebSearch = workEntry.itemType === "web_search";
+  const isImageGeneration = workEntry.toolName?.trim().toLowerCase() === "image_generation";
   const webSearchSources = isWebSearch ? webSearchResultPreviews(workEntry.toolData) : [];
   const webSearchIsLoading =
     isWebSearch &&
@@ -2716,6 +2723,11 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           </div>
         </div>
       </div>
+      {isImageGeneration && showRunningIndicator ? (
+        <div className="ms-7 max-w-sm" onClick={stopRowToggle} onPointerDown={stopRowToggle}>
+          <ImageGenerationActivity />
+        </div>
+      ) : null}
       {expanded && canExpand && expandedBody ? (
         <div
           className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5"

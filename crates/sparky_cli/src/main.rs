@@ -658,6 +658,19 @@ async fn main() -> anyhow::Result<()> {
         )
     };
     if !cli.no_workspace_context {
+        match cli.provider.to_lowercase().as_str() {
+            "openai" => tool_registry.register(std::sync::Arc::new(
+                sparky_tools::ImageGenerationTool::new(std::env::var("OPENAI_API_KEY").ok(), false),
+            )),
+            "openai-codex" | "codex" | "chatgpt" => {
+                tool_registry.register(std::sync::Arc::new(
+                    sparky_tools::ImageGenerationTool::new(None, true),
+                ))
+            }
+            _ => {}
+        }
+    }
+    if !cli.no_workspace_context {
         if let Some(mcp_url) = cli.mcp_url.as_deref() {
             let (header_name, token_variable) = if let Some(header_name) =
                 cli.mcp_header_name.as_deref()

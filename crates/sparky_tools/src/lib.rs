@@ -2,6 +2,7 @@ pub mod bash;
 pub mod edit;
 pub mod find;
 pub mod grep;
+pub mod image_generation;
 pub mod ls;
 pub mod mcp;
 mod memory;
@@ -17,6 +18,7 @@ pub use bash::{BashMonitorTool, BashTool, CommandMonitor};
 pub use edit::EditTool;
 pub use find::FindTool;
 pub use grep::GrepTool;
+pub use image_generation::ImageGenerationTool;
 pub use ls::LsTool;
 pub use mcp::{register_http_mcp_tools, register_http_mcp_tools_with_header};
 pub use memory::{

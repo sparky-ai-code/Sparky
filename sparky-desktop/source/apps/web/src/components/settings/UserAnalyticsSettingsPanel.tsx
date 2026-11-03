@@ -16,6 +16,7 @@ type DailyUsage = {
   readonly turns: number;
   readonly tokens: number;
   readonly costUsd: number;
+  readonly costEvents: number;
 };
 
 type ModelUsage = {
@@ -24,6 +25,7 @@ type ModelUsage = {
   readonly turns: number;
   readonly tokens: number;
   readonly costUsd: number;
+  readonly costEvents: number;
 };
 
 function numberOrZero(value: number | undefined): number {
@@ -61,19 +63,22 @@ function MiniTrend({
   rows: ReadonlyArray<DailyUsage>;
   metric: "tokens" | "cost";
 }) {
+  const chartRows = metric === "cost" ? rows.filter((row) => row.costEvents > 0) : rows;
   const valueFor = (row: DailyUsage) => (metric === "tokens" ? row.tokens : row.costUsd);
-  const max = Math.max(1, ...rows.map(valueFor));
-  const points = rows
+  const max = Math.max(1, ...chartRows.map(valueFor));
+  const points = chartRows
     .map((row, index) => {
-      const x = rows.length < 2 ? 50 : (index / (rows.length - 1)) * 100;
+      const x = chartRows.length < 2 ? 50 : (index / (chartRows.length - 1)) * 100;
       const y = 236 - (valueFor(row) / max) * 216;
       return `${x},${y}`;
     })
     .join(" ");
-  if (rows.length === 0) {
+  if (chartRows.length === 0) {
     return (
       <div className="grid h-44 place-items-center text-sm text-muted-foreground">
-        No usage recorded in this period.
+        {metric === "cost"
+          ? "No cost estimates available in this period."
+          : "No usage recorded in this period."}
       </div>
     );
   }
@@ -113,8 +118,8 @@ function MiniTrend({
           strokeWidth="2"
           vectorEffect="non-scaling-stroke"
         />
-        {rows.map((row, index) => {
-          const x = rows.length < 2 ? 50 : (index / (rows.length - 1)) * 100;
+        {chartRows.map((row, index) => {
+          const x = chartRows.length < 2 ? 50 : (index / (chartRows.length - 1)) * 100;
           const y = 236 - (valueFor(row) / max) * 216;
           return (
             <circle key={row.date} cx={x} cy={y} r="1.4" fill="var(--color-primary)">
@@ -124,8 +129,8 @@ function MiniTrend({
         })}
       </svg>
       <div className="flex justify-between text-[11px] text-muted-foreground">
-        <span>{formatDate(rows[0]!.date)}</span>
-        <span>{formatDate(rows[rows.length - 1]!.date)}</span>
+        <span>{formatDate(chartRows[0]!.date)}</span>
+        <span>{formatDate(chartRows[chartRows.length - 1]!.date)}</span>
       </div>
     </div>
   );
@@ -159,12 +164,19 @@ export function UserAnalyticsSettingsPanel() {
       const date = event.occurredAt.slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(event.occurredAt)))
         continue;
-      const current = totalsByDate.get(date) ?? { date, turns: 0, tokens: 0, costUsd: 0 };
+      const current = totalsByDate.get(date) ?? {
+        date,
+        turns: 0,
+        tokens: 0,
+        costUsd: 0,
+        costEvents: 0,
+      };
       totalsByDate.set(date, {
         date,
         turns: current.turns + 1,
         tokens: current.tokens + numberOrZero(event.totalTokens),
         costUsd: current.costUsd + numberOrZero(event.costUsd),
+        costEvents: current.costEvents + (event.costUsd === undefined ? 0 : 1),
       });
     }
     return [...totalsByDate.values()].sort((a, b) => a.date.localeCompare(b.date));
@@ -194,24 +206,35 @@ export function UserAnalyticsSettingsPanel() {
         turns: 0,
         tokens: 0,
         costUsd: 0,
+        costEvents: 0,
       };
       byModel.set(key, {
         ...current,
         turns: current.turns + 1,
         tokens: current.tokens + numberOrZero(event.totalTokens),
         costUsd: current.costUsd + numberOrZero(event.costUsd),
+        costEvents: current.costEvents + (event.costUsd === undefined ? 0 : 1),
       });
     }
     return [...byModel.values()].sort((a, b) => b.turns - a.turns || b.tokens - a.tokens);
   }, [periodEvents]);
 
   const providerRows = useMemo(() => {
-    const totalsByProvider = new Map<string, { turns: number; tokens: number; costUsd: number }>();
+    const totalsByProvider = new Map<
+      string,
+      { turns: number; tokens: number; costUsd: number; costEvents: number }
+    >();
     for (const item of modelRows) {
-      const current = totalsByProvider.get(item.provider) ?? { turns: 0, tokens: 0, costUsd: 0 };
+      const current = totalsByProvider.get(item.provider) ?? {
+        turns: 0,
+        tokens: 0,
+        costUsd: 0,
+        costEvents: 0,
+      };
       current.turns += item.turns;
       current.tokens += item.tokens;
       current.costUsd += item.costUsd;
+      current.costEvents += item.costEvents;
       totalsByProvider.set(item.provider, current);
     }
     return [...totalsByProvider.entries()]
@@ -279,11 +302,18 @@ export function UserAnalyticsSettingsPanel() {
             <div className="flex min-w-0 flex-col gap-5">
               <div className="flex flex-col gap-1">
                 <span className="text-4xl font-semibold text-foreground tabular-nums">
-                  {metric === "tokens" ? formatCount(totals.tokens) : formatUsd(totals.cost)}
+                  {metric === "tokens"
+                    ? formatCount(totals.tokens)
+                    : totals.costEvents > 0
+                      ? formatUsd(totals.cost)
+                      : "—"}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {formatCount(totals.turns)} turns
-                  {metric === "cost" && " · API estimate"}
+                  {metric === "cost"
+                    ? `API estimate · ${formatCount(totals.costEvents)} of ${formatCount(
+                        totals.turns,
+                      )} turns priced`
+                    : `${formatCount(totals.turns)} turns`}
                 </span>
               </div>
 
@@ -304,11 +334,19 @@ export function UserAnalyticsSettingsPanel() {
                           </span>
                         </span>
                         <span className="shrink-0 text-sm font-medium text-foreground tabular-nums">
-                          {metric === "tokens" ? formatCount(value) : formatUsd(value)}
+                          {metric === "tokens"
+                            ? formatCount(value)
+                            : row.costEvents > 0
+                              ? formatUsd(value)
+                              : "—"}
                         </span>
                       </div>
                       <span className="text-xs text-muted-foreground">
-                        {formatPercent(share > 0 ? value / share : 0)} of {metric}
+                        {metric === "cost" && row.costEvents === 0
+                          ? "No published price available"
+                          : `${formatPercent(share > 0 ? value / share : 0)} of ${
+                              metric === "cost" ? "estimated cost" : "tokens"
+                            }`}
                       </span>
                     </div>
                   );
@@ -402,7 +440,7 @@ export function UserAnalyticsSettingsPanel() {
                         </td>
                         <td className="py-2.5 pl-6">{formatCount(row.turns)}</td>
                         <td className="py-2.5 pl-6 text-foreground">
-                          {row.costUsd > 0 ? formatUsd(row.costUsd) : "—"}
+                          {row.costEvents > 0 ? formatUsd(row.costUsd) : "—"}
                         </td>
                         <td className="py-2.5 pl-6">{formatCount(row.tokens)}</td>
                       </tr>
@@ -444,7 +482,7 @@ export function UserAnalyticsSettingsPanel() {
                             {formatCount(row.turns)}
                           </td>
                           <td className="py-2 pl-4 text-right text-muted-foreground tabular-nums">
-                            {row.costUsd > 0 ? formatUsd(row.costUsd) : "—"}
+                            {row.costEvents > 0 ? formatUsd(row.costUsd) : "—"}
                           </td>
                           <td className="py-2 pl-4 text-right text-muted-foreground tabular-nums">
                             {formatCount(row.tokens)}
@@ -458,7 +496,10 @@ export function UserAnalyticsSettingsPanel() {
             )}
           </section>
           <p className="text-xs text-muted-foreground">
-            Usage metadata is stored on this device. Prompts and responses are never included.
+            Costs use published API list prices where a matching model rate and token breakdown are
+            available. Unsupported models are excluded; subscription charges, discounts, and
+            provider billing may differ. Usage metadata is stored on this device. Prompts and
+            responses are never included.
           </p>
         </div>
       )}

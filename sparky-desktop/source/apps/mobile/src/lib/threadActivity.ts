@@ -48,6 +48,7 @@ export interface ThreadFeedActivity {
     | "globe"
     | "hammer"
     | "message"
+    | "worktree"
     | "warning"
     | "wrench"
     | "zap";
@@ -70,6 +71,7 @@ interface WorkLogEntry {
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
+  toolName?: string;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
@@ -316,6 +318,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (title) {
     entry.toolTitle = title;
   }
+  if (typeof payload?.toolName === "string") {
+    entry.toolName = payload.toolName;
+  }
   if (itemType === "mcp_tool_call") {
     const data = asRecord(payload?.data);
     if (data?.item !== undefined) {
@@ -510,6 +515,7 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   ) {
     return "message";
   }
+  if (entry.toolName?.trim().toLowerCase() === "create_worktree") return "worktree";
   if (entry.activityKind === "runtime.warning") return "warning";
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";

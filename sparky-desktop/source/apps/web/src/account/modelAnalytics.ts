@@ -1,6 +1,6 @@
-import { randomUUID } from "../lib/utils";
+import { estimateModelApiCostUsd } from "./modelApiPricing";
 
-type ModelAnalyticsEvent = {
+export type ModelAnalyticsEvent = {
   readonly eventId: string;
   readonly environmentId: string;
   readonly threadId: string;
@@ -17,62 +17,110 @@ type ModelAnalyticsEvent = {
   readonly occurredAt: string;
 };
 
-const analyticsEndpoint = import.meta.env.VITE_SPARKY_ANALYTICS_ENDPOINT?.trim() || null;
+export type LocalModelUsageEvent = Pick<
+  ModelAnalyticsEvent,
+  | "provider"
+  | "model"
+  | "inputTokens"
+  | "cachedInputTokens"
+  | "outputTokens"
+  | "reasoningOutputTokens"
+  | "totalTokens"
+  | "occurredAt"
+> & { readonly costUsd?: number | undefined };
 
-function idForStorage(storage: Storage, key: string): string {
-  try {
-    const current = storage.getItem(key);
-    if (current) return current;
-    const created = randomUUID();
-    storage.setItem(key, created);
-    return created;
-  } catch {
-    return randomUUID();
-  }
+const LOCAL_USAGE_KEY = "sparky:local-model-analytics:v1";
+const MAX_LOCAL_EVENTS = 5_000;
+const recentEventIds = new Set<string>();
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
-function appAnalyticsContext() {
-  if (typeof window === "undefined") return null;
+function sanitizeLocalEvent(value: unknown): LocalModelUsageEvent | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const event = value as Record<string, unknown>;
+  if (
+    typeof event.provider !== "string" ||
+    typeof event.model !== "string" ||
+    typeof event.occurredAt !== "string" ||
+    !Number.isFinite(Date.parse(event.occurredAt))
+  ) {
+    return undefined;
+  }
+  const inputTokens = optionalNumber(event.inputTokens);
+  const cachedInputTokens = optionalNumber(event.cachedInputTokens);
+  const outputTokens = optionalNumber(event.outputTokens);
+  const reasoningOutputTokens = optionalNumber(event.reasoningOutputTokens);
+  const totalTokens = optionalNumber(event.totalTokens);
+  const costUsd = optionalNumber(event.costUsd);
   return {
-    visitorId: idForStorage(window.localStorage, "sparky:app-analytics-visitor-id"),
-    sessionId: idForStorage(window.sessionStorage, "sparky:app-analytics-session-id"),
+    provider: event.provider,
+    model: event.model,
+    ...(inputTokens === undefined ? {} : { inputTokens }),
+    ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
+    ...(outputTokens === undefined ? {} : { outputTokens }),
+    ...(reasoningOutputTokens === undefined ? {} : { reasoningOutputTokens }),
+    ...(totalTokens === undefined ? {} : { totalTokens }),
+    ...(costUsd === undefined ? {} : { costUsd }),
+    occurredAt: event.occurredAt,
   };
 }
 
-/** Sends model metadata only; prompts, responses, and tool payloads never leave the app. */
-export function recordModelAnalyticsEvent(event: ModelAnalyticsEvent): void {
-  if (analyticsEndpoint === null) return;
-  const context = appAnalyticsContext();
-  if (context === null) return;
+export function readLocalModelAnalyticsEvents(): ReadonlyArray<LocalModelUsageEvent> {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(LOCAL_USAGE_KEY) ?? "[]";
+    const stored: unknown = JSON.parse(raw);
+    if (!Array.isArray(stored)) return [];
+    const events = stored
+      .map(sanitizeLocalEvent)
+      .filter((event): event is LocalModelUsageEvent => event !== undefined);
+    // Rewrite legacy rows so old persisted event IDs are removed as soon as read.
+    const sanitized = JSON.stringify(events);
+    if (sanitized !== raw) window.localStorage.setItem(LOCAL_USAGE_KEY, sanitized);
+    return events;
+  } catch {
+    return [];
+  }
+}
 
-  void fetch(analyticsEndpoint, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    credentials: "omit",
-    keepalive: true,
-    body: JSON.stringify({
-      source: "app",
-      kind: "model_request",
-      path: "/app/model-request",
-      at: Date.parse(event.occurredAt) || Date.now(),
-      requestId: event.eventId,
-      visitorId: context.visitorId,
-      sessionId: context.sessionId,
-      platform: event.provider,
-      label: event.model,
-      model: event.model,
+function storeLocalModelAnalyticsEvent(event: ModelAnalyticsEvent): void {
+  if (typeof window === "undefined" || recentEventIds.has(event.eventId)) return;
+  try {
+    const costUsd = estimateModelApiCostUsd(event.model, event);
+    const savedEvent: LocalModelUsageEvent = {
       provider: event.provider,
-      inputTokens: event.inputTokens,
-      cachedInputTokens: event.cachedInputTokens,
-      outputTokens: event.outputTokens,
-      reasoningOutputTokens: event.reasoningOutputTokens,
-      totalTokens: event.totalTokens,
-      toolUses: event.toolUses,
-      costUsd: event.costUsd,
-      outcome: "completed",
-      environmentId: event.environmentId,
-      threadId: event.threadId,
-      turnId: event.turnId,
-    }),
-  }).catch(() => undefined);
+      model: event.model,
+      ...(event.inputTokens === undefined ? {} : { inputTokens: event.inputTokens }),
+      ...(event.cachedInputTokens === undefined
+        ? {}
+        : { cachedInputTokens: event.cachedInputTokens }),
+      ...(event.outputTokens === undefined ? {} : { outputTokens: event.outputTokens }),
+      ...(event.reasoningOutputTokens === undefined
+        ? {}
+        : { reasoningOutputTokens: event.reasoningOutputTokens }),
+      ...(event.totalTokens === undefined ? {} : { totalTokens: event.totalTokens }),
+      ...(costUsd === undefined ? {} : { costUsd }),
+      occurredAt: event.occurredAt,
+    };
+    const events = [...readLocalModelAnalyticsEvents()];
+    events.push(savedEvent);
+    window.localStorage.setItem(LOCAL_USAGE_KEY, JSON.stringify(events.slice(-MAX_LOCAL_EVENTS)));
+    recentEventIds.add(event.eventId);
+    if (recentEventIds.size > MAX_LOCAL_EVENTS) {
+      const oldestEventId = recentEventIds.values().next().value;
+      if (oldestEventId !== undefined) recentEventIds.delete(oldestEventId);
+    }
+  } catch {
+    // Analytics are best-effort when browser storage is unavailable or full.
+  }
+}
+
+/**
+ * Records model metadata only in this browser; prompts, responses, IDs, and tool payloads are
+ * excluded.
+ */
+export function recordModelAnalyticsEvent(event: ModelAnalyticsEvent): void {
+  storeLocalModelAnalyticsEvent(event);
 }

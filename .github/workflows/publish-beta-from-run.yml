@@ -1,0 +1,58 @@
+name: Publish beta from existing build artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: GitHub Actions run ID containing completed beta build artifacts
+        required: true
+        type: string
+      source_sha:
+        description: Commit SHA used to build the beta
+        required: true
+        type: string
+      version:
+        description: Beta version in X.Y.Z-beta.N format
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-existing-beta-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: beta-*
+          path: beta-assets
+          merge-multiple: true
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify artifacts and publish prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]] || { echo 'Version must be X.Y.Z-beta.N.' >&2; exit 1; }
+          [[ "$SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || { echo 'Source SHA must be a full 40-character commit SHA.' >&2; exit 1; }
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo 'Source run ID must be numeric.' >&2; exit 1; }
+          required=(Sparky-x64.exe beta.yml nightly.yml Sparky-x64.dmg beta-mac-x64.yml nightly-mac-x64.yml Sparky-arm64.dmg beta-mac-arm64.yml nightly-mac-arm64.yml Sparky-x64.AppImage Sparky-amd64.deb)
+          for asset in "${required[@]}"; do test -s "beta-assets/$asset" || { echo "Missing beta release asset: $asset" >&2; exit 1; }; done
+          gh release create "v$RELEASE_VERSION" beta-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "Sparky $RELEASE_VERSION (Developer Beta)" \
+            --notes "Developer beta built from $SOURCE_SHA (Actions run $SOURCE_RUN_ID). Select the beta update track in Sparky to receive this release." \
+            --prerelease

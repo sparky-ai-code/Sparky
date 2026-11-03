@@ -120,6 +120,14 @@ struct Cli {
 
     #[arg(
         long,
+        hide = true,
+        requires = "persistent_json_stream",
+        help = "Wait for the first turn's runtime settings before initializing a persistent process"
+    )]
+    prewarm_persistent_json_stream: bool,
+
+    #[arg(
+        long,
         help = "Resume an existing Sparky session in the working directory"
     )]
     session: Option<String>,
@@ -396,6 +404,28 @@ struct PersistentTurnRequest {
     image_mime_types: Vec<String>,
     #[serde(default, rename = "interactionMode")]
     interaction_mode: Option<String>,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default, rename = "baseUrl")]
+    base_url: Option<String>,
+    #[serde(default)]
+    cwd: Option<String>,
+    #[serde(default, rename = "reasoningEffort")]
+    reasoning_effort: Option<String>,
+    #[serde(default, rename = "contextWindow")]
+    context_window: Option<String>,
+    #[serde(default, rename = "workspaceContext")]
+    workspace_context: Option<String>,
+    #[serde(default, rename = "customInstructions")]
+    custom_instructions: Option<String>,
+    #[serde(default, rename = "sessionId")]
+    session_id: Option<String>,
+    #[serde(default, rename = "mcpUrl")]
+    mcp_url: Option<String>,
+    #[serde(default, rename = "mcpBearerToken")]
+    mcp_bearer_token: Option<String>,
 }
 
 async fn run_persistent_json_stream(
@@ -403,20 +433,29 @@ async fn run_persistent_json_stream(
     agent_loop: &mut AgentLoop,
     session: &mut SessionManager,
     memory_store: &Arc<tokio::sync::Mutex<MemoryStore>>,
+    initial_request: Option<PersistentTurnRequest>,
 ) -> anyhow::Result<()> {
     let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
-    while let Some(line) = lines.next_line().await? {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let request = match serde_json::from_str::<PersistentTurnRequest>(&line) {
-            Ok(request) => request,
-            Err(error) => {
-                write_json_line(serde_json::json!({
-                    "type": "error",
-                    "message": format!("Invalid persistent turn request: {error}"),
-                }));
+    let mut pending_request = initial_request;
+    loop {
+        let request = if let Some(request) = pending_request.take() {
+            request
+        } else {
+            let Some(line) = lines.next_line().await? else {
+                break;
+            };
+            if line.trim().is_empty() {
                 continue;
+            }
+            match serde_json::from_str::<PersistentTurnRequest>(&line) {
+                Ok(request) => request,
+                Err(error) => {
+                    write_json_line(serde_json::json!({
+                        "type": "error",
+                        "message": format!("Invalid persistent turn request: {error}"),
+                    }));
+                    continue;
+                }
             }
         };
         if request.prompt.trim().is_empty() {
@@ -525,7 +564,7 @@ fn output_snippet(output: &str, max_bytes: usize) -> &str {
 async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
 
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
 
     if cli.codex_login {
         println!("{}", serde_json::to_string(&login_codex().await?)?);
@@ -544,6 +583,37 @@ async fn main() -> anyhow::Result<()> {
         println!("{}", serde_json::to_string(&logout_codex().await?)?);
         return Ok(());
     }
+
+    let initial_prewarm_request = if cli.prewarm_persistent_json_stream {
+        let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+        let line = lines.next_line().await?.ok_or_else(|| {
+            anyhow::anyhow!("Prewarmed Sparky process closed before receiving its first turn")
+        })?;
+        let request: PersistentTurnRequest = serde_json::from_str(&line)
+            .map_err(|error| anyhow::anyhow!("Invalid prewarmed turn request: {error}"))?;
+        cli.provider = request.provider.clone().unwrap_or_else(|| cli.provider.clone());
+        cli.model = request.model.clone().unwrap_or_else(|| cli.model.clone());
+        cli.base_url = request.base_url.clone();
+        cli.cwd = request.cwd.clone().unwrap_or_else(|| cli.cwd.clone());
+        let _ = dotenvy::from_path(Path::new(&cli.cwd).join(".env"));
+        cli.effort = request.reasoning_effort.clone();
+        cli.context_window = request.context_window.clone();
+        cli.interaction_mode = request
+            .interaction_mode
+            .clone()
+            .unwrap_or_else(|| "build".to_string());
+        cli.append_system_prompt = request.custom_instructions.clone();
+        cli.session = request.session_id.clone();
+        cli.no_workspace_context = request.workspace_context.as_deref() == Some("none");
+        cli.mcp_url = request.mcp_url.clone();
+        if let Some(token) = request.mcp_bearer_token.as_deref() {
+            env::set_var("T3_MCP_BEARER_TOKEN", token);
+            cli.mcp_bearer_token_env_var = Some("T3_MCP_BEARER_TOKEN".to_string());
+        }
+        Some(request)
+    } else {
+        None
+    };
 
     if !cli.json && !cli.json_stream {
         tracing_subscriber::fmt()
@@ -864,7 +934,14 @@ async fn main() -> anyhow::Result<()> {
     let mut agent_loop = AgentLoop::new(provider, tool_registry, event_bus, loop_options);
 
     if cli.persistent_json_stream {
-        run_persistent_json_stream(&cli, &mut agent_loop, &mut session, &memory_store).await?;
+        run_persistent_json_stream(
+            &cli,
+            &mut agent_loop,
+            &mut session,
+            &memory_store,
+            initial_prewarm_request,
+        )
+        .await?;
         return Ok(());
     }
 

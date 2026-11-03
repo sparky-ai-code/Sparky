@@ -269,6 +269,10 @@ export const SparkyDriver: ProviderDriver<
       const serverSettings = yield* ServerSettingsService;
       const serverConfig = yield* ServerConfig;
       const eventLoggers = yield* ProviderEventLoggers;
+      const processPrewarming = yield* serverSettings.getSettings.pipe(
+        Effect.map((settings) => settings.sparkyProcessPrewarming),
+        Effect.orElseSucceed(() => true),
+      );
       const processEnvironment = { ...mergeProviderInstanceEnvironment(environment) };
       const hasConfiguredOllamaCloudKey = environment?.some(
         (variable) => variable.name === "OLLAMA_API_KEY" && variable.value.trim().length > 0,
@@ -315,6 +319,7 @@ export const SparkyDriver: ProviderDriver<
         binaryPath,
         attachmentsDir: serverConfig.attachmentsDir,
         environment: processEnvironment,
+        processPrewarming,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
         getCustomInstructions: () =>
           serverSettings.getSettings.pipe(

@@ -463,6 +463,7 @@ export const ServerSettings = Schema.Struct({
   // Buffered delivery makes the final segment appear to be missing until the
   // user interrupts or the provider emits turn.completed.
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  sparkyProcessPrewarming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   checkpoints: CheckpointSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   enableProviderUpdateChecks: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
@@ -621,6 +622,7 @@ export const ServerSettingsPatch = Schema.Struct({
   customInstructions: Schema.optionalKey(TrimmedString),
   sparkyPersonality: Schema.optionalKey(SparkyPersonality),
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
+  sparkyProcessPrewarming: Schema.optionalKey(Schema.Boolean),
   checkpoints: Schema.optionalKey(CheckpointSettingsPatch),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   automaticGitFetchInterval: Schema.optionalKey(Schema.DurationFromMillis),

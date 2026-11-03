@@ -29,6 +29,10 @@ impl AnthropicProvider {
         );
         Ok(())
     }
+
+    fn supports_request_gzip(&self) -> bool {
+        self.base_url.trim_end_matches('/') == "https://api.anthropic.com/v1"
+    }
 }
 
 #[async_trait]
@@ -62,14 +66,19 @@ impl LlmProvider for AnthropicProvider {
             body["output_config"] = json!({ "effort": effort });
         }
 
+        let encoded = crate::request_body::encode_json(&body, self.supports_request_gzip())?;
         let resp = send_with_retry("anthropic", || async {
-            self.client
+            let mut request = self
+                .client
                 .post(format!("{}/messages", self.base_url))
                 .header("x-api-key", &self.api_key)
                 .header("anthropic-version", "2023-06-01")
-                .json(&body)
-                .send()
-                .await
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(encoded.bytes.clone());
+            if encoded.compressed {
+                request = request.header(reqwest::header::CONTENT_ENCODING, "gzip");
+            }
+            request.send().await
         })
         .await?;
 
@@ -146,14 +155,19 @@ impl LlmProvider for AnthropicProvider {
             body["output_config"] = json!({ "effort": effort });
         }
 
+        let encoded = crate::request_body::encode_json(&body, self.supports_request_gzip())?;
         let resp = send_with_retry("anthropic", || async {
-            self.client
+            let mut request = self
+                .client
                 .post(format!("{}/messages", self.base_url))
                 .header("x-api-key", &self.api_key)
                 .header("anthropic-version", "2023-06-01")
-                .json(&body)
-                .send()
-                .await
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(encoded.bytes.clone());
+            if encoded.compressed {
+                request = request.header(reqwest::header::CONTENT_ENCODING, "gzip");
+            }
+            request.send().await
         })
         .await?;
         if !resp.status().is_success() {
@@ -168,5 +182,19 @@ impl LlmProvider for AnthropicProvider {
         }
 
         Ok(stream_parser::anthropic(resp))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_gzip_is_limited_to_the_canonical_anthropic_endpoint() {
+        assert!(AnthropicProvider::new("", None).supports_request_gzip());
+        assert!(
+            !AnthropicProvider::new("", Some("https://gateway.example/v1".into()))
+                .supports_request_gzip()
+        );
     }
 }

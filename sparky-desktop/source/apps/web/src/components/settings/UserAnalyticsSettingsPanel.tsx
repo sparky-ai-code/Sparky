@@ -45,6 +45,14 @@ function formatDate(date: string): string {
   );
 }
 
+function formatFullDate(date: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(new Date(`${date}T12:00:00`));
+}
+
 function formatUsd(value: number): string {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(value);
 }
@@ -66,10 +74,13 @@ function MiniTrend({
   const chartRows = metric === "cost" ? rows.filter((row) => row.costEvents > 0) : rows;
   const valueFor = (row: DailyUsage) => (metric === "tokens" ? row.tokens : row.costUsd);
   const max = Math.max(1, ...chartRows.map(valueFor));
+  const pointFor = (index: number, value: number) => ({
+    x: chartRows.length < 2 ? 50 : 4 + (index / (chartRows.length - 1)) * 92,
+    y: 20 + (1 - value / max) * 196,
+  });
   const points = chartRows
     .map((row, index) => {
-      const x = chartRows.length < 2 ? 50 : (index / (chartRows.length - 1)) * 100;
-      const y = 236 - (valueFor(row) / max) * 216;
+      const { x, y } = pointFor(index, valueFor(row));
       return `${x},${y}`;
     })
     .join(" ");
@@ -119,12 +130,17 @@ function MiniTrend({
           vectorEffect="non-scaling-stroke"
         />
         {chartRows.map((row, index) => {
-          const x = chartRows.length < 2 ? 50 : (index / (chartRows.length - 1)) * 100;
-          const y = 236 - (valueFor(row) / max) * 216;
+          const { x, y } = pointFor(index, valueFor(row));
+          const label = `${formatFullDate(row.date)}: ${
+            metric === "tokens" ? `${formatCount(row.tokens)} tokens` : formatUsd(row.costUsd)
+          }`;
           return (
-            <circle key={row.date} cx={x} cy={y} r="1.4" fill="var(--color-primary)">
-              <title>{`${formatDate(row.date)}: ${metric === "tokens" ? `${formatCount(row.tokens)} tokens` : formatUsd(row.costUsd)}`}</title>
-            </circle>
+            <g key={row.date} tabIndex={0} role="img" aria-label={label}>
+              <circle cx={x} cy={y} r="5" fill="transparent" pointerEvents="all">
+                <title>{label}</title>
+              </circle>
+              <circle cx={x} cy={y} r="1.8" fill="var(--color-primary)" pointerEvents="none" />
+            </g>
           );
         })}
       </svg>

@@ -219,7 +219,10 @@ import {
   ThreadStatusPill,
 } from "./Sidebar.logic";
 import { sortThreads } from "../lib/threadSort";
-import { SidebarUpdatePill } from "./sidebar/SidebarUpdatePill";
+import {
+  SidebarArm64IntelBuildWarning,
+  SidebarUpdatePill,
+} from "./sidebar/SidebarUpdatePill";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { CommandDialogTrigger } from "./ui/command";
@@ -2973,6 +2976,7 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
     <SidebarFooter className="p-2">
       <SidebarProviderUpdatePill />
+      <SidebarArm64IntelBuildWarning />
       <SidebarMenu>
         <SidebarMenuItem>
           <div className="flex items-center gap-1">

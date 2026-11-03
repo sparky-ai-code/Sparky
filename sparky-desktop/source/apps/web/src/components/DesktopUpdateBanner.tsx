@@ -14,7 +14,10 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 
 export function DesktopUpdateBanner() {
   const state = useDesktopUpdateState();
-  const lastNotification = useRef<string | null>(null);
+  const lastNotification = useRef<{
+    key: string;
+    id: ReturnType<typeof toastManager.add>;
+  } | null>(null);
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
   const version = state?.availableVersion ?? state?.downloadedVersion;
 
@@ -57,11 +60,24 @@ export function DesktopUpdateBanner() {
   }, [action, state]);
 
   useEffect(() => {
-    if (!isElectron || !state || !version) return;
-    if (!["available", "downloading", "downloaded"].includes(state.status)) return;
+    const notification = lastNotification.current;
+    const isVisible =
+      isElectron &&
+      state !== null &&
+      version !== null &&
+      version !== undefined &&
+      ["available", "downloading", "downloaded"].includes(state.status);
+
+    if (!isVisible || !state || !version) {
+      if (notification) toastManager.close(notification.id);
+      lastNotification.current = null;
+      return;
+    }
+
     const key = `${version}:${state.status}`;
-    if (lastNotification.current === key) return;
-    lastNotification.current = key;
+    if (notification?.key === key) return;
+    if (notification) toastManager.close(notification.id);
+
     const downloaded = state.status === "downloaded";
     const downloading = state.status === "downloading";
     const description = downloading
@@ -69,7 +85,7 @@ export function DesktopUpdateBanner() {
       : downloaded
         ? "Restart Sparky to install the update."
         : "Get the latest fixes and improvements.";
-    toastManager.add(stackedThreadToast({
+    const id = toastManager.add(stackedThreadToast({
       type: "info",
       title: downloaded ? `Sparky ${version} is ready` : `Sparky ${version} is available`,
       description,
@@ -80,6 +96,7 @@ export function DesktopUpdateBanner() {
       },
       data: { leadingIcon: downloaded ? <RotateCwIcon className="size-4" /> : <DownloadIcon className="size-4" /> },
     }));
+    lastNotification.current = { key, id };
   }, [runAction, state, version]);
 
   return null;

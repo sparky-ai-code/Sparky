@@ -1,17 +1,20 @@
-import { DownloadIcon, RotateCwIcon } from "lucide-react";
+import { DownloadIcon, RotateCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback } from "react";
 import { isElectron } from "../../env";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
+  getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
+  shouldShowArm64IntelBuildWarning,
   shouldShowDesktopUpdateButton,
   shouldToastDesktopUpdateActionResult,
 } from "../desktopUpdate.logic";
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Separator } from "../ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -47,6 +50,20 @@ function SidebarUpdateReleaseNotesTooltip({
         ))}
       </div>
     </div>
+  );
+}
+
+export function SidebarArm64IntelBuildWarning() {
+  const state = useDesktopUpdateState();
+  if (!isElectron || !shouldShowArm64IntelBuildWarning(state) || !state) return null;
+
+  const description = getArm64IntelBuildWarningDescription(state);
+  return (
+    <Alert variant="warning" className="rounded-2xl border-warning/40 bg-warning/8 text-xs">
+      <TriangleAlertIcon />
+      <AlertTitle>Intel build on Apple Silicon</AlertTitle>
+      <AlertDescription>{description}</AlertDescription>
+    </Alert>
   );
 }
 

@@ -446,7 +446,11 @@ export type McpServerConnectionStatus = typeof McpServerConnectionStatus.Type;
 export const McpServerConfig = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
-  url: Schema.String.check(Schema.isPattern(/^https?:\/\//u)),
+  // HTTP MCP connections use url; local stdio MCP connections use command/args.
+  // Keep url optional for backwards-compatible decoding of existing settings.
+  url: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  command: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  args: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   authorizationToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   authorizationTokenRedacted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),

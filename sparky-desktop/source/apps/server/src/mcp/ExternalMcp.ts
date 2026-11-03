@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import type { McpServerConfig } from "@sparky/contracts";
 
 type JsonRpcResponse = {
@@ -38,6 +39,9 @@ async function send(
   sessionId: string | undefined,
   payload: Record<string, unknown>,
 ): Promise<{ readonly response: JsonRpcResponse | null; readonly sessionId?: string }> {
+  if (!/^https?:\/\//u.test(config.url)) {
+    throw new Error(`MCP server ${config.name} must configure either an HTTP URL or local command.`);
+  }
   const headers: Record<string, string> = {
     accept: "application/json, text/event-stream",
     "content-type": "application/json",
@@ -90,7 +94,77 @@ async function initialize(config: McpServerConfig): Promise<string | undefined> 
   return initialized.sessionId;
 }
 
+async function callStdioMcp(
+  config: McpServerConfig,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<JsonRpcResponse> {
+  if (!config.command) throw new Error(`MCP server ${config.name} has no command configured.`);
+  const child = spawn(config.command, config.args, { shell: false, stdio: ["pipe", "pipe", "ignore"] });
+  let buffer = "";
+  let nextId = 0;
+  const pending = new Map<number, (response: JsonRpcResponse) => void>();
+  const timeout = setTimeout(() => child.kill(), 20_000);
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string | Buffer) => {
+    buffer += chunk.toString();
+    if (buffer.length > 1_000_000) {
+      child.kill();
+      return;
+    }
+    while (true) {
+      const newline = buffer.indexOf("\n");
+      if (newline < 0) break;
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (!line) continue;
+      try {
+        const response = JSON.parse(line) as JsonRpcResponse & { id?: number };
+        if (typeof response.id === "number") pending.get(response.id)?.(response);
+      } catch {
+        // Ignore non-protocol stdout lines from an incorrectly configured command.
+      }
+    }
+  });
+  try {
+    const request = (rpcMethod: string, rpcParams?: Record<string, unknown>) =>
+      new Promise<JsonRpcResponse>((resolve, reject) => {
+        const id = ++nextId;
+        pending.set(id, (response) => {
+          pending.delete(id);
+          if (response.error) reject(new Error(response.error.message ?? `MCP method ${rpcMethod} failed.`));
+          else resolve(response);
+        });
+        child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method: rpcMethod, params: rpcParams ?? {} })}\n`);
+      });
+    const failPending = (message: string) => {
+      for (const resolve of pending.values()) resolve({ error: { message } });
+      pending.clear();
+    };
+    child.once("error", (error) => failPending(error.message));
+    child.stdin.on("error", (error) => failPending(error.message));
+    child.once("exit", (code) => {
+      failPending(`MCP process exited before replying (code ${code ?? "unknown"}).`);
+    });
+    await request("initialize", {
+      protocolVersion: "2025-03-26",
+      capabilities: {},
+      clientInfo: { name: "Sparky", version: "1.0.0" },
+    });
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+    const response = await request(method, params);
+    return response;
+  } finally {
+    clearTimeout(timeout);
+    child.kill();
+  }
+}
+
 export async function listExternalMcpTools(config: McpServerConfig): Promise<unknown> {
+  if (config.command) {
+    const { result } = await callStdioMcp(config, "tools/list", {});
+    return Array.isArray(result?.tools) ? result.tools : [];
+  }
   const sessionId = await initialize(config);
   const tools: unknown[] = [];
   let cursor: string | undefined;
@@ -114,6 +188,13 @@ export async function callExternalMcpTool(
   toolName: string,
   arguments_: Record<string, unknown>,
 ): Promise<unknown> {
+  if (config.command) {
+    const { result } = await callStdioMcp(config, "tools/call", {
+      name: toolName,
+      arguments: arguments_,
+    });
+    return result ?? null;
+  }
   const sessionId = await initialize(config);
   const { response } = await send(config, sessionId, {
     jsonrpc: "2.0",

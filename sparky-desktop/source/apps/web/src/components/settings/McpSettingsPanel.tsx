@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import { MonitorUpIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import type { McpServerConnectionStatus } from "@sparky/contracts";
 
 import { McpIcon } from "./McpIcon";
@@ -30,6 +30,26 @@ export function McpSettingsPanel() {
   });
 
   const save = (next: typeof connections) => updateSettings({ mcpServers: next });
+  const addCuaDriver = () => {
+    if (connections.some((server) => server.name.toLowerCase() === "cua driver")) {
+      setError("Cua Driver is already configured.");
+      return;
+    }
+    save([
+      ...connections,
+      {
+        id: crypto.randomUUID(),
+        name: "Cua Driver",
+        url: "",
+        command: "cua-driver",
+        args: ["mcp"],
+        authorizationToken: "",
+        authorizationTokenRedacted: false,
+        enabled: true,
+      },
+    ]);
+    setError(null);
+  };
   const refreshServerStatuses = useCallback(async () => {
     if (!environmentId) return;
     setCheckingStatus(true);
@@ -69,6 +89,8 @@ export function McpSettingsPanel() {
           id: crypto.randomUUID(),
           name: normalizedName,
           url: parsedEndpoint.href,
+          command: "",
+          args: [],
           authorizationToken: authorizationToken.trim(),
           authorizationTokenRedacted: false,
           enabled: true,
@@ -93,9 +115,7 @@ export function McpSettingsPanel() {
           </span>
         </div>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Add streamable HTTP MCP servers here. Connections are saved in server settings and restored
-          after restart. Their status is checked when this page opens and periodically; unreachable
-          servers are marked Offline.
+          Add streamable HTTP or local stdio MCP servers here. Connections are saved in server settings and restored after restart. The <a className="underline" href="https://github.com/trycua/cua/blob/main/legal/LICENSING.md" target="_blank" rel="noreferrer">official Cua Driver license breakdown</a> identifies the driver as MIT-licensed; its optional OmniParser extension is AGPL-3.0-only.
         </p>
       </div>
 
@@ -109,6 +129,24 @@ export function McpSettingsPanel() {
           title="Pull request review"
           description="Review a GitHub pull request and post actionable inline feedback."
           status="Available when GitHub is connected"
+        />
+        <SettingsRow
+          title="Cua Driver"
+          description={
+            <>
+              Use the official Cua Driver for native desktop control. Install the Windows CLI from{" "}
+              <a className="underline" href="https://cua.ai/driver" target="_blank" rel="noreferrer">
+                cua.ai/driver
+              </a>
+              ; Sparky launches <code>cua-driver mcp</code> locally.
+            </>
+          }
+          status="Cua Driver is MIT; the optional OmniParser extension is AGPL-3.0-only"
+          control={
+            <Button type="button" size="sm" onClick={addCuaDriver}>
+              <MonitorUpIcon className="size-4" /> Connect
+            </Button>
+          }
         />
       </SettingsSection>
 
@@ -140,7 +178,11 @@ export function McpSettingsPanel() {
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-semibold text-foreground">{connection.name}</p>
-                <p className="truncate text-xs text-muted-foreground">{connection.url}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {connection.command
+                    ? `${connection.command} ${connection.args.join(" ")}`
+                    : connection.url}
+                </p>
               </div>
               <span
                 role="status"

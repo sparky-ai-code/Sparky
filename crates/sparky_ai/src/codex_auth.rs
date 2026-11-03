@@ -86,13 +86,24 @@ fn host_id_path() -> anyhow::Result<PathBuf> {
     Ok(codex_home()?.join("host_id"))
 }
 
-fn stable_host_id() -> anyhow::Result<String> {
-    let path = host_id_path()?;
-    if let Ok(value) = std::fs::read_to_string(&path) {
-        let value = value.trim();
-        if value.starts_with("urn:uuid:") && value.len() == 45 {
-            return Ok(value.to_owned());
-        }
+fn read_host_id(path: &Path) -> anyhow::Result<String> {
+    let value = std::fs::read_to_string(path)?;
+    let value = value.trim();
+    anyhow::ensure!(
+        value.starts_with("urn:uuid:") && value.len() == 45,
+        "The saved ChatGPT host identifier is invalid"
+    );
+    Ok(value.to_owned())
+}
+
+fn stable_host_id_at(path: &Path) -> anyhow::Result<String> {
+    match read_host_id(path) {
+        Ok(value) => return Ok(value),
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound) => {}
+        Err(error) => return Err(error),
     }
 
     let directory = path
@@ -107,20 +118,19 @@ fn stable_host_id() -> anyhow::Result<String> {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&temporary_path, std::fs::Permissions::from_mode(0o600))?;
     }
-    match std::fs::rename(&temporary_path, &path) {
+
+    // Hard-link creation is atomic and fails if another login already created the ID.
+    let result = match std::fs::hard_link(&temporary_path, path) {
         Ok(()) => Ok(value),
-        Err(_error) if path.exists() => {
-            let _ = std::fs::remove_file(temporary_path);
-            let existing = std::fs::read_to_string(path)?;
-            let existing = existing.trim();
-            anyhow::ensure!(
-                existing.starts_with("urn:uuid:") && existing.len() == 45,
-                "The saved ChatGPT host identifier is invalid"
-            );
-            Ok(existing.to_owned())
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => read_host_id(path),
         Err(error) => Err(error.into()),
-    }
+    };
+    let _ = std::fs::remove_file(temporary_path);
+    result
+}
+
+fn stable_host_id() -> anyhow::Result<String> {
+    stable_host_id_at(&host_id_path()?)
 }
 
 fn has_chatgpt_plan_scope(scope: &str) -> bool {
@@ -648,6 +658,34 @@ mod tests {
         assert!(!has_chatgpt_plan_scope(
             "openid offline_access resource.invoke"
         ));
+    }
+
+    #[test]
+    fn concurrent_host_id_creation_keeps_one_stable_id() {
+        use std::sync::{Arc, Barrier};
+
+        let directory =
+            std::env::temp_dir().join(format!("sparky-host-id-{}", uuid::Uuid::new_v4()));
+        let path = directory.join("host_id");
+        let barrier = Arc::new(Barrier::new(8));
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let path = path.clone();
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    stable_host_id_at(&path).unwrap()
+                })
+            })
+            .collect();
+        let ids: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
+
+        assert!(ids.iter().all(|id| id == &ids[0]));
+        assert_eq!(read_host_id(&path).unwrap(), ids[0]);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

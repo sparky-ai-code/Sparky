@@ -1160,7 +1160,7 @@ impl AgentLoop {
         if pending.is_some() {
             return;
         }
-        let Some((history, first_kept_entry_id, tokens_before)) = self
+        let Some((history, first_kept_entry_id, snapshot_entry_ids, tokens_before)) = self
             .compaction
             .background_snapshot(session, context_window_tokens)
         else {
@@ -1174,6 +1174,7 @@ impl AgentLoop {
                 timeout,
                 history,
                 first_kept_entry_id,
+                snapshot_entry_ids,
                 tokens_before,
                 provider,
                 model_name,

@@ -35,6 +35,7 @@ impl Default for CompactionEngine {
 pub struct PreparedCompaction {
     pub summary: String,
     pub first_kept_entry_id: String,
+    pub snapshot_entry_ids: Vec<String>,
     pub tokens_before: u32,
 }
 
@@ -84,7 +85,7 @@ impl CompactionEngine {
         &self,
         session: &SessionManager,
         max_context_window: usize,
-    ) -> Option<(Vec<Message>, String, usize)> {
+    ) -> Option<(Vec<Message>, String, Vec<String>, usize)> {
         let messages = session.build_context_messages();
         if messages.len() < 4 {
             return None;
@@ -95,14 +96,21 @@ impl CompactionEngine {
         }
         let keep_recent_tokens = KEEP_RECENT_TOKENS.min((max_context_window / 3).max(1));
         let first_kept_entry_id = session.first_entry_id_for_recent_tokens(keep_recent_tokens)?;
+        let snapshot_entry_ids = session.compaction_snapshot_entry_ids(&first_kept_entry_id)?;
         let history_messages = session.build_compaction_messages(&first_kept_entry_id);
-        Some((history_messages, first_kept_entry_id, usage.estimated_tokens))
+        Some((
+            history_messages,
+            first_kept_entry_id,
+            snapshot_entry_ids,
+            usage.estimated_tokens,
+        ))
     }
 
     pub async fn prepare_background(
         timeout: Duration,
         history_messages: Vec<Message>,
         first_kept_entry_id: String,
+        snapshot_entry_ids: Vec<String>,
         tokens_before: usize,
         provider: Arc<dyn LlmProvider>,
         model_name: String,
@@ -164,6 +172,7 @@ impl CompactionEngine {
         Ok(PreparedCompaction {
             summary,
             first_kept_entry_id,
+            snapshot_entry_ids,
             tokens_before: tokens_before as u32,
         })
     }
@@ -172,6 +181,13 @@ impl CompactionEngine {
         session: &mut SessionManager,
         prepared: PreparedCompaction,
     ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            session.is_compaction_snapshot_applicable(
+                &prepared.first_kept_entry_id,
+                &prepared.snapshot_entry_ids,
+            ),
+            "Prepared background compaction is stale; the session changed before it could be applied"
+        );
         let entry = SessionEntry::Compaction {
             id: Uuid::new_v4().to_string(),
             parent_id: None,

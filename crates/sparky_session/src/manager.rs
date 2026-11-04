@@ -461,6 +461,39 @@ impl SessionManager {
         first_kept_entry_id
     }
 
+    pub fn compaction_snapshot_entry_ids(&self, first_kept_entry_id: &str) -> Option<Vec<String>> {
+        self.entries
+            .iter()
+            .any(|entry| entry.id() == first_kept_entry_id)
+            .then(|| self.entries.iter().map(|entry| entry.id().to_string()).collect())
+    }
+
+    pub fn is_compaction_snapshot_applicable(
+        &self,
+        first_kept_entry_id: &str,
+        snapshot_entry_ids: &[String],
+    ) -> bool {
+        if !self
+            .entries
+            .iter()
+            .any(|entry| entry.id() == first_kept_entry_id)
+            || self.entries.len() < snapshot_entry_ids.len()
+            || !self
+                .entries
+                .iter()
+                .take(snapshot_entry_ids.len())
+                .map(SessionEntry::id)
+                .eq(snapshot_entry_ids.iter().map(String::as_str))
+        {
+            return false;
+        }
+
+        self.entries
+            .iter()
+            .skip(snapshot_entry_ids.len())
+            .all(|entry| !matches!(entry, SessionEntry::Compaction { .. }))
+    }
+
     pub fn trim_entries_before(&mut self, first_kept_entry_id: &str) -> anyhow::Result<usize> {
         let first_kept_index = self
             .entries

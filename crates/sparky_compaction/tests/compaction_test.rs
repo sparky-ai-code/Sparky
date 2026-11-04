@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use sparky_ai::{AssistantMessageEvent, CompletionOptions, EventStream, LlmProvider, Message};
-use sparky_compaction::CompactionEngine;
+use sparky_compaction::{CompactionEngine, PreparedCompaction};
 use sparky_session::SessionManager;
 use std::sync::Arc;
 use std::time::Duration;
@@ -56,6 +56,40 @@ impl LlmProvider for HangingSummaryProvider {
     ) -> anyhow::Result<EventStream> {
         std::future::pending::<anyhow::Result<EventStream>>().await
     }
+}
+
+#[tokio::test]
+async fn stale_prepared_compaction_does_not_append_an_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().to_str().unwrap();
+    let mut session = SessionManager::create_new(cwd, None).await.unwrap();
+    let stale_cutoff = session
+        .append_message(Message::user("message to summarize"))
+        .await
+        .unwrap();
+    let retained_message = session
+        .append_message(Message::user("recent message"))
+        .await
+        .unwrap();
+    let snapshot_entry_ids = session
+        .compaction_snapshot_entry_ids(&stale_cutoff)
+        .unwrap();
+
+    session.trim_entries_before(&retained_message).unwrap();
+    let entries_before_apply = session.entry_count();
+    let result = CompactionEngine::apply_prepared(
+        &mut session,
+        PreparedCompaction {
+            summary: "stale summary".to_string(),
+            first_kept_entry_id: stale_cutoff,
+            snapshot_entry_ids,
+            tokens_before: 100,
+        },
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert_eq!(session.entry_count(), entries_before_apply);
 }
 
 #[tokio::test]

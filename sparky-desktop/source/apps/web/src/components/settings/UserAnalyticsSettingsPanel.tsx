@@ -7,6 +7,7 @@ import {
 } from "../../account/modelAnalytics";
 import { Button } from "../ui/button";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { getDisplayModelName, getModelProviderPresentation } from "../chat/providerIconUtils";
 import { SettingsPageContainer } from "./settingsLayout";
 
 const WINDOWS = [7, 30, 90] as const;
@@ -235,29 +236,6 @@ export function UserAnalyticsSettingsPanel() {
     return [...byModel.values()].sort((a, b) => b.turns - a.turns || b.tokens - a.tokens);
   }, [periodEvents]);
 
-  const providerRows = useMemo(() => {
-    const totalsByProvider = new Map<
-      string,
-      { turns: number; tokens: number; costUsd: number; costEvents: number }
-    >();
-    for (const item of modelRows) {
-      const current = totalsByProvider.get(item.provider) ?? {
-        turns: 0,
-        tokens: 0,
-        costUsd: 0,
-        costEvents: 0,
-      };
-      current.turns += item.turns;
-      current.tokens += item.tokens;
-      current.costUsd += item.costUsd;
-      current.costEvents += item.costEvents;
-      totalsByProvider.set(item.provider, current);
-    }
-    return [...totalsByProvider.entries()]
-      .map(([provider, values]) => ({ provider, ...values }))
-      .sort((a, b) => b.turns - a.turns);
-  }, [modelRows]);
-
   const [metric, setMetric] = useState<"tokens" | "cost">("tokens");
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
 
@@ -333,18 +311,20 @@ export function UserAnalyticsSettingsPanel() {
                 </span>
               </div>
 
-              {providerRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No provider usage recorded yet.</p>
+              {modelRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No model usage recorded yet.</p>
               ) : (
-                providerRows.map((row) => {
+                modelRows.map((row) => {
                   const value = metric === "tokens" ? row.tokens : row.costUsd;
                   const share = metric === "tokens" ? totals.tokens : totals.cost;
+                  const modelPresentation = getModelProviderPresentation({ slug: row.model });
+                  const ModelIcon = modelPresentation?.Icon;
                   return (
-                    <div key={row.provider} className="flex flex-col gap-1">
+                    <div key={`${row.provider}:${row.model}`} className="flex flex-col gap-1">
                       <div className="flex items-baseline justify-between gap-4">
                         <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
-                          <span aria-hidden className="size-2 shrink-0 rounded-full bg-primary" />
-                          <span className="truncate">{row.provider}</span>
+                          {ModelIcon ? <ModelIcon className="size-4 shrink-0" aria-hidden /> : null}
+                          <span className="truncate">{getDisplayModelName({ slug: row.model, name: row.model })}</span>
                           <span className="shrink-0 whitespace-nowrap text-2xs text-muted-foreground tabular-nums">
                             {formatCount(row.turns)} turns
                           </span>
@@ -451,8 +431,13 @@ export function UserAnalyticsSettingsPanel() {
                       >
                         <td className="py-2.5 pr-3 text-left text-xs">{index + 1}</td>
                         <td className="py-2.5 text-left whitespace-normal text-foreground">
-                          {row.model}
-                          <span className="ml-2 text-xs text-muted-foreground">{row.provider}</span>
+                          <span className="inline-flex min-w-0 items-center gap-2">
+                            {(() => {
+                              const ModelIcon = getModelProviderPresentation({ slug: row.model })?.Icon;
+                              return ModelIcon ? <ModelIcon className="size-4 shrink-0" aria-hidden /> : null;
+                            })()}
+                            <span>{getDisplayModelName({ slug: row.model, name: row.model })}</span>
+                          </span>
                         </td>
                         <td className="py-2.5 pl-6">{formatCount(row.turns)}</td>
                         <td className="py-2.5 pl-6 text-foreground">

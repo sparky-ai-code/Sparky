@@ -49,7 +49,9 @@ const MODEL_API_PRICING: Readonly<Record<string, ModelApiPricing>> = {
 
 /** Returns a list-price API estimate only when exact pricing and token breakdown are known. */
 export function estimateModelApiCostUsd(model: string, usage: UsageTokens): number | undefined {
-  const pricing = MODEL_API_PRICING[model.trim().toLowerCase()];
+  const normalizedModel = model.trim().toLowerCase();
+  const modelId = normalizedModel.slice(normalizedModel.lastIndexOf("/") + 1);
+  const pricing = MODEL_API_PRICING[normalizedModel] ?? MODEL_API_PRICING[modelId];
   const { inputTokens, cachedInputTokens = 0, outputTokens, reasoningOutputTokens = 0 } = usage;
   if (
     !pricing ||

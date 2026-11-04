@@ -54,6 +54,7 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 import { useOpenInPreferredEditor } from "../editorPreferences";
 import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import { fnv1a32 } from "../lib/diffRendering";
+import { shouldUseImageFx } from "../lib/imageFxSupport";
 import { LRUCache } from "../lib/lruCache";
 import { useTheme } from "../hooks/useTheme";
 import { getClientSettings } from "../hooks/useSettings";
@@ -1288,11 +1289,26 @@ function WorkspaceMarkdownImage({
   if (imageState._tag !== "Success") {
     return <span className="block py-2 text-xs text-muted-foreground">Loading image…</span>;
   }
+  const image = (
+    <span className="inline-block max-w-full overflow-hidden rounded-xl">
+      <img
+        src={imageState.url}
+        alt={alt}
+        loading="lazy"
+        className="block h-auto max-h-[480px] max-w-full"
+      />
+    </span>
+  );
+  if (!shouldUseImageFx()) return image;
   return (
-    <ImageGeneration preset="pixels-organic" images={[imageState.url]} autoReveal>
-      <span className="inline-block max-w-full overflow-hidden rounded-xl">
-        <img src={imageState.url} alt={alt} loading="lazy" className="block h-auto max-w-full" />
-      </span>
+    <ImageGeneration
+      preset="pixels-organic"
+      images={[imageState.url]}
+      autoReveal
+      pixelScale={2}
+      strength={0.6}
+    >
+      {image}
     </ImageGeneration>
   );
 }

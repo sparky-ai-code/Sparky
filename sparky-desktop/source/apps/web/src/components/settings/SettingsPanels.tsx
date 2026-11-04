@@ -719,6 +719,32 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          title="Prewarm Sparky process"
+          description="Keep one idle Sparky process ready so new threads can start faster."
+          resetAction={
+            settings.sparkyProcessPrewarming !== DEFAULT_UNIFIED_SETTINGS.sparkyProcessPrewarming ? (
+              <SettingResetButton
+                label="Sparky process prewarming"
+                onClick={() =>
+                  updateSettings({
+                    sparkyProcessPrewarming: DEFAULT_UNIFIED_SETTINGS.sparkyProcessPrewarming,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sparkyProcessPrewarming}
+              onCheckedChange={(checked) =>
+                updateSettings({ sparkyProcessPrewarming: Boolean(checked) })
+              }
+              aria-label="Prewarm Sparky process"
+            />
+          }
+        />
+
+        <SettingsRow
           title="Streaming text animation"
           description="Choose how newly streamed words appear while existing text stays stable."
           resetAction={

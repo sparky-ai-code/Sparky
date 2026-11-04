@@ -68,6 +68,7 @@ export interface SparkyAdapterOptions {
   readonly environment: NodeJS.ProcessEnv;
   readonly nativeEventLogger?: EventNdjsonLogger | undefined;
   readonly getCustomInstructions?: (() => Effect.Effect<string>) | undefined;
+  readonly processPrewarming?: boolean | undefined;
 }
 
 export interface SparkyProcessResult {
@@ -226,7 +227,8 @@ interface PendingPersistentTurn {
 
 interface PersistentSparkyProcess {
   readonly child: SparkyChildProcess;
-  readonly signature: string;
+  signature: string;
+  prewarmed?: boolean | undefined;
   stderr: string;
   pending?: PendingPersistentTurn;
 }
@@ -819,7 +821,11 @@ export function makeSparkyProcessArgs(input: {
   readonly mcpUrl?: string | undefined;
   readonly mcpBearerTokenEnvVar?: string | undefined;
   readonly persistentJsonStream?: boolean | undefined;
+  readonly prewarmPersistentJsonStream?: boolean | undefined;
 }): string[] {
+  if (input.prewarmPersistentJsonStream) {
+    return ["--json-stream", "--persistent-json-stream", "--prewarm-persistent-json-stream"];
+  }
   const selection = parseSparkyModelSelection(input.model);
   const args = [
     "--json-stream",
@@ -1024,6 +1030,8 @@ function runPersistentSparky(input: {
   readonly mcpBearerTokenEnvVar?: string | undefined;
   readonly processes: Map<string, PersistentSparkyProcess>;
   readonly processKey: string;
+  readonly prewarmedProcesses?: Map<string, PersistentSparkyProcess> | undefined;
+  readonly ensurePrewarmedProcess?: (() => void) | undefined;
 }) {
   return Effect.tryPromise({
     try: () =>
@@ -1041,23 +1049,38 @@ function runPersistentSparky(input: {
           .update(JSON.stringify(input.environment))
           .digest("hex");
         let processState = input.processes.get(input.processKey);
-        if (processState && (processState.signature !== signature || processState.child.exitCode !== null)) {
+        if (
+          processState &&
+          !processState.prewarmed &&
+          (processState.signature !== signature || processState.child.exitCode !== null)
+        ) {
           input.processes.delete(input.processKey);
           processState.child.kill();
           processState = undefined;
         }
         let createdProcess = false;
         if (!processState) {
-          const child = NodeChildProcess.spawn(input.binaryPath, args, {
-            cwd: input.cwd,
-            env: input.environment,
-            windowsHide: true,
-            shell: false,
-            stdio: ["pipe", "pipe", "pipe"],
-          });
-          processState = { child, signature, stderr: "" };
-          input.processes.set(input.processKey, processState);
-          createdProcess = true;
+          const idleProcess = input.prewarmedProcesses?.get("idle");
+          if (idleProcess && idleProcess.child.exitCode === null) {
+            input.prewarmedProcesses?.delete("idle");
+            processState = idleProcess;
+            processState.signature = signature;
+            processState.prewarmed = false;
+            input.processes.set(input.processKey, processState);
+            createdProcess = true;
+            input.ensurePrewarmedProcess?.();
+          } else {
+            const child = NodeChildProcess.spawn(input.binaryPath, args, {
+              cwd: input.cwd,
+              env: input.environment,
+              windowsHide: true,
+              shell: false,
+              stdio: ["pipe", "pipe", "pipe"],
+            });
+            processState = { child, signature, stderr: "" };
+            input.processes.set(input.processKey, processState);
+            createdProcess = true;
+          }
         }
         const currentProcess = processState;
         const child = currentProcess.child;
@@ -1152,12 +1175,24 @@ function runPersistentSparky(input: {
           });
         }
         try {
+          const modelSelection = parseSparkyModelSelection(input.model);
           child.stdin.write(
             `${JSON.stringify({
               prompt: input.prompt,
               imagePaths: (input.images ?? []).map((image) => image.path),
               imageMimeTypes: (input.images ?? []).map((image) => image.mimeType),
               interactionMode: input.interactionMode === "plan" ? "plan" : "build",
+              provider: modelSelection.provider,
+              model: modelSelection.model,
+              baseUrl: modelSelection.baseUrl,
+              cwd: input.cwd,
+              reasoningEffort: input.reasoningEffort,
+              contextWindow: input.contextWindow,
+              workspaceContext: input.workspaceContext ?? "project",
+              customInstructions: input.customInstructions,
+              sessionId: input.sessionId,
+              mcpUrl: input.mcpUrl,
+              mcpBearerToken: input.environment[T3_MCP_BEARER_TOKEN_ENV_VAR],
             })}\n`,
             "utf8",
           );
@@ -1187,6 +1222,37 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
     const sessions = new Map<ThreadId, SessionState>();
     const activeChildren = new Map<string, SparkyChildProcess>();
     const persistentProcesses = new Map<string, PersistentSparkyProcess>();
+    const prewarmedProcesses = new Map<string, PersistentSparkyProcess>();
+    const ensurePrewarmedProcess = () => {
+      if (!options.processPrewarming || prewarmedProcesses.has("idle")) return;
+      const args = makeSparkyProcessArgs({
+        cwd: process.cwd(),
+        prompt: "",
+        model: "",
+        prewarmPersistentJsonStream: true,
+      });
+      const child = NodeChildProcess.spawn(options.binaryPath, args, {
+        cwd: process.cwd(),
+        env: options.environment,
+        windowsHide: true,
+        shell: false,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const processState: PersistentSparkyProcess = {
+        child,
+        signature: "prewarmed",
+        prewarmed: true,
+        stderr: "",
+      };
+      prewarmedProcesses.set("idle", processState);
+      child.once("error", () => {
+        if (prewarmedProcesses.get("idle") === processState) prewarmedProcesses.delete("idle");
+      });
+      child.once("close", () => {
+        if (prewarmedProcesses.get("idle") === processState) prewarmedProcesses.delete("idle");
+      });
+    };
+    ensurePrewarmedProcess();
     const activeFibers = new Map<string, Fiber.Fiber<void>>();
     const cancelledTurnKeys = new Set<string>();
 
@@ -1432,6 +1498,8 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
               isCancelled: isTurnCancelled,
               processes: persistentProcesses,
               processKey: String(threadId),
+              prewarmedProcesses,
+              ensurePrewarmedProcess,
               ...(activeMcp
                 ? {
                     mcpUrl: activeMcp.endpoint,
@@ -1987,6 +2055,8 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
         Effect.sync(() => {
           for (const child of activeChildren.values()) child.kill();
           for (const processState of persistentProcesses.values()) processState.child.kill();
+          for (const processState of prewarmedProcesses.values()) processState.child.kill();
+          prewarmedProcesses.clear();
           persistentProcesses.clear();
           activeChildren.clear();
           sessions.clear();

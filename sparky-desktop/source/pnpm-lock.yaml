@@ -583,9 +583,6 @@ importers:
       effect:
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78(patch_hash=c502bc684210b707dfceb87d8fe6ad6843395af6e19cfc02cd65854898bde2c5)
-      img-fx:
-        specifier: ^0.5.1
-        version: 0.5.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(three@0.187.0)
       jose:
         specifier: 'catalog:'
         version: 6.2.2
@@ -619,9 +616,6 @@ importers:
       tailwind-merge:
         specifier: ^3.4.0
         version: 3.6.0
-      three:
-        specifier: ^0.187.0
-        version: 0.187.0
       zustand:
         specifier: ^5.0.11
         version: 5.0.14(@types/react@19.2.16)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
@@ -1808,6 +1802,7 @@ packages:
 
   '@distilled.cloud/cloudflare-rolldown-plugin@0.10.5':
     resolution: {integrity: sha512-hIIvNinKQEIsPLluIPQ6/q4C5cAp7KNIMGtpOh/ZKaUClvvV3gFoZvgpjZHNpScXXeKDqs3WZbFux+gteGg80w==}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     peerDependencies:
       rolldown: ^1.0.1
     peerDependenciesMeta:
@@ -1829,6 +1824,7 @@ packages:
 
   '@distilled.cloud/cloudflare-vite-plugin@0.10.5':
     resolution: {integrity: sha512-5QefxDOUMWijIuEywOEjGBtPVGeBEzTmVx3Fl9HVvmU2oSse+nHeA3eWz1vaRql/8e8WFRYPfSAyYrfUOmHe5Q==}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     peerDependencies:
       '@distilled.cloud/cloudflare': ^0.23.1
       '@distilled.cloud/cloudflare-runtime': 0.10.5
@@ -7970,13 +7966,6 @@ packages:
     engines: {node: '>=16.x'}
     hasBin: true
 
-  img-fx@0.5.1:
-    resolution: {integrity: sha512-CXIFGoGgK5F80d8I+VXZ96dmfkWqb4EGpecAIVXVXhuUVqCe1571Xhf5oGZ4qmTce0UoTfNMKLQDOgSAbIbH0w==}
-    peerDependencies:
-      react: '>=18.0.0'
-      react-dom: '>=18.0.0'
-      three: '>=0.149.0'
-
   immediate@3.0.6:
     resolution: {integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==}
 
@@ -10472,9 +10461,6 @@ packages:
     resolution: {integrity: sha512-J/9An6vs9Us6wKRriSFXBWdRZapREHqFzdNUKk0pmu804EMR6dr6winwo7e5JDxN4xahxQsuysyYFwlwj4XN/Q==}
     engines: {node: '>=10'}
     hasBin: true
-
-  three@0.187.0:
-    resolution: {integrity: sha512-Qiu7R+Cmh8CstZsY1uJOSWnVlfo7ZtNLV7mF8Jltk3LB3AtDu9cRZlcnRKkAk8Y4z6KKw35z7Y7Urd7jWY8etA==}
 
   throat@5.0.0:
     resolution: {integrity: sha512-fcwX4mndzpLQKBS1DVYhGAcYaYt7vsHNIvQV+WXMvnow5cgjPphq5CaayLaGsjRdSCKZFNGt7/GYAuXaNOiYCA==}
@@ -20314,12 +20300,6 @@ snapshots:
     dependencies:
       queue: 6.0.2
 
-  img-fx@0.5.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(three@0.187.0):
-    dependencies:
-      react: 19.2.6
-      react-dom: 19.2.6(react@19.2.6)
-      three: 0.187.0
-
   immediate@3.0.6: {}
 
   indent-string@4.0.0:
@@ -23379,8 +23359,6 @@ snapshots:
       acorn: 8.16.0
       commander: 2.20.3
       source-map-support: 0.5.21
-
-  three@0.187.0: {}
 
   throat@5.0.0: {}
 

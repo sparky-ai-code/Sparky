@@ -727,6 +727,33 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Work Log");
   });
 
+  it("renders context compaction as a divider between conversation segments", async () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-compact",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-compact",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Context compacted",
+              tone: "info",
+              sourceActivityKind: "context-compaction",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('role="separator"');
+    expect(markup).toContain('data-context-compaction-separator="true"');
+    expect(markup).toContain("Context Compacted");
+    expect(markup).not.toContain("Work Log");
+  });
+
   it("formats changed file paths from the workspace root", async () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

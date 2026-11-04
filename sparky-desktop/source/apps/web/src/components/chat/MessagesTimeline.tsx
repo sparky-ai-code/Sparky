@@ -886,6 +886,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       data-message-id={row.kind === "message" ? row.message.id : undefined}
       data-message-role={row.kind === "message" ? row.message.role : undefined}
     >
+      {row.kind === "context-compaction" ? <ContextCompactionTimelineRow /> : null}
       {row.kind === "work" ? <WorkGroupSection groupedEntries={row.groupedEntries} /> : null}
       {row.kind === "work-live" ? <LiveWorkTimelineRow row={row} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
@@ -1248,6 +1249,21 @@ function WorkingTimer({ createdAt }: { createdAt: string }) {
 // Extracted row sections — own their state / store subscriptions so changes
 // re-render only the affected row, not the entire list.
 // ---------------------------------------------------------------------------
+
+function ContextCompactionTimelineRow() {
+  return (
+    <div
+      aria-label="Context compacted"
+      className="flex items-center gap-3 py-1"
+      data-context-compaction-separator="true"
+      role="separator"
+    >
+      <span aria-hidden="true" className="h-px flex-1 bg-border/80" />
+      <span className="shrink-0 font-mono text-sm text-muted-foreground">Context Compacted</span>
+      <span aria-hidden="true" className="h-px flex-1 bg-border/80" />
+    </div>
+  );
+}
 
 /** Renders one or more already-derived work log rows. Overflow expansion is modeled as LegendList data. */
 const WorkGroupSection = memo(function WorkGroupSection({

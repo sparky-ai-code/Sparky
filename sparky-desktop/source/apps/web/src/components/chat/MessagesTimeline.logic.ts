@@ -157,6 +157,7 @@ export type MessagesTimelineRow =
       groupId: string;
       expanded: boolean;
     }
+  | { kind: "context-compaction"; id: string; createdAt: string }
   | {
       kind: "work-toggle";
       id: string;
@@ -560,6 +561,18 @@ export function deriveMessagesTimelineRows(input: {
       });
     }
 
+    if (
+      timelineEntry.kind === "work" &&
+      timelineEntry.entry.sourceActivityKind === "context-compaction"
+    ) {
+      nextRows.push({
+        kind: "context-compaction",
+        id: `context-compaction:${timelineEntry.id}`,
+        createdAt: timelineEntry.createdAt,
+      });
+      continue;
+    }
+
     if (collapsedEntryIds.has(timelineEntry.id)) {
       continue;
     }
@@ -773,6 +786,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
     case "proposed-plan":
       return a.proposedPlan === (b as typeof a).proposedPlan;
+
+    case "context-compaction":
+      return a.createdAt === (b as typeof a).createdAt;
 
     case "work":
       return Equal.equals(a.groupedEntries, (b as typeof a).groupedEntries);

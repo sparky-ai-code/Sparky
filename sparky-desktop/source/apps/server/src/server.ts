@@ -5,6 +5,7 @@ import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import * as ServerConfig from "./config.ts";
+import * as AcpAgent from "./acpAgent.ts";
 import {
   otlpTracesProxyRouteLayer,
   assetRouteLayer,
@@ -468,6 +469,18 @@ export const makeServerLayer = Layer.unwrap(
       Layer.provideMerge(PlatformServicesLive),
     );
   }),
+);
+
+// ACP is a separate stdio transport. It reuses the same provider/runtime services as
+// the server, without binding the HTTP/WebSocket listener or affecting normal launches.
+export const runAcpAgent = Layer.launch(
+  AcpAgent.layer.pipe(
+    Layer.provideMerge(RuntimeServicesLive),
+    Layer.provide(ObservabilityLive),
+    Layer.provideMerge(FetchHttpClient.layer),
+    Layer.provideMerge(VcsProcess.layer),
+    Layer.provideMerge(PlatformServicesLive),
+  ),
 );
 
 // Important: Only `ServerConfig` should be provided by the CLI layer!!! Don't let other requirements leak into the launch layer.

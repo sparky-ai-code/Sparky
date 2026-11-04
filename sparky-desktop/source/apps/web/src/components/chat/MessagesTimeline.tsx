@@ -52,6 +52,7 @@ import {
   FileIcon,
   FilePenLineIcon,
   FilePlus2Icon,
+  FolderGit2Icon,
   FolderIcon,
   FolderSearchIcon,
   GlobeIcon,
@@ -1956,6 +1957,7 @@ type WorkEntryIconName =
   | "file-pen-line"
   | "file-plus-2"
   | "folder"
+  | "folder-git"
   | "folder-search"
   | "search"
   | "globe"
@@ -1997,6 +1999,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <FilePlus2Icon className={className} aria-hidden />;
     case "folder":
       return <FolderIcon className={className} aria-hidden />;
+    case "folder-git":
+      return <FolderGit2Icon className={className} aria-hidden />;
     case "folder-search":
       return <FolderSearchIcon className={className} aria-hidden />;
     case "search":
@@ -2401,6 +2405,8 @@ export function resolveWorkEntryToolIconName(
       return "search";
     case "find":
       return "folder-search";
+    case "create_worktree":
+      return "folder-git";
     case "getpullrequestcomments":
       return "messages-square";
     case "review_pull_request":

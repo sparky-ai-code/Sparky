@@ -1169,18 +1169,24 @@ const make = Effect.gen(function* () {
           ),
         ),
       );
-      yield* maybeGenerateThreadTitleForFirstTurn(titleInput).pipe(
-        // Metadata generation must never hold the turn-start worker open.
-        Effect.forkScoped,
-        Effect.asVoid,
-      );
     }
 
     const providerTurn = providerService
       .sendTurn(sendTurnRequest.value)
       .pipe(Effect.catchCause((cause) => recoverTurnStartFailure(cause)));
 
+    // Start the user's turn first so the provider's task process is already
+    // underway before title generation launches its independent text-only
+    // Sparky process. Title generation is best-effort metadata and must never
+    // delay the actual response.
     yield* providerTurn.pipe(Effect.forkScoped);
+
+    if (titleInput !== undefined) {
+      yield* maybeGenerateThreadTitleForFirstTurn(titleInput).pipe(
+        Effect.forkScoped,
+        Effect.asVoid,
+      );
+    }
   });
 
   // Keep the provider event subscription alive for adapters that use the

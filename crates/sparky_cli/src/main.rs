@@ -230,6 +230,13 @@ fn write_stream_event(event: &AssistantMessageEvent) {
         AssistantMessageEvent::ThinkingDelta(delta) => {
             write_json_line(serde_json::json!({ "type": "thinking_delta", "delta": delta }));
         }
+        AssistantMessageEvent::ProviderState(ContentPart::ProviderState { provider, data })
+            if provider == "sparky"
+                && data.get("event").and_then(serde_json::Value::as_str)
+                    == Some("context_compacted") =>
+        {
+            write_json_line(serde_json::json!({ "type": "context_compacted" }));
+        }
         _ => {}
     }
 }

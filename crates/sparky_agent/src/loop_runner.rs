@@ -1048,6 +1048,13 @@ fn is_end_task_tool(tool_call: &ToolCall) -> bool {
     tool_call.name == END_TASK_TOOL_NAME
 }
 
+fn context_compacted_event() -> AssistantMessageEvent {
+    AssistantMessageEvent::ProviderState(ContentPart::ProviderState {
+        provider: "sparky".to_string(),
+        data: serde_json::json!({ "event": "context_compacted" }),
+    })
+}
+
 fn is_context_window_error(message: &str) -> bool {
     let message = message.to_ascii_lowercase();
     message.contains("context_length_exceeded")
@@ -1294,7 +1301,9 @@ impl AgentLoop {
                             context_window,
                         );
                         if usage.percentage >= 95.0 {
-                            if !self.apply_background_compaction(session).await? {
+                            let compacted = if self.apply_background_compaction(session).await? {
+                                true
+                            } else {
                                 self.compaction
                                     .compact(
                                         session,
@@ -1302,19 +1311,26 @@ impl AgentLoop {
                                         &self.options.model_name,
                                         context_window,
                                     )
-                                    .await?;
+                                    .await?
+                            };
+                            if compacted {
+                                on_event(&context_compacted_event());
                             }
                         }
                     }
                 } else if let Some(context_window) = self.options.context_window_tokens {
-                    self.compaction
+                    if self
+                        .compaction
                         .compact(
                             session,
                             self.provider.clone(),
                             &self.options.model_name,
                             context_window,
                         )
-                        .await?;
+                        .await?
+                    {
+                        on_event(&context_compacted_event());
+                    }
                 }
 
                 let mut context_messages = vec![Message::system(&system_prompt)];
@@ -1340,6 +1356,7 @@ impl AgentLoop {
                                 self.compact_session_now(session).await?
                             };
                             if compacted {
+                                on_event(&context_compacted_event());
                                 continue 'completion;
                             }
                         }
@@ -1399,6 +1416,7 @@ impl AgentLoop {
                                     self.compact_session_now(session).await?
                                 };
                                 if compacted {
+                                    on_event(&context_compacted_event());
                                     continue 'completion;
                                 }
                             }

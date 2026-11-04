@@ -102,6 +102,7 @@ export interface SparkyStreamCallbacks {
   readonly onToolStarted?: ((event: SparkyToolStartedEvent) => void) | undefined;
   readonly onToolCompleted?: ((event: SparkyToolCompletedEvent) => void) | undefined;
   readonly onUsage?: ((event: SparkyUsageEvent) => void) | undefined;
+  readonly onContextCompacted?: (() => void) | undefined;
   /** Fired as soon as the result frame for this request is received. */
   readonly onResult?: ((result: SparkyProcessResult) => void) | undefined;
   readonly onError?: ((message: string) => void) | undefined;
@@ -288,6 +289,10 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
         if (typeof event.delta !== "string") {
           setProtocolError("Sparky returned a malformed thinking delta event.");
         }
+        return;
+      }
+      if (event.type === "context_compacted") {
+        callbacks.onContextCompacted?.();
         return;
       }
       if (event.type === "session") {
@@ -1513,6 +1518,16 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
                   assistantSegments.pushDelta(delta);
                 },
                 onSessionId: captureSessionIdentity,
+                onContextCompacted: () => {
+                  if (isTurnCancelled()) return;
+                  runEffectSync(
+                    publish({
+                      type: "thread.state.changed",
+                      ...stamp(threadId, turnId),
+                      payload: { state: "compacted" },
+                    }),
+                  );
+                },
                 onUsage: (usage) => {
                   if (isTurnCancelled()) return;
                   runEffectSync(

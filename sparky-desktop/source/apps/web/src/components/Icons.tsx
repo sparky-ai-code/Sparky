@@ -201,6 +201,18 @@ export const CursorIcon: Icon = ({ className, ...props }) => (
   </svg>
 );
 
+export const OpenCodeIcon: Icon = ({ className, ...props }) => (
+  <svg {...props} viewBox="0 0 512 512" className={className}>
+    <path d="M320 224V352H192V224H320Z" fill="currentColor" opacity="0.42" />
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z"
+    />
+  </svg>
+);
+
 export const GrokIcon: Icon = ({ className, ...props }) => (
   <svg
     {...props}

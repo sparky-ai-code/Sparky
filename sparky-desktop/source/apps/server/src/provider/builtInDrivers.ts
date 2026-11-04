@@ -26,6 +26,7 @@
  * @module provider/builtInDrivers
  */
 import { SparkyDriver } from "./Drivers/SparkyDriver.ts";
+import { OpenCodeAcpDriver } from "./Drivers/OpenCodeAcpDriver.ts";
 import type { AnyProviderDriver } from "./ProviderDriver.ts";
 import type { ServerSettingsService } from "../serverSettings.ts";
 import type { ServerConfig } from "../config.ts";
@@ -44,4 +45,5 @@ export type BuiltInDriversEnv =
 /** Only the aggregated Sparky runtime is exposed as a built-in provider. */
 export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
   SparkyDriver,
+  OpenCodeAcpDriver,
 ];

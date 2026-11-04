@@ -1,10 +1,11 @@
 import { createElement } from "react";
 import { ProviderDriverKind } from "@sparky/contracts";
-import { ClaudeAI, FireworksAI, Gemini, Icon, Ollama, OpenAI, SparkyIcon } from "../Icons";
+import { ClaudeAI, FireworksAI, Gemini, Icon, Ollama, OpenAI, OpenCodeIcon, SparkyIcon } from "../Icons";
 import { PROVIDER_OPTIONS } from "../../session-logic";
 
 export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
   [ProviderDriverKind.make("sparky")]: SparkyIcon,
+  [ProviderDriverKind.make("opencode")]: OpenCodeIcon,
 };
 
 function isAvailableProviderOption(option: (typeof PROVIDER_OPTIONS)[number]): option is {

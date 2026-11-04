@@ -1,6 +1,6 @@
 # Provider request-body compression
 
-`request_body::encode_json` serializes a JSON body once before retry handling. For eligible endpoints it gzips bodies of at least 1,024 uncompressed bytes and sends `Content-Type: application/json` with `Content-Encoding: gzip`. Retry attempts reuse the encoded bytes. Small bodies are sent as ordinary JSON.
+`request_body::encode_json` serializes a JSON body once before retry handling. The prepared body uses reference-counted `Bytes`, so each retry can share the encoded buffer instead of copying it. For eligible endpoints it gzips bodies of at least 1,024 uncompressed bytes and sends `Content-Type: application/json` with `Content-Encoding: gzip`. Small bodies are sent as ordinary JSON.
 
 Compression is enabled only for the canonical Anthropic API URL and Cerebras API URL. Cerebras documents `Content-Encoding: gzip` for Chat Completions in its [payload optimization](https://inference-docs.cerebras.ai/capabilities/payload-optimization) and [Chat Completions reference](https://inference-docs.cerebras.ai/api-reference/chat-completions). Anthropic's canonical endpoint has been observed accepting gzip-compressed Messages API requests; this behavior is not documented in Anthropic's API reference, so the implementation deliberately scopes it to `https://api.anthropic.com/v1` only.
 

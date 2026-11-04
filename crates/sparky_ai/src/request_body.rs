@@ -8,7 +8,7 @@ pub(crate) const GZIP_THRESHOLD_BYTES: usize = 1024;
 
 #[derive(Debug)]
 pub(crate) struct EncodedJson {
-    pub(crate) bytes: Vec<u8>,
+    pub(crate) bytes: bytes::Bytes,
     pub(crate) compressed: bool,
 }
 
@@ -21,7 +21,7 @@ pub(crate) fn encode_json<T: Serialize>(
     let json = serde_json::to_vec(value)?;
     if !gzip_supported || json.len() < GZIP_THRESHOLD_BYTES {
         return Ok(EncodedJson {
-            bytes: json,
+            bytes: json.into(),
             compressed: false,
         });
     }
@@ -29,7 +29,7 @@ pub(crate) fn encode_json<T: Serialize>(
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(&json)?;
     Ok(EncodedJson {
-        bytes: encoder.finish()?,
+        bytes: encoder.finish()?.into(),
         compressed: true,
     })
 }
@@ -47,7 +47,7 @@ mod tests {
         let encoded = encode_json(&value, true).unwrap();
         assert!(encoded.compressed);
         let mut decoded = Vec::new();
-        GzDecoder::new(encoded.bytes.as_slice())
+        GzDecoder::new(encoded.bytes.as_ref())
             .read_to_end(&mut decoded)
             .unwrap();
         assert_eq!(decoded, original);
@@ -64,11 +64,17 @@ mod tests {
         let small = serde_json::json!({"prompt": "small"});
         let encoded = encode_json(&small, true).unwrap();
         assert!(!encoded.compressed);
-        assert_eq!(encoded.bytes, serde_json::to_vec(&small).unwrap());
+        assert_eq!(
+            encoded.bytes.as_ref(),
+            serde_json::to_vec(&small).unwrap().as_slice()
+        );
 
         let large = serde_json::json!({"prompt": "repeated context ".repeat(10_000)});
         let encoded = encode_json(&large, false).unwrap();
         assert!(!encoded.compressed);
-        assert_eq!(encoded.bytes, serde_json::to_vec(&large).unwrap());
+        assert_eq!(
+            encoded.bytes.as_ref(),
+            serde_json::to_vec(&large).unwrap().as_slice()
+        );
     }
 }

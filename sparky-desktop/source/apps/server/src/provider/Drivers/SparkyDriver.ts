@@ -273,7 +273,12 @@ export const SparkyDriver: ProviderDriver<
         Effect.map((settings) => settings.sparkyProcessPrewarming),
         Effect.orElseSucceed(() => true),
       );
+      const backgroundCompaction = yield* serverSettings.getSettings.pipe(
+        Effect.map((settings) => settings.sparkyBackgroundCompaction),
+        Effect.orElseSucceed(() => false),
+      );
       const processEnvironment = { ...mergeProviderInstanceEnvironment(environment) };
+      processEnvironment.SPARKY_BACKGROUND_COMPACTION = backgroundCompaction ? "true" : "false";
       const hasConfiguredOllamaCloudKey = environment?.some(
         (variable) => variable.name === "OLLAMA_API_KEY" && variable.value.trim().length > 0,
       );

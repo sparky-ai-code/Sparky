@@ -32,6 +32,12 @@ impl Default for CompactionEngine {
     }
 }
 
+pub struct PreparedCompaction {
+    pub summary: String,
+    pub first_kept_entry_id: String,
+    pub tokens_before: u32,
+}
+
 impl CompactionEngine {
     pub fn new(threshold_percent: f32) -> Self {
         Self {
@@ -68,6 +74,116 @@ impl CompactionEngine {
 
     pub fn should_compact(&self, usage: &ContextUsage) -> bool {
         usage.percentage >= self.threshold_percent
+    }
+
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    pub fn background_snapshot(
+        &self,
+        session: &SessionManager,
+        max_context_window: usize,
+    ) -> Option<(Vec<Message>, String, usize)> {
+        let messages = session.build_context_messages();
+        if messages.len() < 4 {
+            return None;
+        }
+        let usage = self.calculate_usage(&messages, max_context_window);
+        if !self.should_compact(&usage) {
+            return None;
+        }
+        let keep_recent_tokens = KEEP_RECENT_TOKENS.min((max_context_window / 3).max(1));
+        let first_kept_entry_id = session.first_entry_id_for_recent_tokens(keep_recent_tokens)?;
+        let history_messages = session.build_compaction_messages(&first_kept_entry_id);
+        Some((history_messages, first_kept_entry_id, usage.estimated_tokens))
+    }
+
+    pub async fn prepare_background(
+        timeout: Duration,
+        history_messages: Vec<Message>,
+        first_kept_entry_id: String,
+        tokens_before: usize,
+        provider: Arc<dyn LlmProvider>,
+        model_name: String,
+    ) -> anyhow::Result<PreparedCompaction> {
+        let history = history_messages
+            .iter()
+            .map(|message| {
+                let role = format!("{:?}", message.role);
+                let text = message.text();
+                let tool_calls = message
+                    .tool_calls
+                    .as_deref()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|call| format!("{}({})", call.name, call.arguments))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if tool_calls.is_empty() {
+                    format!("[{role}]\n{text}")
+                } else {
+                    format!("[{role}]\n{text}\nTool calls: {tool_calls}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let prompt = vec![
+            Message::system("You are a concise conversation summarizer. Preserve key facts, decisions, file modifications, tool results, unresolved errors, and ongoing goals. Return a structured summary that another coding agent can act on without the original transcript."),
+            Message::user(format!("Summarize this conversation context:\n\n{history}")),
+        ];
+        let options = CompletionOptions {
+            model: model_name,
+            temperature: Some(0.3),
+            max_tokens: Some(2048),
+            ..Default::default()
+        };
+        let (summary, saw_completion) = tokio::time::timeout(timeout, async {
+            let mut stream = provider.stream(&prompt, &options).await?;
+            let mut summary = String::new();
+            let mut saw_completion = false;
+            while let Some(event) = stream.next().await {
+                match event {
+                    AssistantMessageEvent::TextDelta(delta) => summary.push_str(&delta),
+                    AssistantMessageEvent::Error(message) => anyhow::bail!(message),
+                    AssistantMessageEvent::ThinkingDelta(_)
+                    | AssistantMessageEvent::ProviderState(_)
+                    | AssistantMessageEvent::ToolCallDelta { .. } => {}
+                    AssistantMessageEvent::Done { .. } => {
+                        saw_completion = true;
+                        break;
+                    }
+                }
+            }
+            anyhow::Result::<(String, bool)>::Ok((summary, saw_completion))
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Background compaction timed out after {timeout:?}"))??;
+        anyhow::ensure!(saw_completion, "Background compaction ended before a complete summary");
+        anyhow::ensure!(!summary.trim().is_empty(), "Background compaction returned an empty summary");
+        Ok(PreparedCompaction {
+            summary,
+            first_kept_entry_id,
+            tokens_before: tokens_before as u32,
+        })
+    }
+
+    pub async fn apply_prepared(
+        session: &mut SessionManager,
+        prepared: PreparedCompaction,
+    ) -> anyhow::Result<()> {
+        let entry = SessionEntry::Compaction {
+            id: Uuid::new_v4().to_string(),
+            parent_id: None,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            summary: prepared.summary,
+            first_kept_entry_id: prepared.first_kept_entry_id.clone(),
+            tokens_before: prepared.tokens_before,
+        };
+        session.append_entry(entry).await?;
+        session.trim_entries_before(&prepared.first_kept_entry_id)?;
+        session.rewrite_session_file().await?;
+        Ok(())
     }
 
     pub async fn compact(

@@ -1,3 +1,3 @@
 pub mod engine;
 
-pub use engine::{CompactionEngine, ContextUsage};
+pub use engine::{CompactionEngine, ContextUsage, PreparedCompaction};

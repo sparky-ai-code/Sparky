@@ -3,7 +3,7 @@ use sparky_ai::{
     AssistantMessageEvent, CompletionOptions, ContentPart, LlmProvider, Message, ToolCall,
     UsageStats,
 };
-use sparky_compaction::CompactionEngine;
+use sparky_compaction::{CompactionEngine, PreparedCompaction};
 use sparky_config::{max_output_tokens_for_model, DEFAULT_CONTEXT_WINDOW_TOKENS};
 use sparky_extensions::{EventBus, SparkyEvent};
 use sparky_prompt::PromptBuilder;
@@ -1036,6 +1036,10 @@ pub struct AgentLoop {
     tool_registry: ToolRegistry,
     event_bus: EventBus,
     pending_background_tools: tokio::sync::Mutex<HashMap<String, PendingBackgroundTool>>,
+    background_compaction_enabled: bool,
+    pending_compaction: tokio::sync::Mutex<
+        Option<tokio::task::JoinHandle<anyhow::Result<PreparedCompaction>>>,
+    >,
     compaction: CompactionEngine,
     options: AgentLoopOptions,
 }
@@ -1074,6 +1078,9 @@ impl AgentLoop {
             tool_registry,
             event_bus,
             pending_background_tools: tokio::sync::Mutex::new(HashMap::new()),
+            background_compaction_enabled: std::env::var("SPARKY_BACKGROUND_COMPACTION")
+                .is_ok_and(|value| value.eq_ignore_ascii_case("true") || value == "1"),
+            pending_compaction: tokio::sync::Mutex::new(None),
             compaction: CompactionEngine::default(),
             options,
         }
@@ -1133,6 +1140,60 @@ impl AgentLoop {
                 context_window_tokens,
             )
             .await
+    }
+
+    async fn start_background_compaction(&self, session: &SessionManager) {
+        if !self.background_compaction_enabled {
+            return;
+        }
+        let Some(context_window_tokens) = self.options.context_window_tokens else {
+            return;
+        };
+        let mut pending = self.pending_compaction.lock().await;
+        if pending.is_some() {
+            return;
+        }
+        let Some((history, first_kept_entry_id, tokens_before)) = self
+            .compaction
+            .background_snapshot(session, context_window_tokens)
+        else {
+            return;
+        };
+        let timeout = self.compaction.timeout();
+        let provider = self.provider.clone();
+        let model_name = self.options.model_name.clone();
+        *pending = Some(tokio::spawn(async move {
+            CompactionEngine::prepare_background(
+                timeout,
+                history,
+                first_kept_entry_id,
+                tokens_before,
+                provider,
+                model_name,
+            )
+            .await
+        }));
+    }
+
+    async fn apply_background_compaction(&self, session: &mut SessionManager) -> anyhow::Result<bool> {
+        let handle = self.pending_compaction.lock().await.take();
+        let Some(handle) = handle else {
+            return Ok(false);
+        };
+        match handle.await {
+            Ok(Ok(prepared)) => {
+                CompactionEngine::apply_prepared(session, prepared).await?;
+                Ok(true)
+            }
+            Ok(Err(error)) => {
+                tracing::warn!("Background context compaction failed: {error}");
+                Ok(false)
+            }
+            Err(error) => {
+                tracing::warn!("Background context compaction task failed: {error}");
+                Ok(false)
+            }
+        }
     }
 
     pub async fn run_turn_streaming<F>(
@@ -1225,7 +1286,27 @@ impl AgentLoop {
 
             let mut context_recovery_attempted = false;
             let (text_output, tool_call_parts, provider_state, attempt_usage) = 'completion: loop {
-                if let Some(context_window) = self.options.context_window_tokens {
+                if self.background_compaction_enabled {
+                    self.start_background_compaction(session).await;
+                    if let Some(context_window) = self.options.context_window_tokens {
+                        let usage = self.compaction.calculate_usage(
+                            &session.build_context_messages(),
+                            context_window,
+                        );
+                        if usage.percentage >= 95.0 {
+                            if !self.apply_background_compaction(session).await? {
+                                self.compaction
+                                    .compact(
+                                        session,
+                                        self.provider.clone(),
+                                        &self.options.model_name,
+                                        context_window,
+                                    )
+                                    .await?;
+                            }
+                        }
+                    }
+                } else if let Some(context_window) = self.options.context_window_tokens {
                     self.compaction
                         .compact(
                             session,
@@ -1249,7 +1330,16 @@ impl AgentLoop {
                             && is_context_window_error(&error.to_string())
                         {
                             context_recovery_attempted = true;
-                            if self.compact_session_now(session).await? {
+                            let compacted = if self.background_compaction_enabled {
+                                if self.apply_background_compaction(session).await? {
+                                    true
+                                } else {
+                                    self.compact_session_now(session).await?
+                                }
+                            } else {
+                                self.compact_session_now(session).await?
+                            };
+                            if compacted {
                                 continue 'completion;
                             }
                         }
@@ -1299,7 +1389,16 @@ impl AgentLoop {
                                 && is_context_window_error(&message)
                             {
                                 context_recovery_attempted = true;
-                                if self.compact_session_now(session).await? {
+                                let compacted = if self.background_compaction_enabled {
+                                    if self.apply_background_compaction(session).await? {
+                                        true
+                                    } else {
+                                        self.compact_session_now(session).await?
+                                    }
+                                } else {
+                                    self.compact_session_now(session).await?
+                                };
+                                if compacted {
                                     continue 'completion;
                                 }
                             }

@@ -745,6 +745,20 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          title="Pre-compact context in the background"
+          description="Start preparing a compacted conversation when context reaches 80%, so it can be swapped in when needed."
+          control={
+            <Switch
+              checked={settings.sparkyBackgroundCompaction}
+              onCheckedChange={(checked) =>
+                updateSettings({ sparkyBackgroundCompaction: Boolean(checked) })
+              }
+              aria-label="Pre-compact context in the background"
+            />
+          }
+        />
+
+        <SettingsRow
           title="Streaming text animation"
           description="Choose how newly streamed words appear while existing text stays stable."
           resetAction={

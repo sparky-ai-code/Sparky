@@ -397,6 +397,7 @@ interface SidebarThreadRowProps {
     threadRef: ScopedThreadRef,
     position: { x: number; y: number },
   ) => Promise<void>;
+  regenerateThreadTitle: (threadRef: ScopedThreadRef, title: string) => Promise<void>;
   clearSelection: () => void;
   commitRename: (
     threadRef: ScopedThreadRef,
@@ -972,6 +973,17 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                   {isPinned ? "Unpin thread" : "Pin thread"}
                 </MenuItem>
                 <MenuItem
+                  data-testid={`thread-regenerate-title-${thread.id}`}
+                  onClick={() =>
+                    props.regenerateThreadTitle(
+                      scopeThreadRef(thread.environmentId, thread.id),
+                      thread.title,
+                    )
+                  }
+                >
+                  Regenerate title
+                </MenuItem>
+                <MenuItem
                   data-testid={`thread-archive-${thread.id}`}
                   disabled={isThreadRunning}
                   onClick={handleArchiveFromMenu}
@@ -1037,6 +1049,7 @@ interface SidebarProjectThreadListProps {
     threadRef: ScopedThreadRef,
     position: { x: number; y: number },
   ) => Promise<void>;
+  regenerateThreadTitle: (threadRef: ScopedThreadRef, title: string) => Promise<void>;
   clearSelection: () => void;
   commitRename: (
     threadRef: ScopedThreadRef,
@@ -1132,6 +1145,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
               navigateToThread={navigateToThread}
               handleMultiSelectContextMenu={handleMultiSelectContextMenu}
               handleThreadContextMenu={handleThreadContextMenu}
+              regenerateThreadTitle={props.regenerateThreadTitle}
               clearSelection={clearSelection}
               commitRename={commitRename}
               cancelRename={cancelRename}
@@ -2295,6 +2309,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       const clicked = await api.contextMenu.show(
         [
           { id: "rename", label: "Rename thread" },
+          { id: "regenerate-title", label: "Regenerate title" },
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
@@ -2305,6 +2320,27 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
       if (clicked === "rename") {
         startThreadRename(threadKey, thread.title);
+        return;
+      }
+      if (clicked === "regenerate-title") {
+        const result = await updateThreadMetadata({
+          environmentId: thread.environmentId,
+          input: { threadId: thread.id, title: thread.title, regenerateTitle: true },
+        });
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to regenerate thread title",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        } else {
+          toastManager.add(
+            stackedThreadToast({ type: "success", title: "Regenerating thread title" }),
+          );
+        }
         return;
       }
 
@@ -2363,6 +2399,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       memberProjectByScopedKey,
       project.workspaceRoot,
       startThreadRename,
+      updateThreadMetadata,
     ],
   );
 
@@ -2502,6 +2539,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         navigateToThread={navigateToThread}
         handleMultiSelectContextMenu={handleMultiSelectContextMenu}
         handleThreadContextMenu={handleThreadContextMenu}
+        regenerateThreadTitle={async (threadRef, title) => {
+          await updateThreadMetadata({
+            environmentId: threadRef.environmentId,
+            input: { threadId: threadRef.threadId, title, regenerateTitle: true },
+          });
+        }}
         clearSelection={clearSelection}
         commitRename={commitRename}
         cancelRename={cancelRename}
@@ -3342,6 +3385,7 @@ const SidebarChatsSection = memo(function SidebarChatsSection(props: SidebarChat
       const clicked = await api.contextMenu.show(
         [
           { id: "rename", label: "Rename thread" },
+          { id: "regenerate-title", label: "Regenerate title" },
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
           { id: "delete", label: "Delete", destructive: true, icon: "trash" },
@@ -3350,6 +3394,27 @@ const SidebarChatsSection = memo(function SidebarChatsSection(props: SidebarChat
       );
       if (clicked === "rename") {
         startThreadRename(threadKey, thread.title);
+        return;
+      }
+      if (clicked === "regenerate-title") {
+        const result = await updateThreadMetadata({
+          environmentId: thread.environmentId,
+          input: { threadId: thread.id, title: thread.title, regenerateTitle: true },
+        });
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to regenerate thread title",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        } else {
+          toastManager.add(
+            stackedThreadToast({ type: "success", title: "Regenerating thread title" }),
+          );
+        }
         return;
       }
       if (clicked === "mark-unread") {
@@ -3388,6 +3453,7 @@ const SidebarChatsSection = memo(function SidebarChatsSection(props: SidebarChat
       deleteThread,
       markThreadUnread,
       startThreadRename,
+      updateThreadMetadata,
     ],
   );
   const attemptArchiveThread = useCallback(
@@ -3468,6 +3534,12 @@ const SidebarChatsSection = memo(function SidebarChatsSection(props: SidebarChat
             navigateToThread={navigateToThread}
             handleMultiSelectContextMenu={handleMultiSelectContextMenu}
             handleThreadContextMenu={handleThreadContextMenu}
+            regenerateThreadTitle={async (threadRef, title) => {
+              await updateThreadMetadata({
+                environmentId: threadRef.environmentId,
+                input: { threadId: threadRef.threadId, title, regenerateTitle: true },
+              });
+            }}
             clearSelection={clearSelection}
             commitRename={commitRename}
             cancelRename={cancelRename}

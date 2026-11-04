@@ -67,6 +67,7 @@ type ProviderIntentEvent = Extract<
   {
     type:
       | "thread.runtime-mode-set"
+      | "thread.meta-updated"
       | "thread.turn-start-requested"
       | "thread.turn-interrupt-requested"
       | "thread.approval-response-requested"
@@ -1029,6 +1030,62 @@ const make = Effect.gen(function* () {
     },
   );
 
+  const processManualTitleRegeneration = Effect.fn("processManualTitleRegeneration")(function* (
+    event: Extract<ProviderIntentEvent, { type: "thread.meta-updated" }>,
+  ) {
+    if (!event.payload.regenerateTitle || !event.payload.title) return;
+    const thread = yield* resolveThread(event.payload.threadId);
+    if (!thread) return;
+
+    const workspaceContext: ProviderWorkspaceContext =
+      thread.projectId === UNSCOPED_CHAT_PROJECT_ID ? "none" : "project";
+    const project = workspaceContext === "none" ? undefined : yield* resolveProject(thread.projectId);
+    const cwd =
+      workspaceContext === "none"
+        ? serverConfig.attachmentsDir
+        : resolveThreadWorkspaceCwd({
+            thread,
+            projects: project ? [project] : [],
+          });
+    if (!cwd) return;
+
+    const recentMessages = thread.messages
+      .filter((message) => message.role === "user" || message.role === "assistant")
+      .slice(-6)
+      .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.text.slice(0, 2_000)}`)
+      .join("\n\n");
+    if (!recentMessages.trim()) return;
+
+    yield* Effect.gen(function* () {
+      const generated = yield* textGeneration
+        .generateThreadTitle({
+          cwd,
+          message: `Recent conversation:\n${recentMessages}`,
+          workspaceContext,
+          modelSelection: thread.modelSelection,
+        })
+        .pipe(Effect.timeout(Duration.seconds(30)));
+      const title = sanitizeThreadTitle(generated.title);
+      if (title === DEFAULT_THREAD_TITLE) return;
+
+      const latestThread = yield* resolveThread(event.payload.threadId);
+      if (!latestThread || latestThread.title !== event.payload.title) return;
+      yield* orchestrationEngine.dispatch({
+        type: "thread.meta.update",
+        commandId: yield* serverCommandId("thread-title-regenerate"),
+        threadId: event.payload.threadId,
+        title,
+      });
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("failed to regenerate thread title", {
+          threadId: event.payload.threadId,
+          cause: Cause.pretty(cause),
+        }),
+      ),
+    );
+  });
+
   const processTurnStartRequested = Effect.fn("processTurnStartRequested")(function* (
     event: Extract<ProviderIntentEvent, { type: "thread.turn-start-requested" }>,
   ) {
@@ -1408,6 +1465,11 @@ const make = Effect.gen(function* () {
       eventType: event.type,
     });
     switch (event.type) {
+      case "thread.meta-updated":
+        if (event.payload.regenerateTitle) {
+          yield* processManualTitleRegeneration(event).pipe(Effect.forkScoped);
+        }
+        return;
       case "thread.runtime-mode-set": {
         const thread = yield* resolveThread(event.payload.threadId);
         if (!thread?.session || thread.session.status === "stopped") {
@@ -1460,6 +1522,7 @@ const make = Effect.gen(function* () {
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {
     const processEvent = Effect.fn("processEvent")(function* (event: OrchestrationEvent) {
       if (
+        (event.type === "thread.meta-updated" && event.payload.regenerateTitle === true) ||
         event.type === "thread.runtime-mode-set" ||
         event.type === "thread.turn-start-requested" ||
         event.type === "thread.turn-interrupt-requested" ||

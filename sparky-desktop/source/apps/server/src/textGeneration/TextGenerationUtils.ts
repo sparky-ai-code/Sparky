@@ -63,13 +63,27 @@ export function sanitizeThreadTitle(raw: string): string {
   const words = normalized.split(/\s+/);
   const hasLongWord = words.some((w) => w.length > 7);
   const maxWords = hasLongWord ? 3 : 4;
-  const clamped = words.slice(0, maxWords).join(" ");
+  const wasWordClamped = words.length > maxWords;
+  const selectedWords = words.slice(0, maxWords);
 
-  if (clamped.length <= 50) {
-    return clamped;
+  // Avoid leaving an incomplete phrase such as "Add OpenCode as" when a long
+  // title is shortened for the sidebar. The ellipsis makes the omission clear.
+  if (
+    wasWordClamped &&
+    /^(?:a|an|and|as|at|by|for|from|in|into|of|on|or|the|to|with)$/iu.test(
+      selectedWords.at(-1) ?? "",
+    )
+  ) {
+    selectedWords.pop();
+  }
+  const clamped = selectedWords.join(" ");
+  const withWordEllipsis = wasWordClamped ? `${clamped}...` : clamped;
+
+  if (withWordEllipsis.length <= 50) {
+    return withWordEllipsis;
   }
 
-  return `${clamped.slice(0, 47).trimEnd()}...`;
+  return `${withWordEllipsis.slice(0, 47).trimEnd()}...`;
 }
 
 /** CLI name to human-readable label, e.g. "codex" → "Codex CLI (`codex`)" */

@@ -137,12 +137,18 @@ describe("buildThreadTitlePrompt", () => {
 });
 
 describe("sanitizeThreadTitle", () => {
+  it("marks shortened titles and avoids leaving a dangling preposition", () => {
+    expect(sanitizeThreadTitle("Add OpenCode as a custom provider to Sparky")).toBe(
+      "Add OpenCode...",
+    );
+  });
+
   it("truncates long titles with the shared sidebar-safe limit", () => {
     expect(
       sanitizeThreadTitle(
         '  "Reconnect failures after restart because the session state does not recover"  ',
       ),
-    ).toBe("Reconnect failures after restart because the se...");
+    ).toBe("Reconnect failures after...");
   });
 });
 

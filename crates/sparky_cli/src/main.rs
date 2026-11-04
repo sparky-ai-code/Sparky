@@ -1,7 +1,10 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use clap::Parser;
 use futures::StreamExt;
-use sparky_agent::{AgentLoop, AgentLoopOptions, InteractionMode};
+use sparky_agent::{
+    AgentLoop, AgentLoopOptions, InteractionMode, MessageTeamTool, SharedSubagentInbox,
+    SpawnSubagentTool,
+};
 use sparky_ai::{
     codex_auth_status, login_codex, logout_codex, AnthropicProvider, AssistantMessageEvent,
     CodexProvider, CompletionOptions, ContentPart, GeminiProvider, LlmProvider, Message,
@@ -828,12 +831,22 @@ async fn main() -> anyhow::Result<()> {
                 completion_tokens,
                 total_tokens,
                 cumulative_total_tokens,
+                model,
+                provider,
             } => write_json_line(serde_json::json!({
                 "type": "usage",
                 "promptTokens": prompt_tokens,
                 "completionTokens": completion_tokens,
                 "totalTokens": total_tokens,
                 "cumulativeTotalTokens": cumulative_total_tokens,
+                "model": model,
+                "provider": provider,
+            })),
+            SparkyEvent::SubagentStarted { name, model, provider } => write_json_line(serde_json::json!({
+                "type": "subagent.started", "name": name, "model": model, "provider": provider,
+            })),
+            SparkyEvent::SubagentFinished { name, model, is_error } => write_json_line(serde_json::json!({
+                "type": "subagent.completed", "name": name, "model": model, "isError": is_error,
             })),
             _ => {}
         });
@@ -931,7 +944,18 @@ async fn main() -> anyhow::Result<()> {
         interaction_mode,
     };
 
-    let mut agent_loop = AgentLoop::new(provider, tool_registry, event_bus, loop_options);
+    let inbox: SharedSubagentInbox = Arc::new(tokio::sync::Mutex::new(Default::default()));
+    let mut team_tools = tool_registry.clone();
+    team_tools.register(Arc::new(MessageTeamTool::new(inbox.clone(), "main agent")));
+    let mut agent_tools = team_tools.clone();
+    agent_tools.register(Arc::new(SpawnSubagentTool::new(
+        provider.clone(),
+        team_tools,
+        event_bus.clone(),
+        loop_options.clone(),
+        inbox,
+    )));
+    let mut agent_loop = AgentLoop::new(provider, agent_tools, event_bus, loop_options);
 
     if cli.persistent_json_stream {
         run_persistent_json_stream(

@@ -320,6 +320,8 @@ export const ThreadTokenUsageSnapshot = Schema.Struct({
   toolUses: Schema.optional(NonNegativeInt),
   durationMs: Schema.optional(NonNegativeInt),
   compactsAutomatically: Schema.optional(Schema.Boolean),
+  model: Schema.optional(TrimmedNonEmptyStringSchema),
+  provider: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type ThreadTokenUsageSnapshot = typeof ThreadTokenUsageSnapshot.Type;
 

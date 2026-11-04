@@ -26,6 +26,8 @@ pub enum SparkyEvent {
         completion_tokens: u32,
         total_tokens: u32,
         cumulative_total_tokens: u64,
+        model: String,
+        provider: String,
     },
     ToolExecutionStart {
         tool_call_id: String,
@@ -46,6 +48,16 @@ pub enum SparkyEvent {
     ModelSelect {
         model: String,
         provider: String,
+    },
+    SubagentStarted {
+        name: String,
+        model: String,
+        provider: String,
+    },
+    SubagentFinished {
+        name: String,
+        model: String,
+        is_error: bool,
     },
     UserBash {
         command: String,

@@ -18,6 +18,7 @@ pub enum InteractionMode {
     Plan,
 }
 
+#[derive(Clone)]
 pub struct AgentLoopOptions {
     pub cwd: String,
     pub workspace_context: bool,
@@ -540,6 +541,7 @@ mod tests {
                         completion_tokens,
                         total_tokens,
                         cumulative_total_tokens,
+                        ..
                     } = event
                     {
                         usage_events_for_bus.lock().unwrap().push((
@@ -1521,6 +1523,8 @@ impl AgentLoop {
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
             cumulative_total_tokens: cumulative.total_tokens as u64,
+            model: self.options.model_name.clone(),
+            provider: self.provider.provider_name().to_owned(),
         });
     }
 

@@ -217,6 +217,7 @@ import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
+import { SubagentsFloatingPanel } from "./chat/SubagentsFloatingPanel";
 import { hasCompletedAssistantTail } from "./chat/MessagesTimeline.logic";
 import {
   buildAgentNotificationBody,
@@ -5587,6 +5588,7 @@ function ChatViewContent(props: ChatViewProps) {
         <div className="flex min-h-0 min-w-0 flex-1">
           {/* Chat column */}
           <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+            <SubagentsFloatingPanel entries={timelineEntries} />
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col">
               {/* Messages — LegendList handles virtualization and scrolling internally */}

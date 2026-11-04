@@ -94,6 +94,15 @@ export interface SparkyUsageEvent {
   readonly completionTokens: number;
   readonly totalTokens: number;
   readonly cumulativeTotalTokens: number;
+  readonly model?: string | undefined;
+  readonly provider?: string | undefined;
+}
+
+export interface SparkySubagentEvent {
+  readonly name: string;
+  readonly model: string;
+  readonly provider: string;
+  readonly isError?: boolean | undefined;
 }
 
 export interface SparkyStreamCallbacks {
@@ -102,6 +111,8 @@ export interface SparkyStreamCallbacks {
   readonly onToolStarted?: ((event: SparkyToolStartedEvent) => void) | undefined;
   readonly onToolCompleted?: ((event: SparkyToolCompletedEvent) => void) | undefined;
   readonly onUsage?: ((event: SparkyUsageEvent) => void) | undefined;
+  readonly onSubagentStarted?: ((event: SparkySubagentEvent) => void) | undefined;
+  readonly onSubagentCompleted?: ((event: SparkySubagentEvent) => void) | undefined;
   /** Fired as soon as the result frame for this request is received. */
   readonly onResult?: ((result: SparkyProcessResult) => void) | undefined;
   readonly onError?: ((message: string) => void) | undefined;
@@ -272,6 +283,9 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
         completionTokens?: unknown;
         totalTokens?: unknown;
         cumulativeTotalTokens?: unknown;
+        model?: unknown;
+        provider?: unknown;
+        name?: unknown;
       };
       const setProtocolError = (message: string) => {
         protocolError ??= new Error(message);
@@ -347,7 +361,29 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
           completionTokens: event.completionTokens,
           totalTokens: event.totalTokens,
           cumulativeTotalTokens: event.cumulativeTotalTokens,
+          ...(typeof event.model === "string" ? { model: event.model } : {}),
+          ...(typeof event.provider === "string" ? { provider: event.provider } : {}),
         });
+        return;
+      }
+      if (event.type === "subagent.started" || event.type === "subagent.completed") {
+        if (
+          typeof event.name !== "string" ||
+          typeof event.model !== "string" ||
+          typeof event.provider !== "string" ||
+          (event.type === "subagent.completed" && typeof event.isError !== "boolean")
+        ) {
+          setProtocolError(`Sparky returned a malformed ${event.type} event.`);
+          return;
+        }
+        const subagent = {
+          name: event.name,
+          model: event.model,
+          provider: event.provider,
+          ...(typeof event.isError === "boolean" ? { isError: event.isError } : {}),
+        };
+        if (event.type === "subagent.started") callbacks.onSubagentStarted?.(subagent);
+        else callbacks.onSubagentCompleted?.(subagent);
         return;
       }
       if (event.type === "tool.completed") {
@@ -1516,6 +1552,15 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
                 onUsage: (usage) => {
                   if (isTurnCancelled()) return;
                   runEffectSync(
+                    logAdapterEvent(threadId, "model.usage", {
+                      model: usage.model ?? model,
+                      provider: usage.provider ?? "sparky",
+                      promptTokens: Math.max(0, Math.round(usage.promptTokens)),
+                      completionTokens: Math.max(0, Math.round(usage.completionTokens)),
+                      totalTokens: Math.max(0, Math.round(usage.totalTokens)),
+                    }),
+                  );
+                  runEffectSync(
                     publish({
                       type: "thread.token-usage.updated",
                       ...stamp(threadId, turnId),
@@ -1535,7 +1580,48 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
                           lastInputTokens: Math.max(0, Math.round(usage.promptTokens)),
                           lastOutputTokens: Math.max(0, Math.round(usage.completionTokens)),
                           compactsAutomatically: true,
+                          ...(usage.model ? { model: usage.model } : {}),
+                          ...(usage.provider ? { provider: usage.provider } : {}),
                         },
+                      },
+                    }),
+                  );
+                },
+                onSubagentStarted: (subagent) => {
+                  if (isTurnCancelled()) return;
+                  const itemId = RuntimeItemId.make(`subagent:${turnId}:${subagent.name}`);
+                  runEffectSync(
+                    logAdapterEvent(threadId, "subagent.started", subagent),
+                  );
+                  runEffectSync(
+                    publish({
+                      type: "item.started",
+                      ...stamp(threadId, turnId),
+                      itemId,
+                      payload: {
+                        itemType: "dynamic_tool_call",
+                        status: "inProgress",
+                        title: `${subagent.name} · ${subagent.model}`,
+                        data: { kind: "subagent", ...subagent },
+                      },
+                    }),
+                  );
+                },
+                onSubagentCompleted: (subagent) => {
+                  const itemId = RuntimeItemId.make(`subagent:${turnId}:${subagent.name}`);
+                  runEffectSync(
+                    logAdapterEvent(threadId, "subagent.completed", subagent),
+                  );
+                  runEffectSync(
+                    publish({
+                      type: "item.completed",
+                      ...stamp(threadId, turnId),
+                      itemId,
+                      payload: {
+                        itemType: "dynamic_tool_call",
+                        status: subagent.isError ? "failed" : "completed",
+                        title: `${subagent.name} · ${subagent.model}`,
+                        data: { kind: "subagent", ...subagent },
                       },
                     }),
                   );

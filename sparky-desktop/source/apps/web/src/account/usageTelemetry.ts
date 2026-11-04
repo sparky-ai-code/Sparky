@@ -11,33 +11,47 @@ type NumericUsage = {
   readonly lastReasoningOutputTokens?: unknown;
   readonly lastUsedTokens?: unknown;
   readonly toolUses?: unknown;
+  readonly model?: unknown;
+  readonly provider?: unknown;
 };
 
 function numeric(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
-function usageForTurn(thread: OrchestrationThread, turnId: string): NumericUsage {
-  const activity = [...thread.activities]
-    .reverse()
-    .find(
-      (candidate) => candidate.turnId === turnId && candidate.kind === "context-window.updated",
-    );
-  if (!activity || typeof activity.payload !== "object" || activity.payload === null) return {};
-  return activity.payload as NumericUsage;
-}
-
-function modelRequestCountForTurn(thread: OrchestrationThread, turnId: string): number {
-  // Each context-window update is emitted by the provider request loop. Counting
-  // those events captures multi-request tool/reasoning turns instead of assuming
-  // one model request per submitted prompt. A settled provider turn still implies
-  // at least one request even when an older harness omitted the activity event.
-  return Math.max(
-    1,
-    thread.activities.filter(
-      (candidate) => candidate.turnId === turnId && candidate.kind === "context-window.updated",
-    ).length,
-  );
+function usagesForTurn(
+  thread: OrchestrationThread,
+  turnId: string,
+): ReadonlyArray<{ model: string; provider: string; usage: NumericUsage; requests: number }> {
+  const groups = new Map<string, { model: string; provider: string; usage: Record<string, number>; requests: number }>();
+  for (const activity of thread.activities) {
+    if (activity.turnId !== turnId || activity.kind !== "context-window.updated") continue;
+    if (typeof activity.payload !== "object" || activity.payload === null) continue;
+    const usage = activity.payload as NumericUsage;
+    const model = typeof usage.model === "string" && usage.model.trim()
+      ? usage.model
+      : thread.modelSelection.model;
+    const provider = typeof usage.provider === "string" && usage.provider.trim()
+      ? usage.provider
+      : String(thread.modelSelection.instanceId);
+    const key = `${provider}\u0000${model}`;
+    const group = groups.get(key) ?? { model, provider, usage: {}, requests: 0 };
+    group.requests += 1;
+    for (const field of [
+      "lastInputTokens", "lastCachedInputTokens", "lastOutputTokens",
+      "lastReasoningOutputTokens", "lastUsedTokens", "toolUses",
+    ] as const) {
+      const value = numeric(usage[field]);
+      if (value !== undefined) group.usage[field] = (group.usage[field] ?? 0) + value;
+    }
+    groups.set(key, group);
+  }
+  if (groups.size === 0) {
+    return [{ model: thread.modelSelection.model, provider: String(thread.modelSelection.instanceId), usage: {}, requests: 1 }];
+  }
+  return [...groups.values()].map(({ model, provider, usage, requests }) => ({
+    model, provider, usage: usage as NumericUsage, requests,
+  }));
 }
 
 /**
@@ -54,61 +68,59 @@ export async function recordCompletedTurnUsage(input: {
 
   const threadId = String(input.thread.id);
   const turnId = String(turn.turnId);
-  const usage = usageForTurn(input.thread, turnId);
-  const totalTokens =
-    numeric(usage.lastUsedTokens) ??
-    (numeric(usage.lastInputTokens) ?? 0) +
+  const usages = usagesForTurn(input.thread, turnId);
+  const modelEvents = usages.map(({ model, provider, usage }, index) => {
+    const totalTokens = numeric(usage.lastUsedTokens) ??
+      (numeric(usage.lastInputTokens) ?? 0) +
       (numeric(usage.lastCachedInputTokens) ?? 0) +
       (numeric(usage.lastOutputTokens) ?? 0) +
       (numeric(usage.lastReasoningOutputTokens) ?? 0);
-  const providerInstanceId = String(input.thread.modelSelection.instanceId);
-  const model = input.thread.modelSelection.model;
-
-  const event = {
-    eventId: `turn:${threadId}:${turnId}`,
-    environmentId: input.environmentId,
-    threadId,
-    turnId,
-    provider: providerInstanceId,
-    providerInstanceId,
-    model,
-    inputTokens: numeric(usage.lastInputTokens),
-    cachedInputTokens: numeric(usage.lastCachedInputTokens),
-    outputTokens: numeric(usage.lastOutputTokens),
-    reasoningOutputTokens: numeric(usage.lastReasoningOutputTokens),
-    totalTokens,
-    toolUses: numeric(usage.toolUses),
-    occurredAt: turn.completedAt ?? input.thread.updatedAt,
-  };
-  recordModelAnalyticsEvent(event);
+    const eventId = `turn:${threadId}:${turnId}:${encodeURIComponent(provider)}:${encodeURIComponent(model)}:${index}`;
+    const event = {
+      eventId,
+      environmentId: input.environmentId,
+      threadId,
+      turnId,
+      provider,
+      providerInstanceId: provider,
+      model,
+      inputTokens: numeric(usage.lastInputTokens),
+      cachedInputTokens: numeric(usage.lastCachedInputTokens),
+      outputTokens: numeric(usage.lastOutputTokens),
+      reasoningOutputTokens: numeric(usage.lastReasoningOutputTokens),
+      totalTokens,
+      toolUses: numeric(usage.toolUses),
+      occurredAt: turn.completedAt ?? input.thread.updatedAt,
+    };
+    recordModelAnalyticsEvent(event);
+    return { event, model, provider, requests: usages[index]?.requests ?? 1 };
+  });
 
   const analyticsEvents = [
-    recordPluginAnalyticsEvent({
-      type: "prompt",
-      eventId: `prompt:${threadId}:${turnId}`,
-    }),
-    recordPluginAnalyticsEvent({
-      type: "model_call",
-      eventId: `model-call:${threadId}:${turnId}`,
-      model,
-      provider: providerInstanceId,
-    }),
+    recordPluginAnalyticsEvent({ type: "prompt", eventId: `prompt:${threadId}:${turnId}` }),
+    ...modelEvents.flatMap(({ event, model, provider, requests }) => [
+      recordPluginAnalyticsEvent({
+        type: "model_call",
+        eventId: `model-call:${event.eventId}`,
+        model,
+        provider,
+      }),
+      ...Array.from({ length: requests }, (_, index) => recordPluginAnalyticsEvent({
+        type: "model_request",
+        eventId: `model-request:${event.eventId}:${index}`,
+        model,
+        provider,
+      })),
+    ]),
     recordPluginAnalyticsEvent({
       type: "agent_call",
       eventId: `agent-call:${threadId}:${turnId}`,
-      model,
-      provider: providerInstanceId,
+      model: input.thread.modelSelection.model,
+      provider: String(input.thread.modelSelection.instanceId),
     }),
-    ...Array.from({ length: modelRequestCountForTurn(input.thread, turnId) }, (_, index) =>
-      recordPluginAnalyticsEvent({
-        type: "model_request",
-        eventId: `model-request:${threadId}:${turnId}:${index}`,
-        model,
-        provider: providerInstanceId,
-      }),
-    ),
   ];
   void Promise.allSettled(analyticsEvents);
 
-  return recordAccountUsageEvent(event);
+  const results = await Promise.all(modelEvents.map(({ event }) => recordAccountUsageEvent(event)));
+  return results.some(Boolean);
 }

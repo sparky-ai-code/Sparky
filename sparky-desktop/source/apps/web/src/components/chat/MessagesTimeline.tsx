@@ -26,9 +26,6 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { FileDiff } from "@pierre/diffs/react";
 import {
   deriveTimelineEntries,
-  workEntryIndicatesToolFailure,
-  workEntryIndicatesToolNeutralStatus,
-  workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
 } from "../../session-logic";
 import { type TurnDiffSummary } from "../../types";
@@ -59,12 +56,10 @@ import {
   GitPullRequestIcon,
   HammerIcon,
   KeyboardIcon,
-  LoaderCircleIcon,
   ListChecksIcon,
   Maximize2Icon,
   MessageCircleIcon,
   MessagesSquareIcon,
-  MinusIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
   PauseCircleIcon,
@@ -2534,96 +2529,22 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
       ? null
       : rawPreview;
   const displayText = preview ? `${heading} - ${preview}` : heading;
-  const lifecycleLabel =
-    workEntry.toolLifecycleStatus === "inProgress"
-      ? "Running"
-      : workEntry.toolLifecycleStatus === "failed"
-        ? "Failed"
-        : workEntry.toolLifecycleStatus === "stopped"
-          ? "Stopped"
-          : workEntry.toolLifecycleStatus === "declined"
-            ? "Declined"
-            : null;
   const showDiffStats =
     workEntry.diffStats !== undefined &&
     (workEntry.diffStats.additions > 0 || workEntry.diffStats.deletions > 0);
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const canExpand = expandedBody !== null;
-  const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
-  const showDestructiveRowStyle =
-    showFailedIndicator &&
-    (workEntry.sourceActivityKind === "runtime.error" || !workLogEntryIsToolLike(workEntry));
   const iconWrapperClass = cn(
-    "flex size-5 shrink-0 items-center justify-center",
+    "flex size-6 shrink-0 items-center justify-center",
     showWarningIndicator
       ? "text-destructive"
-      : showDestructiveRowStyle
-        ? "text-destructive"
-        : workEntry.tone === "tool" || showFailedIndicator
-          ? "text-muted-foreground/65"
-          : iconConfig.className,
+      : workEntry.tone === "tool"
+        ? "text-muted-foreground/65"
+        : iconConfig.className,
   );
   const headingClass = showWarningIndicator
     ? "font-medium text-warning"
-    : showDestructiveRowStyle
-      ? "font-medium text-destructive"
-      : "font-medium text-foreground/82";
-  const turnSettled = !activity.activeTurnInProgress;
-  const showRunningIndicator = workEntry.toolLifecycleStatus === "inProgress";
-  const showNeutralIndicator =
-    !showRunningIndicator && !turnSettled && workEntryIndicatesToolNeutralStatus(workEntry);
-  const showSuccessIndicator =
-    workEntryIndicatesToolSuccess(workEntry) ||
-    (turnSettled && workEntryIndicatesToolNeutralStatus(workEntry));
-  const statusIndicator = isWebSearch ? null : (
-    <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/55">
-      {showRunningIndicator ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
-            <LoaderCircleIcon
-              className="block size-3 shrink-0 animate-spin opacity-70"
-              aria-hidden
-            />
-          </TooltipTrigger>
-          <TooltipPopup>Running</TooltipPopup>
-        </Tooltip>
-      ) : showFailedIndicator ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span
-                className="flex size-4 items-center justify-center"
-                aria-label="Tool call failed"
-              />
-            }
-          >
-            <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
-          </TooltipTrigger>
-          <TooltipPopup>Failed</TooltipPopup>
-        </Tooltip>
-      ) : showSuccessIndicator ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
-            <span className="inline-flex size-4 items-center justify-center">
-              <CheckIcon
-                className="block size-3 shrink-0 stroke-current"
-                stroke="currentColor"
-                aria-hidden
-              />
-            </span>
-          </TooltipTrigger>
-          <TooltipPopup>Completed</TooltipPopup>
-        </Tooltip>
-      ) : showNeutralIndicator ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
-            <MinusIcon className="block size-3 shrink-0 opacity-70" aria-hidden />
-          </TooltipTrigger>
-          <TooltipPopup>Empty</TooltipPopup>
-        </Tooltip>
-      ) : null}
-    </span>
-  );
+    : "font-medium text-foreground/82";
   const rowToggleProps = canExpand
     ? {
         role: "button" as const,
@@ -2654,18 +2575,17 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           {webSearchSources.length > 0 || webSearchIsLoading ? (
             <WebSearchSourceLogos sources={webSearchSources} loading={webSearchIsLoading} />
           ) : pluginId ? (
-            <PluginLogo pluginId={pluginId} className="size-3.5 opacity-80" />
+            <PluginLogo pluginId={pluginId} className="size-4 opacity-80" />
           ) : (
             <WorkEntryIconSvg
               name={entryIconName}
-              className="block size-3.5 shrink-0 stroke-[1.8] opacity-80"
+              className="block size-4 shrink-0 stroke-[1.8] opacity-80"
             />
           )}
         </span>
-        {statusIndicator}
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <div className="min-w-0 flex-1 overflow-hidden">
-            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-[12px] leading-5">
+            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-5">
               <span
                 className={cn(
                   "min-w-0 shrink truncate",
@@ -2685,22 +2605,6 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
                   layout="inline"
                   className="shrink-0 text-[10px] leading-4"
                 />
-              ) : null}
-              {lifecycleLabel ? (
-                <span
-                  className={cn(
-                    "shrink-0 text-[10px] leading-4",
-                    workEntry.toolLifecycleStatus === "inProgress"
-                      ? "text-muted-foreground/65"
-                      : workEntry.toolLifecycleStatus === "failed" ||
-                          workEntry.toolLifecycleStatus === "declined"
-                        ? "text-destructive/80"
-                        : "text-muted-foreground/55",
-                  )}
-                  aria-live={workEntry.toolLifecycleStatus === "inProgress" ? "polite" : undefined}
-                >
-                  {lifecycleLabel}
-                </span>
               ) : null}
             </p>
           </div>

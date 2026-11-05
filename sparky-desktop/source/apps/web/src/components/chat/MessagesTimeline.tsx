@@ -2536,7 +2536,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const canExpand = expandedBody !== null;
   const iconWrapperClass = cn(
-    "flex size-6 shrink-0 items-center justify-center",
+    "flex size-7 shrink-0 items-center justify-center",
     showWarningIndicator
       ? "text-destructive"
       : workEntry.tone === "tool"
@@ -2566,36 +2566,29 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
     <div
       className={cn(
         "flex flex-col rounded-md px-0.5 py-0.5 transition-colors",
+        workEntry.toolLifecycleStatus === "inProgress" && "tool-activity-live",
         canExpand &&
           "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
       )}
       {...rowToggleProps}
     >
-      <div className="flex select-none items-center gap-1.5 transition-[opacity,translate] duration-200">
+      <div className="flex select-none items-center gap-2 transition-[opacity,translate] duration-200">
         <span className={iconWrapperClass}>
           {webSearchSources.length > 0 || webSearchIsLoading ? (
             <WebSearchSourceLogos sources={webSearchSources} loading={webSearchIsLoading} />
           ) : pluginId ? (
-            <PluginLogo pluginId={pluginId} className="size-4 opacity-80" />
+            <PluginLogo pluginId={pluginId} className="size-5 opacity-80" />
           ) : (
             <WorkEntryIconSvg
               name={entryIconName}
-              className="block size-4 shrink-0 stroke-[1.8] opacity-80"
+              className="block size-5 shrink-0 stroke-[1.8] opacity-80"
             />
           )}
         </span>
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <div className="min-w-0 flex-1 overflow-hidden">
-            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-5">
-              <span
-                className={cn(
-                  "min-w-0 shrink truncate",
-                  headingClass,
-                  workEntry.toolLifecycleStatus === "inProgress" && "tool-activity-live",
-                )}
-              >
-                {heading}
-              </span>
+            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-base leading-6">
+              <span className={cn("min-w-0 shrink truncate", headingClass)}>{heading}</span>
               {preview && (
                 <span className="min-w-0 flex-1 truncate text-muted-foreground/55">{preview}</span>
               )}

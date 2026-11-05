@@ -220,7 +220,7 @@ export function computeMessageDurationStart(
 }
 
 export function normalizeCompactToolLabel(value: string): string {
-  return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
+  return value.replace(/_/g, " ").replace(/\s+(?:complete|completed)\s*$/i, "").trim();
 }
 
 export function resolveAssistantMessageCopyState({

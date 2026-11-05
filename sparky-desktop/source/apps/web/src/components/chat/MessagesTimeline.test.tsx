@@ -377,6 +377,34 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("lucide-hammer");
   });
 
+  it("renders MCP tool calls with the MCP mark and readable tool names", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-sparky-mcp-call",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "work-sparky-mcp-call",
+              createdAt: MESSAGE_CREATED_AT,
+              label: "sparky_mcp_call_tool",
+              toolName: "sparky_mcp_call_tool",
+              tone: "tool",
+              itemType: "mcp_tool_call",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("lucide-plug-zap");
+    expect(markup.toLowerCase()).toContain("run mcp tool");
+    expect(markup).not.toContain("sparky_mcp_call_tool");
+    expect(markup).not.toContain("lucide-hammer");
+  });
+
   it("renders live file-change stats while the tool is running", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

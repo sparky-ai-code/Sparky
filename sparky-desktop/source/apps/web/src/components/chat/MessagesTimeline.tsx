@@ -68,6 +68,7 @@ import {
   MousePointerClickIcon,
   PaintbrushIcon,
   PauseCircleIcon,
+  PlugZapIcon,
   PlayCircleIcon,
   SearchIcon,
   SquarePenIcon,
@@ -121,6 +122,7 @@ import { faviconUrlsForOrigin } from "~/lib/favicon";
 import { type TimestampFormat } from "@sparky/contracts/settings";
 import { getPluginById, PLUGINS, type PluginId } from "../plugins/pluginCatalog";
 import { PluginLogo } from "../plugins/PluginLogo";
+import { McpIcon } from "../settings/McpIcon";
 import type { StreamingTextAnimation } from "@sparky/contracts/settings";
 import { formatChatTimestampTooltip, formatShortTimestamp } from "../../timestampFormat";
 
@@ -1971,6 +1973,8 @@ type WorkEntryIconName =
   | "calendar-clock"
   | "message-circle"
   | "messages-square"
+  | "mcp"
+  | "plug-zap"
   | "mouse-pointer-click"
   | "pause-circle"
   | "play-circle"
@@ -2047,6 +2051,10 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <MessageCircleIcon className={className} aria-hidden />;
     case "messages-square":
       return <MessagesSquareIcon className={className} aria-hidden />;
+    case "mcp":
+      return <McpIcon className={className} />;
+    case "plug-zap":
+      return <PlugZapIcon className={className} aria-hidden />;
     case "mouse-pointer-click":
       return <MousePointerClickIcon className={className} aria-hidden />;
     case "pause-circle":
@@ -2396,6 +2404,10 @@ export function resolveWorkEntryToolIconName(
   toolName: string | undefined,
 ): WorkEntryIconName | undefined {
   switch (toolName?.trim().toLowerCase()) {
+    case "sparky_mcp_list_tools":
+      return "list-checks";
+    case "sparky_mcp_call_tool":
+      return "plug-zap";
     case "ls":
     case "list_files":
       return "folder";
@@ -2475,7 +2487,7 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
 
   switch (workEntry.itemType) {
     case "mcp_tool_call":
-      return "wrench";
+      return "mcp";
     case "dynamic_tool_call":
     case "collab_agent_tool_call":
       return "hammer";
@@ -2493,6 +2505,8 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  if (workEntry.toolName === "sparky_mcp_list_tools") return "Discover MCP tools";
+  if (workEntry.toolName === "sparky_mcp_call_tool") return "Run MCP tool";
   const pluginTitle = pluginToolPresentationTitle(workEntry);
   if (pluginTitle) return pluginTitle;
   if (workEntry.itemType === "web_search") {

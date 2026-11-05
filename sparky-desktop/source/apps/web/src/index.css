@@ -658,29 +658,22 @@ label:has(> select#reasoning-effort) select {
 }
 
 .tool-activity-live {
-  position: relative;
-  isolation: isolate;
-}
-
-.tool-activity-live::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  border-radius: inherit;
+  color: transparent;
   background: linear-gradient(
-    105deg,
-    transparent 20%,
-    color-mix(in srgb, var(--foreground) 11%, transparent) 50%,
-    transparent 80%
+    100deg,
+    var(--muted-foreground) 15%,
+    var(--foreground) 45%,
+    var(--muted-foreground) 75%
   );
   background-size: 220% 100%;
+  background-clip: text;
   animation: tool-activity-focus 1.8s ease-in-out infinite;
-  content: "";
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tool-activity-live::before {
+  .tool-activity-live {
     animation: none;
+    color: var(--foreground);
     background: none;
   }
 }

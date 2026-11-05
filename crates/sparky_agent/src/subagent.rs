@@ -21,6 +21,45 @@ pub struct SubagentEntry {
 
 static NEXT_SUBAGENT_ID: AtomicU64 = AtomicU64::new(1);
 
+fn normalize_subagent_model(provider: &str, model: &str) -> String {
+    let model = model.trim();
+    let model = model
+        .split_once('/')
+        .filter(|(prefix, _)| prefix.eq_ignore_ascii_case(provider))
+        .map_or(model, |(_, model_id)| model_id.trim());
+
+    if model.chars().any(char::is_whitespace) {
+        model
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join("-")
+            .to_ascii_lowercase()
+    } else {
+        model.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_subagent_model;
+
+    #[test]
+    fn normalizes_provider_qualified_and_display_name_model_ids() {
+        assert_eq!(
+            normalize_subagent_model("openai-codex", "openai-codex/gpt-6-luna"),
+            "gpt-6-luna"
+        );
+        assert_eq!(
+            normalize_subagent_model("openai-codex", "GPT-6 Luna"),
+            "gpt-6-luna"
+        );
+        assert_eq!(
+            normalize_subagent_model("openai-codex", "gpt-6-luna"),
+            "gpt-6-luna"
+        );
+    }
+}
+
 pub struct MessageTeamTool {
     inbox: SharedSubagentInbox,
     sender: String,
@@ -132,7 +171,7 @@ impl Tool for SpawnSubagentTool {
         "Spawn subagent"
     }
     fn description(&self) -> &str {
-        "Delegate a focused task to a child Sparky agent. Choose its model and optional reasoning effort; the child shares the current workspace and provider runtime."
+        "Delegate a focused task to a child Sparky agent. Choose any model supported by the current provider (use its model ID or display name) and optional reasoning effort; the child shares the current workspace and provider runtime."
     }
     fn parameters(&self) -> serde_json::Value {
         json!({
@@ -159,7 +198,7 @@ impl Tool for SpawnSubagentTool {
             .unwrap_or_default()
             .trim()
             .to_owned();
-        let model = args
+        let requested_model = args
             .get("model")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
@@ -171,11 +210,12 @@ impl Tool for SpawnSubagentTool {
             .unwrap_or_default()
             .trim()
             .to_owned();
-        if task.is_empty() || model.is_empty() || name.is_empty() {
+        if task.is_empty() || requested_model.is_empty() || name.is_empty() {
             return Ok(ToolExecutionResult::error(
                 "Task, a specific name, and model are required.",
             ));
         }
+        let model = normalize_subagent_model(self.provider.provider_name(), &requested_model);
         let normalized_name = name.to_ascii_lowercase();
         let generic_suffix = normalized_name
             .strip_prefix("subagent ")

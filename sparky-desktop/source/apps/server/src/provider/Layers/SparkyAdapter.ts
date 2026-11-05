@@ -380,10 +380,12 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
           typeof event.id !== "string" ||
           typeof event.name !== "string" ||
           typeof event.task !== "string" ||
-          typeof event.model !== "string" ||
-          typeof event.provider !== "string" ||
+          (event.model !== undefined && typeof event.model !== "string") ||
+          (event.provider !== undefined && typeof event.provider !== "string") ||
           (event.type === "subagent.completed" &&
-            (typeof event.isError !== "boolean" || typeof event.isCancelled !== "boolean" || typeof event.result !== "string"))
+            ((event.isError !== undefined && typeof event.isError !== "boolean") ||
+              (event.isCancelled !== undefined && typeof event.isCancelled !== "boolean") ||
+              (event.result !== undefined && typeof event.result !== "string")))
         ) {
           setProtocolError(`Sparky returned a malformed ${event.type} event.`);
           return;
@@ -392,8 +394,8 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
           id: event.id,
           name: event.name,
           task: event.task,
-          model: event.model,
-          provider: event.provider,
+          model: typeof event.model === "string" ? event.model : "unknown",
+          provider: typeof event.provider === "string" ? event.provider : "unknown",
           ...(typeof event.result === "string" ? { result: event.result } : {}),
           ...(typeof event.isError === "boolean" ? { isError: event.isError } : {}),
           ...(typeof event.isCancelled === "boolean" ? { isCancelled: event.isCancelled } : {}),

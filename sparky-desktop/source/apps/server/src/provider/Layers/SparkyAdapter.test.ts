@@ -257,6 +257,30 @@ describe("makeSparkyStreamDecoder", () => {
     ]);
   });
 
+  it("accepts completed subagent events from older CLI builds without optional metadata", () => {
+    const completed: unknown[] = [];
+    const decoder = makeSparkyStreamDecoder({
+      onSubagentCompleted: (event) => completed.push(event),
+    });
+
+    decoder.push(
+      '{"type":"subagent.completed","id":"agent-1","name":"Review","task":"Inspect the project","model":"gpt-test","provider":"test","result":"Done"}\n' +
+        '{"type":"result","response":"Finished"}\n',
+    );
+
+    expect(decoder.finish()).toEqual({ response: "Finished" });
+    expect(completed).toEqual([
+      {
+        id: "agent-1",
+        name: "Review",
+        task: "Inspect the project",
+        model: "gpt-test",
+        provider: "test",
+        result: "Done",
+      },
+    ]);
+  });
+
   it("rejects malformed protocol events instead of silently buffering forever", () => {
     const decoder = makeSparkyStreamDecoder();
     decoder.push("not-json\n");

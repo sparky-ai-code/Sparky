@@ -53,7 +53,7 @@ export const SubagentsFloatingPanel = memo(function SubagentsFloatingPanel(props
   return (
     <aside
       aria-label="Subagents"
-      className="absolute right-4 top-20 z-40 max-h-[min(34rem,75vh)] w-72 overflow-y-auto rounded-2xl border border-white/10 bg-[#1e1e1e] p-4 text-white shadow-2xl"
+      className="absolute right-3 top-3 z-40 max-h-[min(28rem,65vh)] w-60 overflow-y-auto rounded-xl border border-white/10 bg-[#1e1e1e] p-3 text-white shadow-2xl"
       data-testid="subagents-floating-panel"
     >
       {selected ? (
@@ -81,15 +81,15 @@ export const SubagentsFloatingPanel = memo(function SubagentsFloatingPanel(props
         </>
       ) : (
         <>
-          <h2 className="mb-3 text-sm font-semibold tracking-wide">Subagents</h2>
-          <ul className="space-y-2">
+          <h2 className="mb-2 text-sm font-semibold tracking-wide">Subagents</h2>
+          <ul className="space-y-1">
             {subagents.map(({ info, status }) => {
               const presentation = getModelProviderPresentation({ slug: info.model, subProvider: info.provider });
               const ModelIcon = presentation?.Icon;
               return (
-                <li key={info.id} className="flex min-w-0 items-center gap-2 rounded-xl bg-white/[0.04] p-2 text-sm">
-                  {ModelIcon ? <ModelIcon className="size-5 shrink-0" aria-hidden /> : (
-                    <span className="size-2.5 shrink-0 rounded-full bg-white/70" aria-hidden />
+                <li key={info.id} className="group flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-white/[0.06]">
+                  {ModelIcon ? <ModelIcon className="size-4 shrink-0" aria-hidden /> : (
+                    <span className="size-2 shrink-0 rounded-full bg-white/70" aria-hidden />
                   )}
                   <button
                     type="button"
@@ -97,16 +97,18 @@ export const SubagentsFloatingPanel = memo(function SubagentsFloatingPanel(props
                     onClick={() => setSelectedId(info.id)}
                     aria-label={`Open ${info.name} chat`}
                   >
-                    <span className="block truncate font-medium">{info.name}</span>
-                    <span className="block text-xs text-white/55">{getStatus(status, info)}</span>
+                    <span className="block truncate text-[13px] font-medium">{info.name}</span>
+                    <span className="block text-[11px] text-white/55">{getStatus(status, info)}</span>
                   </button>
                   <button
                     type="button"
-                    className="rounded px-1.5 py-1 text-xs text-white/45 hover:bg-white/10 hover:text-white"
+                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-red-500/15 hover:text-red-400 focus-visible:bg-red-500/15 focus-visible:text-red-400"
                     aria-label={`Remove ${info.name} from board`}
+                    title={`Remove ${info.name} from board`}
                     onClick={() => setHiddenIds((current) => new Set([...current, info.id]))}
                   >
-                    ×
+                    <span className="size-2 rounded-full bg-emerald-500 group-hover:hidden group-focus-within:hidden" aria-hidden />
+                    <span className="hidden text-base leading-none group-hover:inline group-focus-within:inline" aria-hidden>×</span>
                   </button>
                 </li>
               );

@@ -3,7 +3,7 @@ use clap::Parser;
 use futures::StreamExt;
 use sparky_agent::{
     AgentLoop, AgentLoopOptions, InteractionMode, MessageTeamTool, SharedSubagentInbox,
-    SpawnSubagentTool,
+    SharedSubagentRegistry, SpawnSubagentTool, StopSubagentTool,
 };
 use sparky_ai::{
     codex_auth_status, login_codex, logout_codex, AnthropicProvider, AssistantMessageEvent,
@@ -842,11 +842,25 @@ async fn main() -> anyhow::Result<()> {
                 "model": model,
                 "provider": provider,
             })),
-            SparkyEvent::SubagentStarted { name, model, provider } => write_json_line(serde_json::json!({
-                "type": "subagent.started", "name": name, "model": model, "provider": provider,
+            SparkyEvent::SubagentStarted { id, name, task, model, provider } => write_json_line(serde_json::json!({
+                "type": "subagent.started", "id": id, "name": name, "task": task, "model": model, "provider": provider,
             })),
-            SparkyEvent::SubagentFinished { name, model, is_error } => write_json_line(serde_json::json!({
-                "type": "subagent.completed", "name": name, "model": model, "isError": is_error,
+            SparkyEvent::SubagentFinished {
+                id,
+                name,
+                task,
+                model,
+                provider,
+                result,
+                is_error,
+                is_cancelled,
+            } => write_json_line(serde_json::json!({
+                "type": "subagent.completed", "id": id, "name": name, "task": task,
+                "model": model, "provider": provider, "result": result,
+                "isError": is_error, "isCancelled": is_cancelled,
+            })),
+            SparkyEvent::SubagentRemoved { id } => write_json_line(serde_json::json!({
+                "type": "subagent.removed", "id": id,
             })),
             _ => {}
         });
@@ -945,8 +959,10 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let inbox: SharedSubagentInbox = Arc::new(tokio::sync::Mutex::new(Default::default()));
+    let registry: SharedSubagentRegistry = Arc::new(tokio::sync::Mutex::new(Default::default()));
     let mut team_tools = tool_registry.clone();
     team_tools.register(Arc::new(MessageTeamTool::new(inbox.clone(), "main agent")));
+    team_tools.register(Arc::new(StopSubagentTool::new(registry.clone(), event_bus.clone())));
     let mut agent_tools = team_tools.clone();
     agent_tools.register(Arc::new(SpawnSubagentTool::new(
         provider.clone(),
@@ -954,6 +970,7 @@ async fn main() -> anyhow::Result<()> {
         event_bus.clone(),
         loop_options.clone(),
         inbox,
+        registry,
     )));
     let mut agent_loop = AgentLoop::new(provider, agent_tools, event_bus, loop_options);
 

@@ -99,10 +99,14 @@ export interface SparkyUsageEvent {
 }
 
 export interface SparkySubagentEvent {
+  readonly id: string;
   readonly name: string;
+  readonly task: string;
   readonly model: string;
   readonly provider: string;
+  readonly result?: string | undefined;
   readonly isError?: boolean | undefined;
+  readonly isCancelled?: boolean | undefined;
 }
 
 export interface SparkyStreamCallbacks {
@@ -113,6 +117,7 @@ export interface SparkyStreamCallbacks {
   readonly onUsage?: ((event: SparkyUsageEvent) => void) | undefined;
   readonly onSubagentStarted?: ((event: SparkySubagentEvent) => void) | undefined;
   readonly onSubagentCompleted?: ((event: SparkySubagentEvent) => void) | undefined;
+  readonly onSubagentRemoved?: ((id: string) => void) | undefined;
   /** Fired as soon as the result frame for this request is received. */
   readonly onResult?: ((result: SparkyProcessResult) => void) | undefined;
   readonly onError?: ((message: string) => void) | undefined;
@@ -286,6 +291,10 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
         model?: unknown;
         provider?: unknown;
         name?: unknown;
+        id?: unknown;
+        task?: unknown;
+        result?: unknown;
+        isCancelled?: unknown;
       };
       const setProtocolError = (message: string) => {
         protocolError ??= new Error(message);
@@ -368,22 +377,37 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
       }
       if (event.type === "subagent.started" || event.type === "subagent.completed") {
         if (
+          typeof event.id !== "string" ||
           typeof event.name !== "string" ||
+          typeof event.task !== "string" ||
           typeof event.model !== "string" ||
           typeof event.provider !== "string" ||
-          (event.type === "subagent.completed" && typeof event.isError !== "boolean")
+          (event.type === "subagent.completed" &&
+            (typeof event.isError !== "boolean" || typeof event.isCancelled !== "boolean" || typeof event.result !== "string"))
         ) {
           setProtocolError(`Sparky returned a malformed ${event.type} event.`);
           return;
         }
-        const subagent = {
+        const subagent: SparkySubagentEvent = {
+          id: event.id,
           name: event.name,
+          task: event.task,
           model: event.model,
           provider: event.provider,
+          ...(typeof event.result === "string" ? { result: event.result } : {}),
           ...(typeof event.isError === "boolean" ? { isError: event.isError } : {}),
+          ...(typeof event.isCancelled === "boolean" ? { isCancelled: event.isCancelled } : {}),
         };
         if (event.type === "subagent.started") callbacks.onSubagentStarted?.(subagent);
         else callbacks.onSubagentCompleted?.(subagent);
+        return;
+      }
+      if (event.type === "subagent.removed") {
+        if (typeof event.id !== "string") {
+          setProtocolError("Sparky returned a malformed subagent.removed event.");
+          return;
+        }
+        callbacks.onSubagentRemoved?.(event.id);
         return;
       }
       if (event.type === "tool.completed") {
@@ -1589,7 +1613,7 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
                 },
                 onSubagentStarted: (subagent) => {
                   if (isTurnCancelled()) return;
-                  const itemId = RuntimeItemId.make(`subagent:${turnId}:${subagent.name}`);
+                  const itemId = RuntimeItemId.make(`subagent:${turnId}:${subagent.id}`);
                   runEffectSync(
                     logAdapterEvent(threadId, "subagent.started", subagent),
                   );
@@ -1608,7 +1632,7 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
                   );
                 },
                 onSubagentCompleted: (subagent) => {
-                  const itemId = RuntimeItemId.make(`subagent:${turnId}:${subagent.name}`);
+                  const itemId = RuntimeItemId.make(`subagent:${turnId}:${subagent.id}`);
                   runEffectSync(
                     logAdapterEvent(threadId, "subagent.completed", subagent),
                   );
@@ -1622,6 +1646,22 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
                         status: subagent.isError ? "failed" : "completed",
                         title: `${subagent.name} · ${subagent.model}`,
                         data: { kind: "subagent", ...subagent },
+                      },
+                    }),
+                  );
+                },
+                onSubagentRemoved: (subagentId) => {
+                  const itemId = RuntimeItemId.make(`subagent:${turnId}:${subagentId}`);
+                  runEffectSync(
+                    publish({
+                      type: "item.completed",
+                      ...stamp(threadId, turnId),
+                      itemId,
+                      payload: {
+                        itemType: "dynamic_tool_call",
+                        status: "completed",
+                        title: "Subagent removed",
+                        data: { kind: "subagent", id: subagentId, removed: true },
                       },
                     }),
                   );

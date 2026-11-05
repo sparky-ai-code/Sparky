@@ -7,6 +7,7 @@ import type { LegendListRef } from "@legendapp/list/react";
 import {
   MessagesTimeline,
   deriveTimelineMinimapItems,
+  resolveWorkEntryToolDisplayName,
   resolveWorkEntryToolIconName,
 } from "./MessagesTimeline";
 import {
@@ -313,6 +314,41 @@ describe("MessagesTimeline", () => {
 
       expect(markup).toContain(iconClass);
     }
+  });
+
+  it("uses semantic icons and human-readable names for tool calls", () => {
+    expect(resolveWorkEntryToolIconName("spawn_subagent")).toBe("bot");
+    expect(resolveWorkEntryToolIconName("stop_subagent")).toBe("trash-2");
+    expect(resolveWorkEntryToolIconName("message_team")).toBe("messages-square");
+    expect(resolveWorkEntryToolDisplayName("spawn_subagent")).toBe("Start subagent");
+    expect(resolveWorkEntryToolDisplayName("custom_http_get")).toBe("Custom Http Get");
+
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-custom-tool",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "work-custom-tool",
+              createdAt: MESSAGE_CREATED_AT,
+              label: "custom_http_get",
+              toolTitle: "custom_http_get",
+              toolName: "custom_http_get",
+              tone: "tool",
+              itemType: "mcp_tool_call",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("lucide-code-2");
+    expect(markup).toContain("Custom Http Get");
+    expect(markup).not.toContain("custom_http_get");
+    expect(markup).not.toContain("lucide-hammer");
   });
 
   it("labels plugin calls with the provider integration and logo", () => {

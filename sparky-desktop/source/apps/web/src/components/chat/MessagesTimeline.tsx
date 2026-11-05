@@ -57,7 +57,6 @@ import {
   FolderSearchIcon,
   GlobeIcon,
   GitPullRequestIcon,
-  HammerIcon,
   KeyboardIcon,
   LoaderCircleIcon,
   ListChecksIcon,
@@ -74,7 +73,6 @@ import {
   TerminalIcon,
   Trash2Icon,
   Undo2Icon,
-  WrenchIcon,
   XIcon,
   ZapIcon,
 } from "lucide-react";
@@ -1964,7 +1962,6 @@ type WorkEntryIconName =
   | "git-pull-request"
   | "code-2"
   | "search-web"
-  | "hammer"
   | "keyboard"
   | "list-checks"
   | "brain"
@@ -1977,7 +1974,6 @@ type WorkEntryIconName =
   | "square-pen"
   | "terminal"
   | "trash-2"
-  | "wrench"
   | "x"
   | "zap";
 
@@ -2033,8 +2029,6 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       );
     case "code-2":
       return <Code2Icon className={className} aria-hidden />;
-    case "hammer":
-      return <HammerIcon className={className} aria-hidden />;
     case "keyboard":
       return <KeyboardIcon className={className} aria-hidden />;
     case "list-checks":
@@ -2059,8 +2053,6 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <TerminalIcon className={className} aria-hidden />;
     case "trash-2":
       return <Trash2Icon className={className} aria-hidden />;
-    case "wrench":
-      return <WrenchIcon className={className} aria-hidden />;
     case "x":
       return <XIcon className={className} aria-hidden />;
     case "zap":
@@ -2407,14 +2399,28 @@ export function resolveWorkEntryToolIconName(
       return "folder-search";
     case "create_worktree":
       return "folder-git";
-    case "getpullrequestcomments":
-      return "messages-square";
     case "review_pull_request":
       return "git-pull-request";
+    case "getpullrequestcomments":
+    case "message_team":
+      return "messages-square";
     case "write":
       return "file-plus-2";
     case "edit":
       return "file-pen-line";
+    case "bash":
+    case "run_command":
+    case "execute_command":
+      return "terminal";
+    case "web_search":
+    case "sparky_mcp_list_tools":
+      return "search-web";
+    case "spawn_subagent":
+      return "bot";
+    case "stop_subagent":
+      return "trash-2";
+    case "update_plan":
+      return "list-checks";
     case "image_view":
     case "t3-code_image_view":
       return "eye";
@@ -2474,11 +2480,11 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   }
 
   switch (workEntry.itemType) {
-    case "mcp_tool_call":
-      return "wrench";
-    case "dynamic_tool_call":
     case "collab_agent_tool_call":
-      return "hammer";
+      return "bot";
+    case "mcp_tool_call":
+    case "dynamic_tool_call":
+      return "code-2";
   }
 
   return workToneIcon(workEntry.tone).iconName;
@@ -2492,6 +2498,51 @@ function capitalizePhrase(value: string): string {
   return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
 }
 
+const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  ls: "List files",
+  list_files: "List files",
+  read: "Read file",
+  grep: "Search files",
+  find: "Find files",
+  create_worktree: "Create worktree",
+  review_pull_request: "Review pull request",
+  getpullrequestcomments: "Get pull request comments",
+  write: "Create file",
+  edit: "Edit file",
+  bash: "Run command",
+  run_command: "Run command",
+  execute_command: "Run command",
+  web_search: "Search the web",
+  memory_add: "Save memory",
+  memory_update: "Update memory",
+  memory_delete: "Delete memory",
+  memory_search: "Search memories",
+  update_plan: "Update plan",
+  spawn_subagent: "Start subagent",
+  stop_subagent: "Manage subagents",
+  message_team: "Message team",
+  sparky_plugin_call: "Call integration",
+  sparky_request_plugin_authorization: "Request integration access",
+  sparky_mcp_list_tools: "Find connected tools",
+  sparky_mcp_call_tool: "Call connected tool",
+};
+
+export function resolveWorkEntryToolDisplayName(toolName: string | undefined): string | undefined {
+  const normalizedName = toolName?.trim().replace(/-/g, "_").toLowerCase();
+  if (!normalizedName) return undefined;
+
+  const knownName = Object.hasOwn(TOOL_DISPLAY_NAMES, normalizedName)
+    ? TOOL_DISPLAY_NAMES[normalizedName]
+    : undefined;
+  if (knownName) return knownName;
+
+  return normalizedName
+    .split(/[_\s]+/u)
+    .filter(Boolean)
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(" ");
+}
+
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
   const pluginTitle = pluginToolPresentationTitle(workEntry);
   if (pluginTitle) return pluginTitle;
@@ -2500,6 +2551,10 @@ function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
       ? "Finding relevant sources"
       : "Found relevant sources";
   }
+  const toolDisplayName = resolveWorkEntryToolDisplayName(
+    workEntry.toolName ?? workEntry.toolTitle ?? workEntry.label,
+  );
+  if (toolDisplayName) return toolDisplayName;
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }

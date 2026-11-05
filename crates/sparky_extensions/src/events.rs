@@ -50,14 +50,24 @@ pub enum SparkyEvent {
         provider: String,
     },
     SubagentStarted {
+        id: String,
         name: String,
+        task: String,
         model: String,
         provider: String,
     },
     SubagentFinished {
+        id: String,
         name: String,
+        task: String,
         model: String,
+        provider: String,
+        result: String,
         is_error: bool,
+        is_cancelled: bool,
+    },
+    SubagentRemoved {
+        id: String,
     },
     UserBash {
         command: String,

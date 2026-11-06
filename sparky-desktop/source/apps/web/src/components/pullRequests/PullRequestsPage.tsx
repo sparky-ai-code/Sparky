@@ -500,6 +500,9 @@ export function PullRequestsPage() {
   );
   const [pullRequests, setPullRequests] = useState<GitHubPullRequest[]>(initialPullRequests);
   const [selectedNumber, setSelectedNumber] = useState<number | null>(initialSelectedNumber);
+  const [selectedPullRequestNumbers, setSelectedPullRequestNumbers] = useState<Set<number>>(
+    () => new Set(),
+  );
   const selectedPullRequestKeyRef = useRef<string | null>(
     selectedRepository && initialSelectedNumber !== null
       ? pullRequestCacheKey(selectedRepository, initialSelectedNumber)
@@ -527,6 +530,7 @@ export function PullRequestsPage() {
   const [commentsBusy, setCommentsBusy] = useState(false);
   const [commentsError, setCommentsError] = useState<string | null>(null);
   const [pullRequestActionBusy, setPullRequestActionBusy] = useState<PullRequestActionBusy>(null);
+  const [bulkActionBusy, setBulkActionBusy] = useState<"merge" | "review" | null>(null);
   const [pullRequestActionError, setPullRequestActionError] = useState<string | null>(null);
   const [reviewSummaryOpen, setReviewSummaryOpen] = useState(false);
   const reviewProject = useMemo(
@@ -548,6 +552,9 @@ export function PullRequestsPage() {
   useEffect(() => {
     pageCache.selectedRepository = selectedRepository;
   }, [selectedRepository]);
+  useEffect(() => {
+    setSelectedPullRequestNumbers(new Set());
+  }, [scope, selectedRepository]);
   useEffect(() => {
     selectedPullRequestKeyRef.current =
       selectedRepository && selectedNumber !== null
@@ -1044,7 +1051,7 @@ export function PullRequestsPage() {
         !selectedRepository ||
         !currentPullRequest ||
         pullRequestActionBusy !== null ||
-        pullRequestReviewSnapshot.activeKey !== null
+        pullRequestReviewSnapshot.activeKeys.size > 0
       )
         return;
       setPullRequestActionBusy(action);
@@ -1079,7 +1086,7 @@ export function PullRequestsPage() {
     [
       loadPullRequests,
       pullRequestActionBusy,
-      pullRequestReviewSnapshot.activeKey,
+      pullRequestReviewSnapshot.activeKeys,
       pullRequests,
       scope,
       selectedNumber,
@@ -1088,19 +1095,24 @@ export function PullRequestsPage() {
     ],
   );
 
-  const handlePullRequestReview = useCallback(() => {
+  const handlePullRequestReview = useCallback((targetPullRequest?: GitHubPullRequest) => {
     const bridge = getGitHubBridge();
     const postGitHubPullRequestReview = bridge?.postGitHubPullRequestReview?.bind(bridge);
     const currentPullRequest =
-      selectedPullRequest ?? pullRequests.find((pr) => pr.number === selectedNumber) ?? null;
+      targetPullRequest ??
+      selectedPullRequest ??
+      pullRequests.find((pr) => pr.number === selectedNumber) ??
+      null;
     if (
       !bridge ||
       !postGitHubPullRequestReview ||
       !selectedRepository ||
       !currentPullRequest ||
       !reviewProject ||
-      pullRequestActionBusy !== null ||
-      pullRequestReviewSnapshot.activeKey !== null
+      (!targetPullRequest && pullRequestActionBusy !== null) ||
+      pullRequestReviewSnapshot.activeKeys.has(
+        pullRequestCacheKey(selectedRepository, currentPullRequest.number),
+      )
     ) {
       return;
     }
@@ -1194,14 +1206,16 @@ export function PullRequestsPage() {
     });
     if (!reviewTask) return;
 
-    setPullRequestActionBusy("review");
-    setPullRequestActionError(null);
-    void reviewTask.finally(() => setPullRequestActionBusy(null));
+    if (!targetPullRequest) {
+      setPullRequestActionBusy("review");
+      setPullRequestActionError(null);
+      void reviewTask.finally(() => setPullRequestActionBusy(null));
+    }
   }, [
     loadPullRequests,
     markAuthRequired,
     pullRequestActionBusy,
-    pullRequestReviewSnapshot.activeKey,
+    pullRequestReviewSnapshot.activeKeys,
     pullRequests,
     reviewModelSelection,
     reviewProject,
@@ -1212,6 +1226,58 @@ export function PullRequestsPage() {
     settings.pullRequestReviewEffort,
     settings.pullRequestReviewFocus,
   ]);
+
+  const handleBulkReview = useCallback(() => {
+    const targets = pullRequests.filter(
+      (pr) => selectedPullRequestNumbers.has(pr.number) && pr.state.toUpperCase() === "OPEN",
+    );
+    if (targets.length === 0 || !reviewProject || pullRequestActionBusy !== null) return;
+    setBulkActionBusy("review");
+    setPullRequestActionError(null);
+    targets.forEach((pr) => handlePullRequestReview(pr));
+    setSelectedPullRequestNumbers(new Set());
+    window.setTimeout(() => {
+      setBulkActionBusy(null);
+    }, 0);
+  }, [handlePullRequestReview, pullRequestActionBusy, pullRequests, reviewProject, selectedPullRequestNumbers]);
+
+  const handleBulkMerge = useCallback(async () => {
+    const bridge = getGitHubBridge();
+    const targets = pullRequests.filter(
+      (pr) => selectedPullRequestNumbers.has(pr.number) &&
+        pr.state.toUpperCase() === "OPEN" && !pr.isDraft,
+    );
+    if (!bridge || !selectedRepository || targets.length === 0 || bulkActionBusy !== null ||
+      pullRequestActionBusy !== null || pullRequestReviewSnapshot.activeKeys.size > 0) return;
+    if (!window.confirm(`Merge ${targets.length} selected pull requests? This cannot be undone.`)) return;
+
+    setBulkActionBusy("merge");
+    setPullRequestActionError(null);
+    const results = await Promise.all(targets.map(async (pr) => {
+      try {
+        const result = await bridge.updateGitHubPullRequest({
+          repository: selectedRepository,
+          number: pr.number,
+          action: "merge",
+        });
+        if (result.error) throw new Error(result.error);
+        return { pr, error: null };
+      } catch (cause) {
+        return { pr, error: errorMessage(cause, `Could not merge #${pr.number}.`) };
+      }
+    }));
+    const succeeded = new Set(results.filter((result) => result.error === null).map(({ pr }) => pr.number));
+    const nextList = pullRequests.map((pr) => succeeded.has(pr.number) ? { ...pr, state: "MERGED" } : pr);
+    pullRequestListCache.set(listCacheKey(selectedRepository, scope), nextList);
+    setPullRequests(nextList);
+    const failures = results.filter((result) => result.error !== null);
+    if (failures.length > 0) {
+      setPullRequestActionError(`Merged ${succeeded.size} of ${targets.length}. ${failures.map(({ pr, error }) => `#${pr.number}: ${error}`).join("; ")}`);
+    }
+    setSelectedPullRequestNumbers(new Set());
+    setBulkActionBusy(null);
+    void loadPullRequests(true);
+  }, [bulkActionBusy, loadPullRequests, pullRequestActionBusy, pullRequestReviewSnapshot.activeKeys.size, pullRequests, scope, selectedPullRequestNumbers, selectedRepository]);
 
   const visiblePullRequests = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -1240,7 +1306,9 @@ export function PullRequestsPage() {
     ? (pullRequestReviewSnapshot.progressByKey.get(selectedReviewKey) ?? null)
     : null;
   const activePullRequestActionBusy =
-    pullRequestActionBusy ?? (pullRequestReviewSnapshot.activeKey !== null ? "review" : null);
+    pullRequestActionBusy ??
+    bulkActionBusy ??
+    (pullRequestReviewSnapshot.activeKeys.size > 0 ? "review" : null);
 
   if (!isElectron || getGitHubBridge() === null) {
     return (
@@ -1378,14 +1446,28 @@ export function PullRequestsPage() {
               </Button>
             </div>
           </div>
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="flex h-9 shrink-0 items-center border-b border-border px-4 text-xs text-muted-foreground">
-              <span>{visiblePullRequests.length} pull requests</span>
-              {selectedRepository ? (
-                <span className="ml-auto truncate pl-3">{selectedRepository}</span>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+               <span>{visiblePullRequests.length} pull requests</span>
+               <span>{selectedPullRequestNumbers.size} selected</span>
+               {selectedRepository ? (
+                 <span className="ml-auto truncate pl-3">{selectedRepository}</span>
+               ) : null}
+              </div>
+              {selectedPullRequestNumbers.size > 0 ? (
+                <div className="flex shrink-0 flex-wrap gap-2 border-b border-border px-3 py-2">
+                  <Button size="sm" variant="outline" disabled={bulkActionBusy !== null || pullRequestActionBusy !== null || !reviewProject || !canPostPullRequestReview} onClick={handleBulkReview}>
+                    {bulkActionBusy === "review" ? <LoaderCircleIcon className="size-3.5 animate-spin" /> : <GitPullRequestIcon className="size-3.5" />}
+                    Review selected
+                  </Button>
+                  <Button size="sm" disabled={bulkActionBusy !== null || pullRequestActionBusy !== null || pullRequestReviewSnapshot.activeKeys.size > 0} onClick={() => void handleBulkMerge()}>
+                    {bulkActionBusy === "merge" ? <LoaderCircleIcon className="size-3.5 animate-spin" /> : null}
+                    Merge selected
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setSelectedPullRequestNumbers(new Set())}>Clear</Button>
+                </div>
               ) : null}
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {!selectedRepository ? (
                 <div className="px-4 py-12 text-center text-sm text-muted-foreground">
                   Select a repository to view its pull requests.
@@ -1407,11 +1489,25 @@ export function PullRequestsPage() {
                   {visiblePullRequests.map((pr) => {
                     const selected = selectedNumber === pr.number;
                     return (
+                      <div key={pr.number} className="flex items-stretch gap-1">
+                        <label className="flex shrink-0 items-center px-2" aria-label={`Select pull request #${pr.number}`}>
+                          <input
+                            type="checkbox"
+                            checked={selectedPullRequestNumbers.has(pr.number)}
+                            disabled={pr.state.toUpperCase() !== "OPEN"}
+                            onChange={(event) => setSelectedPullRequestNumbers((current) => {
+                              const next = new Set(current);
+                              if (event.target.checked) next.add(pr.number);
+                              else next.delete(pr.number);
+                              return next;
+                            })}
+                            className="size-4 accent-primary"
+                          />
+                        </label>
                       <button
-                        key={pr.number}
                         type="button"
                         className={cn(
-                          "flex w-full items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors",
+                          "flex min-w-0 flex-1 items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors",
                           selected
                             ? "bg-muted text-foreground"
                             : "hover:bg-muted/50 hover:text-foreground",
@@ -1442,6 +1538,7 @@ export function PullRequestsPage() {
                           </div>
                         </div>
                       </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -1563,7 +1660,8 @@ export function PullRequestsPage() {
                             }
                             onClick={() => void handlePullRequestReview()}
                           >
-                            {pullRequestReviewSnapshot.activeKey === selectedReviewKey ? (
+                            {selectedReviewKey !== null &&
+                            pullRequestReviewSnapshot.activeKeys.has(selectedReviewKey) ? (
                               <LoaderCircleIcon className="size-3.5 animate-spin" />
                             ) : (
                               <GitPullRequestIcon className="size-3.5" />

@@ -35,7 +35,10 @@ describe("pull request review progress", () => {
       phase: "fetching",
       message: "Fetching the latest pull-request changes from GitHub…",
     });
-    expect(startPullRequestReviewProgress("another/project#1", async () => {})).toBeNull();
+    const concurrentReview = startPullRequestReviewProgress("another/project#1", async () => {});
+    expect(concurrentReview).not.toBeNull();
+    await concurrentReview;
+    expect(getPullRequestReviewProgressSnapshot().activeKeys.has(key)).toBe(true);
 
     await Promise.resolve();
     expect(getPullRequestReviewProgressSnapshot().progressByKey.get(key)).toMatchObject({

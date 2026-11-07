@@ -106,6 +106,29 @@ export function McpSettingsPanel() {
           status="Available in this session"
         />
         <SettingsRow
+          title="Computer use (Cua Driver)"
+          description={
+            <>
+              Install the local Cua Driver, then start its HTTP MCP endpoint with
+              <code className="mx-1 rounded bg-muted px-1 py-0.5">CUA_DRIVER_RS_MCP_HTTP_PORT=8000</code>
+              and a private
+              <code className="mx-1 rounded bg-muted px-1 py-0.5">CUA_DRIVER_RS_MCP_HTTP_TOKEN</code>.
+              Add <code className="mx-1 rounded bg-muted px-1 py-0.5">http://127.0.0.1:8000/mcp</code>
+              below and use the same token as the bearer token.
+            </>
+          }
+          status={
+            <a
+              className="text-primary underline underline-offset-2"
+              href="https://github.com/trycua/cua/tree/main/libs/cua-driver"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Cua Driver install and platform requirements
+            </a>
+          }
+        />
+        <SettingsRow
           title="Pull request review"
           description="Review a GitHub pull request and post actionable inline feedback."
           status="Available when GitHub is connected"

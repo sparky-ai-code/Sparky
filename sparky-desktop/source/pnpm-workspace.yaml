@@ -47,6 +47,15 @@ catalog:
   vite-plus: 0.2.2
   yaml: ^2.9.0
 
+minimumReleaseAgeExclude:
+  - '@trycua/cua-driver-darwin-arm64@0.41.2'
+  - '@trycua/cua-driver-darwin-x64@0.41.2'
+  - '@trycua/cua-driver-linux-arm64-gnu@0.41.2'
+  - '@trycua/cua-driver-linux-x64-gnu@0.41.2'
+  - '@trycua/cua-driver-win32-arm64-msvc@0.41.2'
+  - '@trycua/cua-driver-win32-x64-msvc@0.41.2'
+  - '@trycua/cua-driver@0.41.2'
+
 overrides:
   "@effect/atom-react": "catalog:"
   "@effect/platform-bun": "catalog:"

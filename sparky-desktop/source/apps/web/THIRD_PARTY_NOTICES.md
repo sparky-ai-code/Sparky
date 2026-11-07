@@ -12,8 +12,9 @@ upstream repository: <https://github.com/vscode-icons/vscode-icons/blob/master/L
 
 ## Cua Driver
 
-Sparky can connect to a locally installed Cua Driver through its Streamable HTTP MCP endpoint.
-Cua Driver is not bundled with Sparky; it is installed and run separately by the user.
+Sparky's desktop application integrates the Cua Driver SDK for local screen capture and input. The SDK and its required platform-native packages are distributed with the application; no separate Cua Driver daemon or Cua Spaces service is used.
 
 - Project: <https://github.com/trycua/cua/tree/main/libs/cua-driver>
+- Package: `@trycua/cua-driver`
+- Copyright (c) 2025 Cua AI, Inc.
 - License: MIT (<https://github.com/trycua/cua/blob/main/LICENSE.md>)

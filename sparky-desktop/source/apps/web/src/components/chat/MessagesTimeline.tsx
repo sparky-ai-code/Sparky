@@ -2399,7 +2399,10 @@ function resolveWorkEntryPluginId(
 export function resolveWorkEntryToolIconName(
   toolName: string | undefined,
 ): WorkEntryIconName | undefined {
-  switch (toolName?.trim().toLowerCase()) {
+  const normalizedName = toolName?.trim().toLowerCase().replaceAll("_", "-") ?? "";
+  if (normalizedName.startsWith("computer-use-")) return "mouse-pointer-click";
+
+  switch (normalizedName) {
     case "sparky_mcp_list_tools":
       return "list-checks";
     case "sparky_mcp_call_tool":
@@ -2500,7 +2503,17 @@ function capitalizePhrase(value: string): string {
   return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
 }
 
+function computerUseToolHeading(toolName: string | undefined): string | null {
+  const normalizedName = toolName?.trim().toLowerCase().replaceAll("_", "-") ?? "";
+  if (!normalizedName.startsWith("computer-use-")) return null;
+
+  const action = normalizedName.slice("computer-use-".length).replace(/[-_]+/g, " ").trim();
+  return action ? `Computer use · ${capitalizePhrase(action)}` : "Computer use";
+}
+
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  const computerUseHeading = computerUseToolHeading(workEntry.toolName);
+  if (computerUseHeading) return computerUseHeading;
   if (workEntry.toolName === "sparky_mcp_list_tools") return "Discover MCP tools";
   if (workEntry.toolName === "sparky_mcp_call_tool") return "Run MCP tool";
   const pluginTitle = pluginToolPresentationTitle(workEntry);

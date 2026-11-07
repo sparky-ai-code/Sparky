@@ -50,6 +50,7 @@ import type { EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 const PROVIDER = ProviderDriverKind.make("sparky");
 const T3_MCP_BEARER_TOKEN_ENV_VAR = "T3_MCP_BEARER_TOKEN";
 const HIDDEN_SPARKY_CONTROL_TOOLS = new Set(["end_task"]);
+const SPARKY_VISUAL_REPLY_INSTRUCTIONS = `When a chart, diagram, mockup, table, or other visual will communicate the answer more clearly than prose, use the html_render MCP tool to publish a self-contained HTML visual reply. It appears inline in the chat. Do not announce or describe the visual in the final reply; only add information it does not already contain.`;
 const SPARKY_BROWSER_INSTRUCTIONS = `Browser tools are reserved for explicit browser requests and tasks that genuinely require UI interaction or visual verification. Never use preview_* tools for ordinary public-web research, current facts, documentation, news, or URL lookup; use the web_search tool instead. If web_search can answer the request, do not open or navigate the browser. Only use preview_* when the user asks for the browser or the task requires testing an app UI, clicking through a flow, login, rendering, or client-side behavior. When browser work is allowed, the t3-code MCP tools named preview_* control the collaborative browser shared with the user. First call preview_status. If no automation-capable preview is attached, call preview_open. Then use preview_navigate, preview_snapshot, and the focused interaction tools. Prefer snapshot-provided locators over coordinates.`;
 
 const SPARKY_EXTERNAL_MCP_INSTRUCTIONS = `When the user asks you to use an external MCP server configured in Sparky, call sparky_mcp_list_tools to discover its tools, then call sparky_mcp_call_tool using the exact server and tool names. Do not claim a tool ran unless the MCP call succeeded.`;
@@ -544,6 +545,7 @@ export function sparkyToolPresentation(
     edit: "Edit file",
     find: "Find",
     grep: "Grep",
+    html_render: "Render visual reply",
     ls: "List files",
     memory_add: "Save memory",
     memory_delete: "Forget memory",
@@ -1371,6 +1373,7 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
           ...(activeMcp
             ? [
                 SPARKY_BROWSER_INSTRUCTIONS,
+                SPARKY_VISUAL_REPLY_INSTRUCTIONS,
                 T3_CODE_PULL_REQUEST_REVIEW_INSTRUCTIONS,
                 SPARKY_EXTERNAL_MCP_INSTRUCTIONS,
               ]

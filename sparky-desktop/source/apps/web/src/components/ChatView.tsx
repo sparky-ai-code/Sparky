@@ -214,6 +214,7 @@ import {
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { ChatHomeContext } from "./chat/ChatHomeContext";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
@@ -5659,7 +5660,7 @@ function ChatViewContent(props: ChatViewProps) {
               data-chat-composer-overlay="true"
               className={
                 isDraftHeroState
-                  ? "pointer-events-none absolute inset-0 z-20 flex items-center"
+                  ? "pointer-events-none absolute inset-0 z-20 flex items-start pt-[16vh]"
                   : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
             >
@@ -5806,7 +5807,7 @@ function ChatViewContent(props: ChatViewProps) {
                     <div
                       className={cn(
                         "min-h-0",
-                        isDraftHeroState ? "absolute inset-x-0 top-full" : null,
+                        isDraftHeroState ? "absolute inset-x-0 top-full max-h-[54vh] overflow-y-auto" : null,
                       )}
                     >
                       <div
@@ -5848,6 +5849,7 @@ function ChatViewContent(props: ChatViewProps) {
                           </div>
                         )}
                       </div>
+                      {isDraftHeroState ? <ChatHomeContext /> : null}
                     </div>
                   </div>
                 </div>

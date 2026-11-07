@@ -61,6 +61,7 @@ import {
   isTransientGitHubStatus,
   shouldApplyGitHubListResult,
 } from "./githubResilience.ts";
+import { cacheRecentPullRequests } from "./recentPullRequestCache.ts";
 
 type PullRequestScope = "all" | "authored";
 type PullRequestView = "summary" | "code";
@@ -743,6 +744,7 @@ export function PullRequestsPage() {
           return "failed";
         }
         pullRequestListCache.set(key, result.pullRequests);
+        cacheRecentPullRequests(repository, result.pullRequests);
         setPullRequests(result.pullRequests);
         setListError(nextError);
         setSelectedNumber((current) => {

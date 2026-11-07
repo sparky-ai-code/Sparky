@@ -3,6 +3,7 @@ import { PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import type { McpServerConnectionStatus } from "@sparky/contracts";
 
 import { McpIcon } from "./McpIcon";
+import { ComputerUseIcon } from "./ComputerUseIcon";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "../../state/server";
@@ -104,6 +105,16 @@ export function McpSettingsPanel() {
           title="Browser"
           description="Use the shared browser to navigate, inspect pages, and interact with websites."
           status="Available in this session"
+        />
+        <SettingsRow
+          title={
+            <span className="inline-flex items-center gap-2">
+              <ComputerUseIcon className="size-4 text-primary" />
+              Computer use
+            </span>
+          }
+          description="Built into Sparky. Use the screen, pointer, and keyboard tools to control this computer."
+          status="Available in the desktop app"
         />
         <SettingsRow
           title="Pull request review"

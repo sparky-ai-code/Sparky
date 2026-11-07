@@ -14,6 +14,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as ProcessRunner from "../processRunner.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { ComputerUseToolkitRegistrationLive } from "./computerUse.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
@@ -300,6 +301,7 @@ const ExternalMcpToolkitRegistrationLive = McpServer.toolkit(ExternalMcpToolkit)
 
 const ToolkitRegistrationLive = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
+  ComputerUseToolkitRegistrationLive,
   ExternalMcpToolkitRegistrationLive,
   PluginToolkitRegistrationLive,
   PullRequestReviewToolkitRegistrationLive,

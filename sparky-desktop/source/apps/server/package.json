@@ -28,6 +28,7 @@
     "@effect/sql-sqlite-bun": "catalog:",
     "@ff-labs/fff-node": "0.9.4",
     "@pierre/diffs": "catalog:",
+    "@trycua/cua-driver": "0.41.2",
     "effect": "catalog:",
     "electron": "41.5.0",
     "electron-store": "^8.2.0",

@@ -405,6 +405,34 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("lucide-hammer");
   });
 
+  it("renders computer-use calls with readable labels and a cursor icon", () => {
+    const toolName = "computer-use-get_desktop_state";
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-computer-use",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "work-computer-use",
+              createdAt: MESSAGE_CREATED_AT,
+              label: toolName,
+              toolName,
+              tone: "tool",
+              itemType: "dynamic_tool_call",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("lucide-mouse-pointer-click");
+    expect(markup).toContain("Computer use · Get desktop state");
+    expect(markup).not.toContain(toolName);
+  });
+
   it("renders live file-change stats while the tool is running", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

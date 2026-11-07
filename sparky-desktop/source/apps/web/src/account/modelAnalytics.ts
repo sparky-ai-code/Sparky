@@ -53,7 +53,15 @@ function sanitizeLocalEvent(value: unknown): LocalModelUsageEvent | undefined {
   const outputTokens = optionalNumber(event.outputTokens);
   const reasoningOutputTokens = optionalNumber(event.reasoningOutputTokens);
   const totalTokens = optionalNumber(event.totalTokens);
-  const costUsd = optionalNumber(event.costUsd);
+  const storedCostUsd = optionalNumber(event.costUsd);
+  const costUsd =
+    storedCostUsd ??
+    estimateModelApiCostUsd(event.model, {
+      inputTokens,
+      cachedInputTokens,
+      outputTokens,
+      reasoningOutputTokens,
+    });
   return {
     provider: event.provider,
     model: event.model,

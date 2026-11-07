@@ -50,7 +50,7 @@ describe("local model analytics", () => {
         cachedInputTokens: event.cachedInputTokens,
         outputTokens: event.outputTokens,
         totalTokens: event.totalTokens,
-        costUsd: 0.00141,
+        costUsd: 0.001008,
         occurredAt: event.occurredAt,
       },
     ]);
@@ -68,6 +68,55 @@ describe("local model analytics", () => {
         outputTokens: 30,
       }),
     ).toBeCloseTo(0.000816);
+  });
+
+  it("estimates every OpenAI model in the Sparky Codex catalog with cached-input rates", () => {
+    const models = [
+      "gpt-6.1-sol",
+      "gpt-6.1-terra",
+      "gpt-6-astra",
+      "gpt-6-sol",
+      "gpt-6-luna",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+    ];
+
+    for (const model of models) {
+      expect(
+        estimateModelApiCostUsd(`openai-codex/${model}`, {
+          inputTokens: 1_000_000,
+          cachedInputTokens: 500_000,
+          outputTokens: 100_000,
+        }),
+      ).toBeGreaterThan(0);
+    }
+
+    expect(
+      estimateModelApiCostUsd("openai-codex/gpt-6-luna", {
+        inputTokens: 1_000_000,
+        cachedInputTokens: 500_000,
+        outputTokens: 100_000,
+      }),
+    ).toBeCloseTo(0.105);
+  });
+
+  it("backfills estimates for previously saved rows when full usage is available", () => {
+    values.set(
+      LOCAL_USAGE_KEY,
+      JSON.stringify([
+        {
+          provider: "openai-codex",
+          model: "gpt-6-luna",
+          inputTokens: 1_000,
+          cachedInputTokens: 500,
+          outputTokens: 100,
+          occurredAt: "2026-01-12T10:00:00.000Z",
+        },
+      ]),
+    );
+
+    expect(readLocalModelAnalyticsEvents()[0]?.costUsd).toBeCloseTo(0.000105);
   });
 
   it("does not invent a price for unsupported models or missing token breakdowns", () => {

@@ -13,17 +13,53 @@ type ModelApiPricing = {
 };
 
 const MODEL_API_PRICING: Readonly<Record<string, ModelApiPricing>> = {
-  // OpenAI API list prices: https://openai.com/api/pricing/
+  // OpenAI API list prices: https://developers.openai.com/api/docs/pricing
+  "gpt-6-astra": {
+    inputUsdPerMillion: 10,
+    cachedInputUsdPerMillion: 1,
+    outputUsdPerMillion: 50,
+    cachedInputIncludedInInput: true,
+  },
+  "gpt-6.1-sol": {
+    inputUsdPerMillion: 2,
+    cachedInputUsdPerMillion: 0.1,
+    outputUsdPerMillion: 10,
+    cachedInputIncludedInInput: true,
+  },
+  "gpt-6.1-terra": {
+    inputUsdPerMillion: 1,
+    cachedInputUsdPerMillion: 0.05,
+    outputUsdPerMillion: 5,
+    cachedInputIncludedInInput: true,
+  },
+  "gpt-6-sol": {
+    inputUsdPerMillion: 2,
+    cachedInputUsdPerMillion: 0.2,
+    outputUsdPerMillion: 10,
+    cachedInputIncludedInInput: true,
+  },
+  "gpt-6-luna": {
+    inputUsdPerMillion: 0.1,
+    cachedInputUsdPerMillion: 0.01,
+    outputUsdPerMillion: 0.5,
+    cachedInputIncludedInInput: true,
+  },
   "gpt-5.6-sol": {
-    inputUsdPerMillion: 5,
-    cachedInputUsdPerMillion: 0.5,
-    outputUsdPerMillion: 30,
+    inputUsdPerMillion: 4,
+    cachedInputUsdPerMillion: 0.4,
+    outputUsdPerMillion: 20,
     cachedInputIncludedInInput: true,
   },
   "gpt-5.6-terra": {
     inputUsdPerMillion: 2,
     cachedInputUsdPerMillion: 0.2,
     outputUsdPerMillion: 12,
+    cachedInputIncludedInInput: true,
+  },
+  "gpt-5.6-luna": {
+    inputUsdPerMillion: 0.2,
+    cachedInputUsdPerMillion: 0.02,
+    outputUsdPerMillion: 1.2,
     cachedInputIncludedInInput: true,
   },
   // Anthropic API list prices: https://platform.claude.com/docs/en/about-claude/pricing

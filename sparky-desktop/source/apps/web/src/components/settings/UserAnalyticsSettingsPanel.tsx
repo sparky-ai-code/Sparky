@@ -55,7 +55,11 @@ function formatFullDate(date: string): string {
 }
 
 function formatUsd(value: number): string {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(value);
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 6,
+  }).format(value);
 }
 
 function formatPercent(value: number): string {

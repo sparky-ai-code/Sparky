@@ -5,7 +5,7 @@ description: Create polished, self-contained inline HTML visual replies with Spa
 
 # Visual replies
 
-Use Sparky's `html_render` tool to deliver the visual directly in the conversation. Treat a visual reply as a small designed artifact, not a default HTML page: decide what the viewer should understand first, then make hierarchy, spacing, typography, and color reinforce that point.
+Use Sparky's `html_render` tool to deliver the visual directly in the conversation. Always follow the layout and theme rules embedded in the tool description; this skill adds design guidance for choosing and composing a strong visual. Treat a visual reply as a small designed artifact, not a default HTML page: decide what the viewer should understand first, then make hierarchy, spacing, typography, and color reinforce that point.
 
 ## Design the visual
 

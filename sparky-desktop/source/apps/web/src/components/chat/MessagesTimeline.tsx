@@ -79,6 +79,7 @@ import { Button } from "../ui/button";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
+import { HtmlRenderCard } from "./HtmlRenderCard";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
 import {
@@ -1092,6 +1093,13 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             )}
           </div>
         ) : null}
+        {row.visualReplyEntries?.map((entry) => (
+          <HtmlRenderCard
+            key={entry.id}
+            toolData={entry.toolData}
+            appearance={ctx.resolvedTheme}
+          />
+        ))}
       </div>
     </>
   );
@@ -2419,6 +2427,8 @@ export function resolveWorkEntryToolIconName(
       return "messages-square";
     case "review_pull_request":
       return "git-pull-request";
+    case "html_render":
+      return "eye";
     case "write":
       return "file-plus-2";
     case "edit":

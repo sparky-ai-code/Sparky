@@ -32,6 +32,7 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { HtmlRenderToolkit, HtmlRenderToolkitHandlersLive } from "./toolkits/htmlRender.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -298,8 +299,13 @@ const ExternalMcpToolkitRegistrationLive = McpServer.toolkit(ExternalMcpToolkit)
   Layer.provide(ExternalMcpToolkitHandlersLive),
 );
 
+const HtmlRenderToolkitRegistrationLive = McpServer.toolkit(HtmlRenderToolkit).pipe(
+  Layer.provide(HtmlRenderToolkitHandlersLive),
+);
+
 const ToolkitRegistrationLive = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
+  HtmlRenderToolkitRegistrationLive,
   ExternalMcpToolkitRegistrationLive,
   PluginToolkitRegistrationLive,
   PullRequestReviewToolkitRegistrationLive,

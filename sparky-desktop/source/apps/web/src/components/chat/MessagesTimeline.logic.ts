@@ -185,6 +185,7 @@ export type MessagesTimelineRow =
       showAssistantCopyButton: boolean;
       assistantCopyStreaming: boolean;
       assistantTurnDiffSummary?: TurnDiffSummary | undefined;
+      visualReplyEntries?: WorkLogEntry[] | undefined;
       revertTurnCount?: number | undefined;
     }
   | {
@@ -511,6 +512,48 @@ export function deriveMessagesTimelineRows(input: {
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
   );
   const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(input.timelineEntries);
+  const visualRepliesByAssistantMessageId = new Map<string, WorkLogEntry[]>();
+  for (let index = 0; index < input.timelineEntries.length; index += 1) {
+    const entry = input.timelineEntries[index];
+    if (
+      !entry ||
+      entry.kind !== "work" ||
+      entry.entry.toolName?.trim().toLowerCase() !== "html_render"
+    ) {
+      continue;
+    }
+
+    let targetAssistant: Extract<TimelineEntry, { kind: "message" }> | undefined;
+    if (entry.entry.turnId) {
+      targetAssistant = input.timelineEntries.find(
+        (candidate): candidate is Extract<TimelineEntry, { kind: "message" }> =>
+          candidate.kind === "message" &&
+          candidate.message.role === "assistant" &&
+          candidate.message.turnId === entry.entry.turnId &&
+          terminalAssistantMessageIds.has(candidate.message.id),
+      );
+    } else {
+      for (let nextIndex = index + 1; nextIndex < input.timelineEntries.length; nextIndex += 1) {
+        const candidate = input.timelineEntries[nextIndex];
+        if (!candidate) continue;
+        if (candidate.kind === "message" && candidate.message.role === "user") break;
+        if (
+          candidate.kind === "message" &&
+          candidate.message.role === "assistant" &&
+          terminalAssistantMessageIds.has(candidate.message.id)
+        ) {
+          targetAssistant = candidate;
+          break;
+        }
+      }
+    }
+
+    if (targetAssistant) {
+      const replies = visualRepliesByAssistantMessageId.get(targetAssistant.message.id) ?? [];
+      replies.push(entry.entry);
+      visualRepliesByAssistantMessageId.set(targetAssistant.message.id, replies);
+    }
+  }
   const unsettledTurnId = deriveUnsettledTurnId(
     input.latestTurn ?? null,
     input.runningTurnId ?? null,
@@ -715,6 +758,11 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.message.role === "assistant"
           ? input.turnDiffSummaryByAssistantMessageId.get(timelineEntry.message.id)
           : undefined,
+      visualReplyEntries:
+        timelineEntry.message.role === "assistant" &&
+        terminalAssistantMessageIds.has(timelineEntry.message.id)
+          ? visualRepliesByAssistantMessageId.get(timelineEntry.message.id)
+          : undefined,
       revertTurnCount:
         timelineEntry.message.role === "user"
           ? input.revertTurnCountByUserMessageId.get(timelineEntry.message.id)
@@ -809,6 +857,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.showAssistantCopyButton === bm.showAssistantCopyButton &&
         a.assistantCopyStreaming === bm.assistantCopyStreaming &&
         a.assistantTurnDiffSummary === bm.assistantTurnDiffSummary &&
+        Equal.equals(a.visualReplyEntries ?? [], bm.visualReplyEntries ?? []) &&
         a.revertTurnCount === bm.revertTurnCount
       );
     }

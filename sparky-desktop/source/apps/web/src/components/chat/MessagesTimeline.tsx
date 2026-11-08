@@ -1093,6 +1093,13 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             )}
           </div>
         ) : null}
+        {row.visualReplyEntries?.map((entry) => (
+          <HtmlRenderCard
+            key={entry.id}
+            toolData={entry.toolData}
+            appearance={ctx.resolvedTheme}
+          />
+        ))}
       </div>
     </>
   );
@@ -2527,7 +2534,6 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
 }) {
   const { workEntry, workspaceRoot } = props;
   const activity = use(TimelineRowActivityCtx);
-  const timeline = use(TimelineRowCtx);
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
@@ -2654,11 +2660,6 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           <pre className="max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground select-text">
             {expandedBody}
           </pre>
-        </div>
-      ) : null}
-      {workEntry.toolName?.trim().toLowerCase() === "html_render" ? (
-        <div className="cursor-default" onClick={stopRowToggle} onPointerDown={stopRowToggle}>
-          <HtmlRenderCard toolData={workEntry.toolData} appearance={timeline.resolvedTheme} />
         </div>
       ) : null}
     </div>

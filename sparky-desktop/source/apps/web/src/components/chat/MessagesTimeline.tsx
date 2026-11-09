@@ -928,6 +928,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
 
   return (
     <div className="group flex flex-col items-end gap-1">
+      {row.message.isSteered ? (
+        <div className="flex w-full max-w-[80%] items-center justify-end gap-1 pe-1 text-[11px] font-medium text-muted-foreground">
+          <span aria-hidden="true">↳</span>
+          <span>Steered</span>
+        </div>
+      ) : null}
       <div className="relative max-w-[80%] rounded-2xl border border-border bg-secondary p-3">
         {regularImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">

@@ -1231,6 +1231,8 @@ function ChatViewContent(props: ChatViewProps) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
+  const [steeredMessageIds, setSteeredMessageIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [steeringStartedAt, setSteeringStartedAt] = useState<string | null>(null);
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
   optimisticUserMessagesRef.current = optimisticUserMessages;
   const optimisticUserMessageThreadIdsRef = useRef(new Map<string, string>());
@@ -2022,11 +2024,17 @@ function ChatViewContent(props: ChatViewProps) {
     threadError,
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
-  const activeWorkStartedAt = deriveActiveWorkStartedAt(
-    activeLatestTurn,
-    activeThread?.session ?? null,
-    localDispatchStartedAt,
-  );
+  const activeWorkStartedAt =
+    phase === "running" && steeringStartedAt !== null
+      ? steeringStartedAt
+      : deriveActiveWorkStartedAt(
+          activeLatestTurn,
+          activeThread?.session ?? null,
+          localDispatchStartedAt,
+        );
+  useEffect(() => {
+    if (phase !== "running") setSteeringStartedAt(null);
+  }, [phase]);
   const notificationTurnStatesRef = useRef(
     new Map<
       string,
@@ -2178,17 +2186,18 @@ function ChatViewContent(props: ChatViewProps) {
     if (!serverMessages) return [];
     return serverMessages.map((message) => {
       if (!message.attachments || message.attachments.length === 0) {
-        return message;
+        return steeredMessageIds.has(String(message.id)) ? { ...message, isSteered: true } : message;
       }
       return {
         ...message,
+        ...(steeredMessageIds.has(String(message.id)) ? { isSteered: true } : {}),
         attachments: message.attachments.map((attachment) => {
           const previewUrl = serverAttachmentUrlById.get(attachment.id);
           return previewUrl ? { ...attachment, previewUrl } : attachment;
         }),
       };
     });
-  }, [serverAttachmentUrlById, serverMessages]);
+  }, [serverAttachmentUrlById, serverMessages, steeredMessageIds]);
   useEffect(() => {
     if (typeof Image === "undefined" || displayServerMessages.length === 0) {
       return;
@@ -4486,6 +4495,11 @@ function ChatViewContent(props: ChatViewProps) {
     );
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
+    const steeringThisMessage = phase === "running";
+    if (steeringThisMessage) {
+      setSteeredMessageIds((existing) => new Set(existing).add(String(messageIdForSend)));
+      setSteeringStartedAt(messageCreatedAt);
+    }
     const outgoingMessageText = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
@@ -4531,6 +4545,7 @@ function ChatViewContent(props: ChatViewProps) {
         id: messageIdForSend,
         role: "user",
         text: outgoingMessageText,
+        ...(steeringThisMessage ? { isSteered: true } : {}),
         ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
         turnId: null,
         createdAt: messageCreatedAt,

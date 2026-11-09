@@ -1,10 +1,62 @@
 import * as Effect from "effect/Effect";
 
 import * as ServerSettings from "../../serverSettings.ts";
+import type { McpServerConfig } from "@sparky/contracts";
 import { callExternalMcpTool, listExternalMcpTools } from "../ExternalMcp.ts";
 import { ExternalMcpToolkit } from "./externalMcpTools.ts";
 
 const handlers = {
+  sparky_mcp_setup_server: (input) =>
+    Effect.gen(function* () {
+      const settings = yield* ServerSettings.ServerSettingsService;
+      const current = yield* settings.getSettings;
+      const name = input.name.trim();
+      if (!name) return { error: "Enter a name for the MCP server." };
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(input.url);
+      } catch {
+        return { error: "Enter a valid HTTP or HTTPS MCP server URL." };
+      }
+      if (
+        !["http:", "https:"].includes(parsedUrl.protocol) ||
+        parsedUrl.username ||
+        parsedUrl.password
+      ) {
+        return { error: "MCP server URLs must use HTTP or HTTPS and cannot embed credentials." };
+      }
+      if (current.mcpServers.some((server) => server.name.toLowerCase() === name.toLowerCase())) {
+        return { error: `An MCP server named '${name}' is already configured.` };
+      }
+      const server: McpServerConfig = {
+        id: crypto.randomUUID(),
+        name,
+        url: parsedUrl.toString(),
+        authorizationToken: input.authorizationToken ?? "",
+        authorizationTokenRedacted: false,
+        enabled: true,
+      };
+      const tools = yield* Effect.tryPromise({
+        try: () => listExternalMcpTools(server),
+        catch: () => new Error("MCP connection failed."),
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.succeed({ error: error instanceof Error ? error.message : "MCP connection failed." }),
+        ),
+      );
+      if (!Array.isArray(tools)) return tools;
+      yield* settings.updateSettings({ mcpServers: [...current.mcpServers, server] });
+      return {
+        configured: true,
+        serverName: name,
+        toolCount: tools.length,
+        tools: tools.map((tool) =>
+          typeof tool === "object" && tool !== null && "name" in tool
+            ? String(tool.name)
+            : "(unnamed tool)",
+        ),
+      };
+    }),
   sparky_mcp_list_tools: (input) =>
     Effect.gen(function* () {
       const settings = yield* ServerSettings.ServerSettingsService;

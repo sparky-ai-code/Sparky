@@ -2410,6 +2410,8 @@ export function resolveWorkEntryToolIconName(
   switch (toolName?.trim().toLowerCase()) {
     case "sparky_mcp_list_tools":
       return "list-checks";
+    case "sparky_mcp_setup_server":
+      return "plug-zap";
     case "sparky_mcp_call_tool":
       return "plug-zap";
     case "ls":
@@ -2511,6 +2513,7 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  if (workEntry.toolName === "sparky_mcp_setup_server") return "Set up MCP server";
   if (workEntry.toolName === "sparky_mcp_list_tools") return "Discover MCP tools";
   if (workEntry.toolName === "sparky_mcp_call_tool") return "Run MCP tool";
   const pluginTitle = pluginToolPresentationTitle(workEntry);

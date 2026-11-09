@@ -49,6 +49,7 @@ const DESKTOP_RENDERER_ORIGINS = [
   "sparky-dev://app",
 ];
 const SPARKY_CODEX_AUTH_ROUTE = "/api/sparky/codex-auth";
+const SPARKY_CODEX_USAGE_ROUTE = "/api/sparky/codex-usage";
 const CODEX_AUTH_STATUS_TIMEOUT_MS = 20_000;
 const CODEX_AUTH_LOGIN_TIMEOUT_MS = 15 * 60_000;
 
@@ -104,13 +105,6 @@ const authenticateRawRouteWithScope = (
     }
   });
 
-type SparkyCodexAuthStatus = {
-  readonly authenticated: boolean;
-  readonly subject?: string | null;
-  readonly expires?: number | null;
-  readonly planUsageAuthorized: boolean;
-};
-
 class SparkyCodexAuthCommandError extends Data.TaggedError("SparkyCodexAuthCommandError")<{
   readonly detail: string;
   readonly cause?: unknown;
@@ -119,7 +113,7 @@ class SparkyCodexAuthCommandError extends Data.TaggedError("SparkyCodexAuthComma
 const runSparkyCodexAuthCommand = (argument: string) =>
   Effect.tryPromise({
     try: () =>
-      new Promise<SparkyCodexAuthStatus>((resolve, reject) => {
+      new Promise<unknown>((resolve, reject) => {
         const binaryPath = process.env.SPARKY_BINARY_PATH?.trim() || "sparky";
         const child = NodeChildProcess.spawn(binaryPath, [argument], {
           env: process.env,
@@ -163,7 +157,8 @@ const runSparkyCodexAuthCommand = (argument: string) =>
               return;
             }
             try {
-              resolve(JSON.parse(stdout.trim()) as SparkyCodexAuthStatus);
+              const payload: unknown = JSON.parse(stdout.trim());
+              resolve(payload);
             } catch (cause) {
               reject(
                 new SparkyCodexAuthCommandError({
@@ -193,6 +188,14 @@ const sparkyCodexAuthResponse = (argument: string) =>
   );
 
 export const sparkyCodexAuthRouteLayer = Layer.mergeAll(
+  HttpRouter.add(
+    "GET",
+    SPARKY_CODEX_USAGE_ROUTE,
+    Effect.gen(function* () {
+      yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+      return yield* sparkyCodexAuthResponse("--codex-usage");
+    }),
+  ),
   HttpRouter.add(
     "GET",
     SPARKY_CODEX_AUTH_ROUTE,

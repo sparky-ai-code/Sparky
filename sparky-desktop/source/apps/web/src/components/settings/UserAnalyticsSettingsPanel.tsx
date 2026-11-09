@@ -9,6 +9,8 @@ import { Button } from "../ui/button";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { getDisplayModelName, getModelProviderPresentation } from "../chat/providerIconUtils";
 import { SettingsPageContainer } from "./settingsLayout";
+import { fetchPrimaryEnvironment } from "../../environments/primary/httpLayer";
+import { resolvePrimaryEnvironmentHttpUrl } from "../../environments/primary/target";
 
 const WINDOWS = [7, 30, 90] as const;
 type WindowDays = (typeof WINDOWS)[number];
@@ -28,6 +30,65 @@ type ModelUsage = {
   readonly costUsd: number;
   readonly costEvents: number;
 };
+
+type CodexRateWindow = {
+  readonly usedPercent: number;
+  readonly resetAt?: number;
+  readonly durationSeconds?: number;
+};
+
+type CodexRateLimitData = {
+  readonly planType?: string;
+  readonly windows: ReadonlyArray<{ readonly label: string; readonly data: CodexRateWindow }>;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function parseCodexRateLimits(value: unknown): CodexRateLimitData | undefined {
+  const response = asRecord(value);
+  const rateLimit = asRecord(response?.rate_limit);
+  if (!rateLimit) return undefined;
+  const windows = Object.entries(rateLimit)
+    .filter(([key]) => key.endsWith("_window"))
+    .flatMap(([key, value]) => {
+      const window = asRecord(value);
+      const usedPercent = window?.used_percent;
+      if (typeof usedPercent !== "number" || !Number.isFinite(usedPercent)) return [];
+      const data: CodexRateWindow = {
+        usedPercent: Math.min(100, Math.max(0, usedPercent)),
+        ...(typeof window.reset_at === "number" ? { resetAt: window.reset_at } : {}),
+        ...(typeof window.limit_window_seconds === "number"
+          ? { durationSeconds: window.limit_window_seconds }
+          : {}),
+      };
+      const label =
+        data.durationSeconds === 18000
+          ? "5-hour limit"
+          : data.durationSeconds === 604800
+            ? "7-day limit"
+            : key.replace(/_/gu, " ").replace(/ window$/u, " limit");
+      return [{ label, data }];
+    });
+  if (windows.length === 0) return undefined;
+  return {
+    ...(typeof response?.plan_type === "string" ? { planType: response.plan_type } : {}),
+    windows,
+  };
+}
+
+function formatResetAt(timestamp: number | undefined): string | undefined {
+  if (timestamp === undefined || !Number.isFinite(timestamp)) return undefined;
+  const date = new Date(timestamp * 1000);
+  if (!Number.isFinite(date.getTime())) return undefined;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
 
 function numberOrZero(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
@@ -154,6 +215,88 @@ function MiniTrend({
         <span>{formatDate(chartRows[chartRows.length - 1]!.date)}</span>
       </div>
     </div>
+  );
+}
+
+function CodexRateLimits({ refreshKey }: { refreshKey: number }) {
+  const [limits, setLimits] = useState<CodexRateLimitData | false | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLimits(null);
+    void (async () => {
+      try {
+        const authResponse = await fetchPrimaryEnvironment(
+          resolvePrimaryEnvironmentHttpUrl("/api/sparky/codex-auth"),
+        );
+        if (!authResponse.ok) throw new Error("Could not read ChatGPT authentication status.");
+        const auth = asRecord(await authResponse.json());
+        if (!auth?.authenticated || !auth.planUsageAuthorized) {
+          if (!cancelled) setLimits(false);
+          return;
+        }
+        const usageResponse = await fetchPrimaryEnvironment(
+          resolvePrimaryEnvironmentHttpUrl("/api/sparky/codex-usage"),
+          { signal: AbortSignal.timeout(20_000) },
+        );
+        if (!usageResponse.ok) throw new Error("Could not read ChatGPT subscription limits.");
+        const data = parseCodexRateLimits(await usageResponse.json());
+        if (!cancelled) setLimits(data ?? false);
+      } catch {
+        if (!cancelled) setLimits(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  if (!limits) return null;
+  return (
+    <section
+      aria-label="ChatGPT subscription rate limits"
+      className="flex flex-col gap-3 border-t pt-4"
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-sm font-medium text-foreground">ChatGPT plan limits</h2>
+        {limits.planType ? (
+          <span className="text-xs capitalize text-muted-foreground">{limits.planType} plan</span>
+        ) : null}
+      </div>
+      <div className="flex flex-col gap-3">
+        {limits.windows.map(({ label, data }) => (
+          <div key={label} className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="text-muted-foreground">{label}</span>
+              <span className="font-medium tabular-nums text-foreground">
+                {formatPercent(data.usedPercent / 100)} used
+              </span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label={`${label}: ${formatPercent(data.usedPercent / 100)} used`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={data.usedPercent}
+              className="h-1.5 overflow-hidden rounded-full bg-muted"
+            >
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${data.usedPercent}%` }}
+              />
+            </div>
+            {formatResetAt(data.resetAt) ? (
+              <span className="text-2xs text-muted-foreground">
+                Resets {formatResetAt(data.resetAt)}
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <p className="text-2xs text-muted-foreground">
+        Subscription limits from OpenAI; they are separate from API cost estimates.
+      </p>
+    </section>
   );
 }
 
@@ -314,6 +457,7 @@ export function UserAnalyticsSettingsPanel() {
                     : `${formatCount(totals.turns)} turns`}
                 </span>
               </div>
+              {metric === "cost" ? <CodexRateLimits refreshKey={refreshToken} /> : null}
 
               {modelRows.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No model usage recorded yet.</p>

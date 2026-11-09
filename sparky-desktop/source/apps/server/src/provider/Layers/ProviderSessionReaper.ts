@@ -33,6 +33,25 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
     );
     const sweepIntervalMs = Math.max(1, options?.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS);
 
+    const stopAllSessions = Effect.gen(function* () {
+      const bindings = yield* directory.listBindings();
+      for (const binding of bindings) {
+        if (binding.status === "stopped") {
+          continue;
+        }
+
+        yield* providerService.stopSession({ threadId: binding.threadId }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("provider.session.shutdown-stop-failed", {
+              threadId: binding.threadId,
+              provider: binding.provider,
+              cause,
+            }),
+          ),
+        );
+      }
+    });
+
     const sweep = Effect.gen(function* () {
       const bindings = yield* directory.listBindings();
       const now = yield* Clock.currentTimeMillis;
@@ -105,6 +124,12 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
 
     const start: ProviderSessionReaperShape["start"] = () =>
       Effect.gen(function* () {
+        // A server restart cannot resume an in-flight turn safely. Reconcile
+        // persisted provider sessions before accepting new work, and stop live
+        // sessions again during graceful shutdown.
+        yield* stopAllSessions;
+        yield* Effect.addFinalizer(() => stopAllSessions);
+
         yield* Effect.forkScoped(
           sweep.pipe(
             Effect.catch((error: unknown) =>

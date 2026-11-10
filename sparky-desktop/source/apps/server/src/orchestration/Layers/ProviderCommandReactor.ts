@@ -30,7 +30,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { makeDrainableWorker } from "@sparky/shared/DrainableWorker";
+import { makePartitionedDrainableWorker } from "@sparky/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { ServerConfig } from "../../config.ts";
@@ -1449,7 +1449,14 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const worker = yield* makeDrainableWorker(processDomainEventSafely);
+  // Per-thread FIFO is required for start/interrupt/approval, but serializing
+  // all threads behind one slow provider operation causes head-of-line stalls.
+  // Four bounded lanes let unrelated threads advance independently.
+  const worker = yield* makePartitionedDrainableWorker(
+    processDomainEventSafely,
+    (event) => event.aggregateId,
+    4,
+  );
 
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {
     const processEvent = Effect.fn("processEvent")(function* (event: OrchestrationEvent) {

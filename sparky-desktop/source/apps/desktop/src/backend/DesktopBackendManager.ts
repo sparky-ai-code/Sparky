@@ -85,6 +85,8 @@ export interface DesktopBackendStartConfig {
   readonly bootstrap: DesktopBackendBootstrapValue;
   readonly bootstrapDelivery: DesktopBackendBootstrapDelivery;
   readonly httpBaseUrl: URL;
+  /** Optional override for backend readiness deadlines, including tests. */
+  readonly readinessTimeout?: Duration.Duration;
   readonly captureOutput: boolean;
   readonly preflightFailure: Option.Option<PreflightFailure>;
   // Present for a WSL run after the configured/default distro has been
@@ -150,7 +152,6 @@ type BackendProcessError =
   | BackendTimeoutError;
 
 interface RunBackendProcessOptions extends DesktopBackendStartConfig {
-  readonly readinessTimeout?: Duration.Duration;
   readonly onStarted?: (pid: number) => Effect.Effect<void>;
   readonly onReady?: () => Effect.Effect<void>;
   readonly onReadinessFailure?: (error: BackendTimeoutError) => Effect.Effect<void>;

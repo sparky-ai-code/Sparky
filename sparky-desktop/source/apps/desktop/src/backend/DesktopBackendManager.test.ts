@@ -292,14 +292,17 @@ describe("DesktopBackendManager", () => {
             Effect.gen(function* () {
               const scope = yield* Scope.Scope;
               const attempt = yield* Ref.updateAndGet(attempts, (value) => value + 1);
+              const childExited = yield* Deferred.make<void>();
+              // Closing this fake child's scope must also settle exitCode,
+              // just like a real child exiting after SIGTERM.
               yield* Scope.addFinalizer(
                 scope,
-                Queue.offer(closed, undefined).pipe(Effect.asVoid),
+                Deferred.succeed(childExited, undefined).pipe(
+                  Effect.andThen(Queue.offer(closed, undefined)),
+                  Effect.asVoid,
+                ),
               );
               yield* Queue.offer(starts, attempt);
-              // A real SIGTERM makes the backend exit; a never-ending fake
-              // exitCode would prevent the child-process scope from closing.
-              const childExited = yield* Deferred.make<void>();
               return makeProcess({
                 exitCode: Deferred.await(childExited).pipe(
                   Effect.as(ChildProcessSpawner.ExitCode(0)),
@@ -325,45 +328,22 @@ describe("DesktopBackendManager", () => {
         });
 
         yield* instance.start;
-        console.error("[readiness-test] instance started");
         assert.equal(yield* Queue.take(starts), 1);
         yield* Deferred.await(firstProbe);
-        console.error("[readiness-test] first probe completed");
         assert.isFalse((yield* instance.snapshot).ready);
 
         yield* TestClock.adjust(Duration.millis(250));
-        console.error("[readiness-test] test clock advanced");
         // Readiness timeout must close the hung child before scheduling a retry.
-        yield* Queue.take(closed).pipe(
-          Effect.timeoutOrElse({
-            duration: "1 second",
-            orElse: () => Effect.die(new Error("Readiness test: child scope did not close after timeout")),
-          }),
-          TestClock.withLive,
-        );
-        console.error("[readiness-test] child scope closed");
+        yield* Queue.take(closed);
         for (let i = 0; i < 100; i += 1) {
           if ((yield* instance.snapshot).restartScheduled) break;
           yield* Effect.yieldNow;
         }
         assert.isTrue((yield* instance.snapshot).restartScheduled);
-        console.error("[readiness-test] restart scheduled");
         assert.isFalse((yield* instance.snapshot).ready);
 
         yield* TestClock.adjust(Duration.millis(500));
-        console.error("[readiness-test] restart delay advanced");
-        yield* Effect.yieldNow;
-        console.error("[readiness-test] post-delay state", yield* instance.snapshot);
-        assert.equal(
-          yield* Queue.take(starts).pipe(
-            Effect.timeoutOrElse({
-              duration: "1 second",
-              orElse: () => Effect.die(new Error("Readiness test: replacement child did not spawn")),
-            }),
-            TestClock.withLive,
-          ),
-          2,
-        );
+        assert.equal(yield* Queue.take(starts), 2);
         yield* instance.stop();
       }).pipe(Effect.provide(TestClock.layer())),
     ),

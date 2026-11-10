@@ -411,7 +411,13 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     // reset the idle liveness check. Keep an absolute deadline for each probe.
     let nextHeartbeatAt = (yield* Clock.currentTimeMillis) + CONNECTION_HEARTBEAT_INTERVAL_MS;
     for (;;) {
-      const remainingMs = Math.max(0, nextHeartbeatAt - (yield* Clock.currentTimeMillis));
+      const remainingMs = nextHeartbeatAt - (yield* Clock.currentTimeMillis);
+      if (remainingMs <= 0) {
+        // A flood of already-queued signals must not win every zero-delay race.
+        yield* probeConnectedLease();
+        nextHeartbeatAt = (yield* Clock.currentTimeMillis) + CONNECTION_HEARTBEAT_INTERVAL_MS;
+        continue;
+      }
       const next = yield* Effect.raceFirst(
         Queue.take(signals).pipe(Effect.map((signal) => ({ _tag: "Signal" as const, signal }))),
         Effect.sleep(remainingMs).pipe(

@@ -163,8 +163,8 @@ describe("environment RPC", () => {
       yield* SubscriptionRef.update(supervisor.state, (state) => ({
         ...state,
         desired: true,
-        phase: "connecting",
-        stage: "opening",
+        phase: "connecting" as const,
+        stage: "opening" as const,
       }));
       const requestFiber = yield* request(WS_METHODS.cloudGetRelayClientStatus, {}).pipe(
         Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
@@ -200,8 +200,8 @@ describe("environment RPC", () => {
       yield* SubscriptionRef.update(supervisor.state, (state) => ({
         ...state,
         desired: true,
-        phase: "connecting",
-        stage: "opening",
+        phase: "connecting" as const,
+        stage: "opening" as const,
       }));
       const fiber = yield* request(WS_METHODS.cloudGetRelayClientStatus, {}).pipe(
         Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),

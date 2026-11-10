@@ -352,7 +352,18 @@ describe("DesktopBackendManager", () => {
 
         yield* TestClock.adjust(Duration.millis(500));
         console.error("[readiness-test] restart delay advanced");
-        assert.equal(yield* Queue.take(starts), 2);
+        yield* Effect.yieldNow;
+        console.error("[readiness-test] post-delay state", yield* instance.snapshot);
+        assert.equal(
+          yield* Queue.take(starts).pipe(
+            Effect.timeoutOrElse({
+              duration: "1 second",
+              orElse: () => Effect.die(new Error("Readiness test: replacement child did not spawn")),
+            }),
+            TestClock.withLive,
+          ),
+          2,
+        );
         yield* instance.stop();
       }).pipe(Effect.provide(TestClock.layer())),
     ),

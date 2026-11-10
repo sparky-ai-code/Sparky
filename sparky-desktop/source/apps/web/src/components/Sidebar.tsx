@@ -212,6 +212,7 @@ import {
   formatThreadRunDuration,
   resolveThreadRowClassName,
   resolveThreadStatusPill,
+  shouldShowThreadInFocusMode,
   orderItemsByPreferredIds,
   shouldClearThreadSelectionOnMouseDown,
   sortProjectsForSidebar,
@@ -452,7 +453,6 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     },
     [routeThreadRef, setSplit, threadRef],
   );
-  const focusMode = useClientSettings((settings) => settings.focusMode);
   const isPinned = useUiStateStore((state) => state.pinnedThreadKeys.includes(threadKey));
   const toggleThreadPinned = useUiStateStore((state) => state.toggleThreadPinned);
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
@@ -545,7 +545,6 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   const prStatus = prStatusIndicator(pr, gitStatus.data?.sourceControlProvider);
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const isConfirmingArchive = confirmingArchiveThreadKey === threadKey && !isThreadRunning;
-  const isDimmedInFocusMode = focusMode && threadStatus?.label !== "Completed";
   const clearConfirmingArchive = useCallback(() => {
     setConfirmingArchiveThreadKey((current) => (current === threadKey ? null : current));
   }, [setConfirmingArchiveThreadKey, threadKey]);
@@ -753,9 +752,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
         className={`${resolveThreadRowClassName({
           isActive,
           isSelected,
-        })} relative isolate !h-auto min-h-20 items-start gap-2 py-2.5 ${
-          isDimmedInFocusMode ? "opacity-55 grayscale-[0.65]" : ""
-        }`}
+        })} relative isolate !h-auto min-h-20 items-start gap-2 py-2.5`}
         onClick={handleRowClick}
         onDoubleClick={handleRowDoubleClick}
         onKeyDown={handleRowKeyDown}
@@ -3132,14 +3129,24 @@ const SidebarChatsSection = memo(function SidebarChatsSection(props: SidebarChat
     },
     [lastVisitedAtByThreadKey],
   );
+  const focusMode = useClientSettings((settings) => settings.focusMode);
+  const listedThreads = useMemo(
+    () =>
+      focusMode
+        ? visibleThreads.filter((thread) =>
+            shouldShowThreadInFocusMode(resolveChatThreadStatus(thread)?.label ?? null),
+          )
+        : visibleThreads,
+    [focusMode, resolveChatThreadStatus, visibleThreads],
+  );
   const sidebarThreadPreviewCount = useClientSettings<SidebarThreadPreviewCount>(
     (settings) => settings.sidebarThreadPreviewCount,
   );
-  const hasOverflowingThreads = visibleThreads.length > sidebarThreadPreviewCount;
+  const hasOverflowingThreads = listedThreads.length > sidebarThreadPreviewCount;
   const renderedThreads = useMemo(() => {
-    if (isThreadListExpanded || !hasOverflowingThreads) return visibleThreads;
-    return visibleThreads.slice(0, sidebarThreadPreviewCount);
-  }, [hasOverflowingThreads, isThreadListExpanded, sidebarThreadPreviewCount, visibleThreads]);
+    if (isThreadListExpanded || !hasOverflowingThreads) return listedThreads;
+    return listedThreads.slice(0, sidebarThreadPreviewCount);
+  }, [hasOverflowingThreads, isThreadListExpanded, listedThreads, sidebarThreadPreviewCount]);
   const hiddenThreadStatus = useMemo(() => {
     const renderedKeys = new Set(
       renderedThreads.map((thread) =>
@@ -3147,20 +3154,20 @@ const SidebarChatsSection = memo(function SidebarChatsSection(props: SidebarChat
       ),
     );
     return resolveProjectStatusIndicator(
-      visibleThreads
+      listedThreads
         .filter(
           (thread) =>
             !renderedKeys.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
         )
         .map(resolveChatThreadStatus),
     );
-  }, [renderedThreads, resolveChatThreadStatus, visibleThreads]);
+  }, [listedThreads, renderedThreads, resolveChatThreadStatus]);
   const orderedThreadKeys = useMemo(
     () =>
-      visibleThreads.map((thread) =>
+      listedThreads.map((thread) =>
         scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
       ),
-    [visibleThreads],
+    [listedThreads],
   );
 
   const navigateToThread = useCallback(
@@ -3447,7 +3454,7 @@ const SidebarChatsSection = memo(function SidebarChatsSection(props: SidebarChat
             hiddenThreadStatus={hiddenThreadStatus}
             orderedProjectThreadKeys={orderedThreadKeys}
             renderedThreads={renderedThreads}
-            showEmptyThreadState={visibleThreads.length === 0}
+            showEmptyThreadState={listedThreads.length === 0}
             shouldShowThreadPanel={true}
             isThreadListExpanded={isThreadListExpanded}
             projectCwd={null}

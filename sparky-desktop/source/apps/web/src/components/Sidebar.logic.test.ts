@@ -23,6 +23,7 @@ import {
   formatThreadRunDuration,
   resolveThreadRowClassName,
   resolveThreadStatusPill,
+  shouldShowThreadInFocusMode,
   shouldClearThreadSelectionOnMouseDown,
   sortProjectsForSidebar,
   sortScopedProjectsForSidebar,
@@ -690,6 +691,22 @@ describe("isContextMenuPointerDown", () => {
         isMac: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("shouldShowThreadInFocusMode", () => {
+  it("keeps completed, failed, and attention-needed threads visible", () => {
+    expect(shouldShowThreadInFocusMode("Completed")).toBe(true);
+    expect(shouldShowThreadInFocusMode("Error")).toBe(true);
+    expect(shouldShowThreadInFocusMode("Pending Approval")).toBe(true);
+    expect(shouldShowThreadInFocusMode("Awaiting Input")).toBe(true);
+  });
+
+  it("hides active and otherwise unsettled threads", () => {
+    expect(shouldShowThreadInFocusMode("Working")).toBe(false);
+    expect(shouldShowThreadInFocusMode("Connecting")).toBe(false);
+    expect(shouldShowThreadInFocusMode("Plan Ready")).toBe(false);
+    expect(shouldShowThreadInFocusMode(null)).toBe(false);
   });
 });
 

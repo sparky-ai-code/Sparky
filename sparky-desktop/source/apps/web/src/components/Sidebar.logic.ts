@@ -117,6 +117,17 @@ export interface ThreadStatusPill {
   pulse: boolean;
 }
 
+export function shouldShowThreadInFocusMode(
+  status: ThreadStatusPill["label"] | null,
+): boolean {
+  return (
+    status === "Completed" ||
+    status === "Error" ||
+    status === "Pending Approval" ||
+    status === "Awaiting Input"
+  );
+}
+
 export function formatThreadRunDuration(
   thread: Pick<SidebarThreadSummary, "latestTurn" | "session">,
   nowMs = Date.now(),

@@ -303,6 +303,12 @@ describe("DesktopBackendManager", () => {
         );
         const instance = yield* makeTestInstance({
           spawnerLayer,
+          config: {
+            ...baseConfig,
+            // Avoid simulating 600 individual readiness probes to hit the
+            // production one-minute deadline in this fake-clock test.
+            readinessTimeout: Duration.millis(250),
+          },
           httpClientLayer: httpClientLayer(() =>
             Deferred.succeed(firstProbe, undefined).pipe(Effect.andThen(Effect.never)),
           ),
@@ -313,7 +319,7 @@ describe("DesktopBackendManager", () => {
         yield* Deferred.await(firstProbe);
         assert.isFalse((yield* instance.snapshot).ready);
 
-        yield* TestClock.adjust(Duration.minutes(1));
+        yield* TestClock.adjust(Duration.millis(250));
         // Readiness timeout must close the hung child before scheduling a retry.
         yield* Queue.take(closed);
         for (let i = 0; i < 100; i += 1) {

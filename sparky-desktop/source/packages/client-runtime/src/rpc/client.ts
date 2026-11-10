@@ -180,6 +180,11 @@ interface SubscriptionOptions<TTag extends EnvironmentSubscriptionRpcTag> {
     cause: Cause.Cause<EnvironmentRpcStreamFailure<TTag>>,
   ) => Effect.Effect<void, never, never>;
   readonly retryExpectedFailureAfter?: Duration.Input;
+  /** A failed subscription need not mean its shared session was closed. */
+  readonly retryTransportFailureAfter?: Duration.Input;
+  readonly onTransportFailure?: (
+    cause: Cause.Cause<EnvironmentRpcStreamFailure<TTag>>,
+  ) => Effect.Effect<void, never, never>;
   readonly resubscribe?: Stream.Stream<unknown, never, never>;
 }
 
@@ -236,16 +241,31 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                                     reason._tag === "Fail" && isRpcClientError(reason.error),
                                 );
                               if (isTransportFailure) {
-                                return Stream.fromEffect(
+                                const handled = Stream.fromEffect(
                                   Effect.logWarning(
-                                    "Durable RPC subscription lost its transport; waiting for the next session.",
+                                    "Durable RPC subscription lost its transport; awaiting recovery.",
                                     {
                                       cause: Cause.pretty(cause),
                                       method: tag,
                                       environmentId: supervisor.target.environmentId,
                                     },
+                                  ).pipe(
+                                    Effect.andThen(
+                                      options?.onTransportFailure?.(cause) ?? Effect.void,
+                                    ),
                                   ),
                                 ).pipe(Stream.drain);
+                                if (options?.retryTransportFailureAfter === undefined) {
+                                  return handled;
+                                }
+                                return handled.pipe(
+                                  Stream.concat(
+                                    Stream.fromEffect(
+                                      Effect.sleep(options.retryTransportFailureAfter),
+                                    ).pipe(Stream.drain),
+                                  ),
+                                  Stream.concat(subscribeToSession()),
+                                );
                               }
                               if (
                                 hasOnlyExpectedFailures &&

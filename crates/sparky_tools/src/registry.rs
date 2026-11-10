@@ -187,7 +187,7 @@ mod tests {
                 "grep",
                 "find",
                 "web_search",
-                        "update_plan",
+                "update_plan",
                 "end_task",
             ]
         );

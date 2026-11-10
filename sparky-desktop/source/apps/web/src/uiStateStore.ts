@@ -20,6 +20,7 @@ export interface PersistedUiState {
   projectExpandedById?: Record<string, boolean>;
   projectOrder?: string[];
   pinnedThreadKeys?: string[];
+  parkedThreadKeys?: string[];
   threadLastVisitedAtById?: Record<string, string>;
   collapsedProjectCwds?: string[];
   expandedProjectCwds?: string[];
@@ -35,6 +36,7 @@ export interface UiProjectState {
 
 export interface UiPinnedThreadState {
   pinnedThreadKeys: string[];
+  parkedThreadKeys: string[];
 }
 
 export interface UiThreadState {
@@ -53,6 +55,7 @@ const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
   pinnedThreadKeys: [],
+  parkedThreadKeys: [],
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
@@ -131,6 +134,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
     projectExpandedById,
     projectOrder,
     pinnedThreadKeys: sanitizeStringArray(parsed.pinnedThreadKeys),
+    parkedThreadKeys: sanitizeStringArray(parsed.parkedThreadKeys),
     threadLastVisitedAtById: sanitizeTimestampRecord(parsed.threadLastVisitedAtById),
     threadChangedFilesExpandedById: sanitizePersistedThreadChangedFilesExpanded(
       parsed.threadChangedFilesExpandedById,
@@ -217,6 +221,7 @@ export function persistState(state: UiState): void {
         projectExpandedById,
         projectOrder: state.projectOrder,
         pinnedThreadKeys: state.pinnedThreadKeys,
+        parkedThreadKeys: state.parkedThreadKeys,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpandedById,
@@ -387,6 +392,21 @@ export function toggleThreadPinned(state: UiState, threadKey: string): UiState {
   };
 }
 
+/** Parked threads remain fully live; this only changes their sidebar location. */
+export function setThreadParked(state: UiState, threadKey: string, parked: boolean): UiState {
+  if (!threadKey || state.parkedThreadKeys.includes(threadKey) === parked) return state;
+  return {
+    ...state,
+    parkedThreadKeys: parked
+      ? [threadKey, ...state.parkedThreadKeys]
+      : state.parkedThreadKeys.filter((key) => key !== threadKey),
+    // A parked thread cannot also occupy the pinned section.
+    pinnedThreadKeys: parked
+      ? state.pinnedThreadKeys.filter((key) => key !== threadKey)
+      : state.pinnedThreadKeys,
+  };
+}
+
 export function reorderProjects(
   state: UiState,
   currentProjectOrder: readonly string[],
@@ -438,6 +458,7 @@ interface UiStateStore extends UiState {
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   toggleThreadPinned: (threadKey: string) => void;
+  setThreadParked: (threadKey: string, parked: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
     draggedProjectIds: readonly string[],
@@ -458,6 +479,7 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
   toggleThreadPinned: (threadKey) => set((state) => toggleThreadPinned(state, threadKey)),
+  setThreadParked: (threadKey, parked) => set((state) => setThreadParked(state, threadKey, parked)),
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>
     set((state) =>
       reorderProjects(state, currentProjectOrder, draggedProjectIds, targetProjectIds),

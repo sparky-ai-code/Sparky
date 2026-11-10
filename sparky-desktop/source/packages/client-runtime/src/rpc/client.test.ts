@@ -385,6 +385,42 @@ describe("environment RPC", () => {
     }),
   );
 
+  it.effect("resubscribes a silently completed durable stream on the same session", () =>
+    Effect.gen(function* () {
+      const attempts = yield* Ref.make(0);
+      const client = {
+        [WS_METHODS.subscribeTerminalEvents]: () =>
+          Stream.unwrap(
+            Ref.updateAndGet(attempts, (n) => n + 1).pipe(
+              Effect.map((n) => (n === 1 ? Stream.empty : Stream.never)),
+            ),
+          ),
+      } as unknown as WsRpcProtocolClient;
+      const { activeSession, supervisor } = yield* makeHarness();
+      yield* SubscriptionRef.set(activeSession, Option.some(session(client)));
+
+      const fiber = yield* subscribe(WS_METHODS.subscribeTerminalEvents, {}, {
+        retryUnexpectedCompletionAfter: "1 second",
+      }).pipe(
+        Stream.runDrain,
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.forkChild,
+      );
+
+      for (let n = 0; n < 100 && (yield* Ref.get(attempts)) < 1; n += 1) {
+        yield* Effect.yieldNow;
+      }
+      expect(yield* Ref.get(attempts)).toBe(1);
+      yield* TestClock.adjust("1 second");
+      for (let n = 0; n < 100 && (yield* Ref.get(attempts)) < 2; n += 1) {
+        yield* Effect.yieldNow;
+      }
+
+      expect(yield* Ref.get(attempts)).toBe(2);
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+
   it.effect("surfaces domain subscription failures without reconnecting", () =>
     Effect.gen(function* () {
       const domainError = new Error("terminal subscription rejected");

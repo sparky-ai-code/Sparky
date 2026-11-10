@@ -37,7 +37,7 @@ jobs:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - name: Test client reconnection and thread synchronization
-        run: pnpm --filter @sparky/client-runtime exec vp test run src/connection/supervisor.test.ts src/rpc/client.test.ts src/state/threads-sync.test.ts
+        run: pnpm --filter @sparky/client-runtime exec vp test run src/connection/supervisor.test.ts src/rpc/client.test.ts src/state/threads-sync.test.ts src/state/shell-sync.test.ts
       - name: Test partitioned worker fairness
         run: pnpm --filter @sparky/shared exec vp test run src/DrainableWorker.test.ts
       - name: Test provider reactor and runtime ingestion

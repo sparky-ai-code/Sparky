@@ -325,21 +325,33 @@ describe("DesktopBackendManager", () => {
         });
 
         yield* instance.start;
+        console.error("[readiness-test] instance started");
         assert.equal(yield* Queue.take(starts), 1);
         yield* Deferred.await(firstProbe);
+        console.error("[readiness-test] first probe completed");
         assert.isFalse((yield* instance.snapshot).ready);
 
         yield* TestClock.adjust(Duration.millis(250));
+        console.error("[readiness-test] test clock advanced");
         // Readiness timeout must close the hung child before scheduling a retry.
-        yield* Queue.take(closed);
+        yield* Queue.take(closed).pipe(
+          Effect.timeoutOrElse({
+            duration: "1 second",
+            orElse: () => Effect.die(new Error("Readiness test: child scope did not close after timeout")),
+          }),
+          TestClock.withLive,
+        );
+        console.error("[readiness-test] child scope closed");
         for (let i = 0; i < 100; i += 1) {
           if ((yield* instance.snapshot).restartScheduled) break;
           yield* Effect.yieldNow;
         }
         assert.isTrue((yield* instance.snapshot).restartScheduled);
+        console.error("[readiness-test] restart scheduled");
         assert.isFalse((yield* instance.snapshot).ready);
 
         yield* TestClock.adjust(Duration.millis(500));
+        console.error("[readiness-test] restart delay advanced");
         assert.equal(yield* Queue.take(starts), 2);
         yield* instance.stop();
       }).pipe(Effect.provide(TestClock.layer())),

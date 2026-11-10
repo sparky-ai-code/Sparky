@@ -297,7 +297,15 @@ describe("DesktopBackendManager", () => {
                 Queue.offer(closed, undefined).pipe(Effect.asVoid),
               );
               yield* Queue.offer(starts, attempt);
-              return makeProcess({ exitCode: Effect.never });
+              // A real SIGTERM makes the backend exit; a never-ending fake
+              // exitCode would prevent the child-process scope from closing.
+              const childExited = yield* Deferred.make<void>();
+              return makeProcess({
+                exitCode: Deferred.await(childExited).pipe(
+                  Effect.as(ChildProcessSpawner.ExitCode(0)),
+                ),
+                kill: () => Deferred.succeed(childExited, undefined).pipe(Effect.asVoid),
+              });
             }),
           ),
         );

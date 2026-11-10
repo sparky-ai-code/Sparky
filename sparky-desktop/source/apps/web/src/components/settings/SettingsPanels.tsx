@@ -581,7 +581,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           title="Focus Mode"
-          description="Dim working and inactive threads so completed work stays easy to scan."
+          description="Keep unattended running threads in a collapsible Working shelf until they finish or need you. Park threads manually to keep them out of the active list without stopping their agents."
           resetAction={
             settings.focusMode !== DEFAULT_UNIFIED_SETTINGS.focusMode ? (
               <SettingResetButton

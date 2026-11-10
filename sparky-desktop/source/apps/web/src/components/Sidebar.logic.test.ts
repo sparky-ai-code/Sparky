@@ -119,6 +119,13 @@ describe("archiveSelectedThreadEntries", () => {
 });
 
 describe("buildMultiSelectThreadContextMenuItems", () => {
+  it("allows parking running threads without archiving them", () => {
+    expect(buildMultiSelectThreadContextMenuItems({
+      count: 2,
+      hasRunningThread: true,
+    })).toContainEqual({ id: "park", label: "Park (2)" });
+  });
+
   it("offers bulk archive with the selected count", () => {
     expect(
       buildMultiSelectThreadContextMenuItems({ count: 3, hasRunningThread: false }),

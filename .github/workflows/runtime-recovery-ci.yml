@@ -38,6 +38,8 @@ jobs:
         run: pnpm --filter @sparky/client-runtime exec vp test run src/connection/supervisor.test.ts src/rpc/client.test.ts src/state/threads-sync.test.ts
       - name: Test partitioned worker fairness
         run: pnpm --filter @sparky/shared exec vp test run src/DrainableWorker.test.ts
+      - name: Test provider reactor and runtime ingestion
+        run: pnpm --filter t3 exec vp test run src/orchestration/Layers/ProviderCommandReactor.test.ts src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
       - name: Test indexed event replay
         run: pnpm --filter t3 exec vp test run src/persistence/Layers/OrchestrationEventStore.test.ts
       - name: Test stale thread cursor recovery over WebSocket

@@ -13,6 +13,7 @@ import {
   resolveProjectExpanded,
   setDefaultAdvertisedEndpointKey,
   setProjectExpanded,
+  setThreadParked,
   setThreadChangedFilesExpanded,
   toggleThreadPinned,
   type UiState,
@@ -23,6 +24,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectExpandedById: {},
     projectOrder: [],
     pinnedThreadKeys: [],
+    parkedThreadKeys: [],
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
@@ -143,6 +145,14 @@ describe("uiStateStore pure functions", () => {
     });
   });
 
+  it("parks and restores threads while clearing their pinned position", () => {
+    const first = setThreadParked(makeUiState({ pinnedThreadKeys: ["env:a"] }), "env:a", true);
+    expect(first.parkedThreadKeys).toEqual(["env:a"]);
+    expect(first.pinnedThreadKeys).toEqual([]);
+    expect(setThreadParked(first, "env:a", true)).toBe(first);
+    expect(setThreadParked(first, "env:a", false).parkedThreadKeys).toEqual([]);
+  });
+
   it("toggles multiple pinned threads without duplicating keys", () => {
     const pinned = toggleThreadPinned(makeUiState(), "environment:thread-1");
     const pinnedTwice = toggleThreadPinned(pinned, "environment:thread-2");
@@ -163,6 +173,7 @@ describe("parsePersistedState", () => {
       },
       projectOrder: ["physical-b", "", "physical-a", "physical-b"],
       pinnedThreadKeys: ["environment:thread-2", "environment:thread-1", "environment:thread-2"],
+      parkedThreadKeys: ["environment:thread-3", "", "environment:thread-3"],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
         invalid: "not-a-date",
@@ -182,6 +193,7 @@ describe("parsePersistedState", () => {
       },
       projectOrder: ["physical-b", "physical-a"],
       pinnedThreadKeys: ["environment:thread-2", "environment:thread-1"],
+      parkedThreadKeys: ["environment:thread-3"],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
@@ -267,6 +279,7 @@ describe("uiStateStore persistence", () => {
       },
       projectOrder: ["physical-b", "physical-a"],
       pinnedThreadKeys: ["environment:thread-2", "environment:thread-1"],
+      parkedThreadKeys: ["environment:thread-3"],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
@@ -290,6 +303,7 @@ describe("uiStateStore persistence", () => {
       },
       projectOrder: ["physical-b", "physical-a"],
       pinnedThreadKeys: ["environment:thread-2", "environment:thread-1"],
+      parkedThreadKeys: ["environment:thread-3"],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },

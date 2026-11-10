@@ -23,7 +23,7 @@ pub use memory::{
     MemoryTool, SharedMemoryStore, MEMORY_ADD_TOOL_NAME, MEMORY_DELETE_TOOL_NAME,
     MEMORY_SEARCH_TOOL_NAME, MEMORY_UPDATE_TOOL_NAME,
 };
-pub use plan::{AskUserTool, EndTaskTool, UpdatePlanTool, END_TASK_TOOL_NAME};
+pub use plan::{EndTaskTool, UpdatePlanTool, END_TASK_TOOL_NAME};
 pub use read::ReadTool;
 pub use registry::{is_hidden_control_tool, ToolRegistry};
 pub use tool::{Tool, ToolExecutionMode, ToolExecutionResult};

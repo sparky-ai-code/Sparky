@@ -539,7 +539,6 @@ export function sparkyToolPresentation(
         ? "search"
         : normalizedName;
   const titleByName: Record<string, string> = {
-    ask_user: "Ask user",
     bash: "Terminal",
     bash_monitor: "Terminal",
     edit: "Edit file",

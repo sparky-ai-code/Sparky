@@ -4,7 +4,7 @@ use crate::find::FindTool;
 use crate::grep::GrepTool;
 use crate::ls::LsTool;
 use crate::memory::{MemoryTool, SharedMemoryStore, MEMORY_SEARCH_TOOL_NAME};
-use crate::plan::{AskUserTool, EndTaskTool, UpdatePlanTool, END_TASK_TOOL_NAME};
+use crate::plan::{EndTaskTool, UpdatePlanTool, END_TASK_TOOL_NAME};
 use crate::read::ReadTool;
 use crate::tool::Tool;
 use crate::web_search::WebSearchTool;
@@ -26,14 +26,13 @@ pub struct ToolRegistry {
 
 impl ToolRegistry {
     const PLAN_ONLY_TOOL_NAMES: [&'static str; 1] = ["update_plan"];
-    const PLAN_TOOL_NAMES: [&'static str; 9] = [
+    const PLAN_TOOL_NAMES: [&'static str; 8] = [
         "read",
         "ls",
         "grep",
         "find",
         "web_search",
         MEMORY_SEARCH_TOOL_NAME,
-        "ask_user",
         "update_plan",
         END_TASK_TOOL_NAME,
     ];
@@ -54,7 +53,6 @@ impl ToolRegistry {
     pub fn with_project_free(_limits: ToolOutputLimits) -> Self {
         let mut reg = Self::default();
         reg.register_builtin(Arc::new(WebSearchTool));
-        reg.register_builtin(Arc::new(AskUserTool));
         reg.register_builtin(Arc::new(UpdatePlanTool));
         reg.register_builtin(Arc::new(EndTaskTool));
         reg
@@ -72,7 +70,6 @@ impl ToolRegistry {
         reg.register_builtin(Arc::new(GrepTool));
         reg.register_builtin(Arc::new(WebSearchTool));
         reg.register_builtin(Arc::new(FindTool));
-        reg.register_builtin(Arc::new(AskUserTool));
         reg.register_builtin(Arc::new(UpdatePlanTool));
         reg.register_builtin(Arc::new(EndTaskTool));
         reg
@@ -165,7 +162,7 @@ mod tests {
                 "unexpected project tool: {name}"
             );
         }
-        for name in ["web_search", "ask_user", "update_plan", END_TASK_TOOL_NAME] {
+        for name in ["web_search", "update_plan", END_TASK_TOOL_NAME] {
             assert!(
                 registry.get(name).is_some(),
                 "missing project-free tool: {name}"
@@ -190,8 +187,7 @@ mod tests {
                 "grep",
                 "find",
                 "web_search",
-                "ask_user",
-                "update_plan",
+                        "update_plan",
                 "end_task",
             ]
         );
@@ -204,6 +200,31 @@ mod tests {
             .get_schemas_for_mode(false)
             .iter()
             .any(|schema| schema.name == "update_plan"));
+    }
+
+    #[test]
+    fn ask_user_is_not_registered_or_advertised() {
+        let registry = ToolRegistry::new();
+        assert!(registry.get("ask_user").is_none());
+        assert!(!registry
+            .get_schemas()
+            .iter()
+            .any(|schema| schema.name == "ask_user"));
+
+        for plan_mode in [false, true] {
+            assert!(registry.get_for_mode("ask_user", plan_mode).is_none());
+            assert!(!registry
+                .get_schemas_for_mode(plan_mode)
+                .iter()
+                .any(|schema| schema.name == "ask_user"));
+        }
+
+        let project_free = ToolRegistry::with_project_free(ToolOutputLimits::default());
+        assert!(project_free.get("ask_user").is_none());
+        assert!(!project_free
+            .get_schemas()
+            .iter()
+            .any(|schema| schema.name == "ask_user"));
     }
 
     #[test]

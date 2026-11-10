@@ -58,79 +58,6 @@ impl Tool for EndTaskTool {
     }
 }
 
-pub struct AskUserTool;
-
-#[async_trait]
-impl Tool for AskUserTool {
-    fn name(&self) -> &str {
-        "ask_user"
-    }
-
-    fn label(&self) -> &str {
-        "Ask User"
-    }
-
-    fn description(&self) -> &str {
-        "Record a focused question when an implementation decision is required before planning can continue."
-    }
-
-    fn parameters(&self) -> serde_json::Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "question": {
-                    "type": "string",
-                    "description": "The concise decision question for the user"
-                },
-                "options": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Optional mutually exclusive choices"
-                }
-            },
-            "required": ["question"]
-        })
-    }
-
-    async fn execute(
-        &self,
-        args: serde_json::Value,
-        _cwd: &str,
-    ) -> anyhow::Result<ToolExecutionResult> {
-        let question = args
-            .get("question")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let Some(question) = question else {
-            return Ok(ToolExecutionResult::error("Missing 'question' parameter"));
-        };
-
-        let options = args
-            .get("options")
-            .and_then(|value| value.as_array())
-            .map(|values| {
-                values
-                    .iter()
-                    .filter_map(|value| value.as_str().map(str::trim))
-                    .filter(|value| !value.is_empty())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let mut output = format!("Question for the user: {question}");
-        if !options.is_empty() {
-            output.push_str("\nOptions:");
-            for (index, option) in options.iter().enumerate() {
-                output.push_str(&format!("\n{}. {}", index + 1, option));
-            }
-        }
-        output.push_str(
-            "\nNo file or external state was changed. Continue with the safest explicit assumption unless the user supplies an answer.",
-        );
-        Ok(ToolExecutionResult::success(output))
-    }
-}
-
 pub struct UpdatePlanTool;
 
 #[async_trait]
@@ -221,22 +148,6 @@ mod tests {
             .await
             .unwrap();
         assert!(!result.is_error);
-    }
-
-    #[tokio::test]
-    async fn ask_user_returns_a_non_mutating_question() {
-        let result = AskUserTool
-            .execute(
-                json!({ "question": "Which database?", "options": ["Postgres", "SQLite"] }),
-                ".",
-            )
-            .await
-            .unwrap();
-        assert!(!result.is_error);
-        assert!(result.output.contains("Which database?"));
-        assert!(result
-            .output
-            .contains("No file or external state was changed"));
     }
 
     #[tokio::test]

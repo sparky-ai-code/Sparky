@@ -1508,16 +1508,19 @@ const makeWsRpcLayer = (
               // catch-up followed by the buffered/ongoing live events. Overlapping
               // events are deduped by sequence on the client.
               //
-              // Read the full range after the cursor (not the store's default
-              // page-bounded limit): the range is normally tiny (a fresh HTTP
-              // snapshot sequence) and the per-thread filter runs after reading,
-              // so a global cap could otherwise omit this thread's events.
+              // Read only this thread's indexed stream, up to a fixed event
+              // head, so many active threads can resume without each scanning
+              // and decoding the entire global event log. If the cursor is from
+              // an old database epoch, send a new snapshot instead of silently
+              // treating it as already synchronized.
               if (input.afterSequence !== undefined) {
                 const afterSequence = input.afterSequence;
-                const catchUpStream = orchestrationEngine
-                  .readEvents(afterSequence, Number.MAX_SAFE_INTEGER)
+                const headSequence = yield* orchestrationEngine.latestSequence;
+                if (afterSequence <= headSequence) {
+                  const catchUpStream = orchestrationEngine
+                  .readThreadEvents(input.threadId, afterSequence, headSequence)
                   .pipe(
-                    Stream.filter(isThisThreadDetailEvent),
+                    Stream.filter(isThreadDetailEvent),
                     coalesceThreadDetailStream,
                     Stream.map((event) => ({ kind: "event" as const, event })),
                     Stream.mapError(
@@ -1537,7 +1540,8 @@ const makeWsRpcLayer = (
                         bufferedLiveStream,
                       )
                     : bufferedLiveStream;
-                return Stream.concat(catchUpStream, afterCatchUp);
+                  return Stream.concat(catchUpStream, afterCatchUp);
+                }
               }
 
               const snapshot = yield* projectionSnapshotQuery

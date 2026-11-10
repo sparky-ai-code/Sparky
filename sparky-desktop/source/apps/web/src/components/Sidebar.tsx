@@ -138,6 +138,8 @@ import { formatRelativeTimeLabel } from "../timestampFormat";
 import { useRelativeTimeTick } from "./settings/settingsLayout";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarStageBackdrop, resolveSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
+import { partitionFocusThreads } from "./Sidebar.focus.logic";
+import { SidebarFocusShelves } from "./SidebarFocusShelves";
 import { Kbd } from "./ui/kbd";
 import {
   getArm64IntelBuildWarningDescription,
@@ -452,7 +454,8 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     },
     [routeThreadRef, setSplit, threadRef],
   );
-  const focusMode = useClientSettings((settings) => settings.focusMode);
+  const isParked = useUiStateStore((state) => state.parkedThreadKeys.includes(threadKey));
+  const setThreadParked = useUiStateStore((state) => state.setThreadParked);
   const isPinned = useUiStateStore((state) => state.pinnedThreadKeys.includes(threadKey));
   const toggleThreadPinned = useUiStateStore((state) => state.toggleThreadPinned);
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
@@ -545,7 +548,6 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   const prStatus = prStatusIndicator(pr, gitStatus.data?.sourceControlProvider);
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const isConfirmingArchive = confirmingArchiveThreadKey === threadKey && !isThreadRunning;
-  const isDimmedInFocusMode = focusMode && threadStatus?.label !== "Completed";
   const clearConfirmingArchive = useCallback(() => {
     setConfirmingArchiveThreadKey((current) => (current === threadKey ? null : current));
   }, [setConfirmingArchiveThreadKey, threadKey]);
@@ -753,9 +755,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
         className={`${resolveThreadRowClassName({
           isActive,
           isSelected,
-        })} relative isolate !h-auto min-h-20 items-start gap-2 py-2.5 ${
-          isDimmedInFocusMode ? "opacity-55 grayscale-[0.65]" : ""
-        }`}
+        })} relative isolate !h-auto min-h-20 items-start gap-2 py-2.5`}
         onClick={handleRowClick}
         onDoubleClick={handleRowDoubleClick}
         onKeyDown={handleRowKeyDown}
@@ -970,6 +970,13 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                 >
                   <PinIcon className="size-3.5" fill={isPinned ? "currentColor" : "none"} />
                   {isPinned ? "Unpin thread" : "Pin thread"}
+                </MenuItem>
+                <MenuItem
+                  data-testid={`thread-park-${thread.id}`}
+                  onClick={() => setThreadParked(threadKey, !isParked)}
+                >
+                  <ArchiveIcon className="size-3.5" />
+                  {isParked ? "Restore thread" : "Park thread"}
                 </MenuItem>
                 <MenuItem
                   data-testid={`thread-archive-${thread.id}`}
@@ -1244,6 +1251,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const { isMobile, setOpenMobile } = useSidebar();
   const markThreadUnread = useUiStateStore((state) => state.markThreadUnread);
   const pinnedThreadKeys = useUiStateStore((state) => state.pinnedThreadKeys);
+  const parkedThreadKeys = useUiStateStore((state) => state.parkedThreadKeys);
+  const focusMode = useClientSettings((settings) => settings.focusMode);
   const setProjectExpanded = useUiStateStore((state) => state.setProjectExpanded);
   const toggleThreadSelection = useThreadSelectionStore((state) => state.toggleThread);
   const rangeSelectTo = useThreadSelectionStore((state) => state.rangeSelectTo);
@@ -1382,7 +1391,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       });
     };
     const visibleProjectThreads = sortThreadsWithPinned(
-      projectThreads.filter((thread) => thread.archivedAt === null),
+      partitionFocusThreads({
+        threads: projectThreads,
+        focusMode,
+        pinnedThreadKeys,
+        parkedThreadKeys,
+      }).active,
       threadSortOrder,
       pinnedThreadKeys,
     );
@@ -1396,7 +1410,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       projectStatus,
       visibleProjectThreads,
     };
-  }, [pinnedThreadKeys, projectThreads, threadLastVisitedAts, threadSortOrder]);
+  }, [focusMode, parkedThreadKeys, pinnedThreadKeys, projectThreads, threadLastVisitedAts, threadSortOrder]);
   const pinnedCollapsedThread = useMemo(() => {
     const activeThreadKey = activeRouteThreadKey ?? undefined;
     if (!activeThreadKey || projectExpanded) {
@@ -1459,7 +1473,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         hiddenThreads.map((thread) => resolveProjectThreadStatus(thread)),
       ),
       renderedThreads,
-      showEmptyThreadState: projectExpanded && visibleProjectThreads.length === 0,
+      showEmptyThreadState: projectExpanded && projectThreads.every((thread) => thread.archivedAt !== null),
       shouldShowThreadPanel: projectExpanded || pinnedCollapsedThread !== null,
     };
   }, [
@@ -1918,6 +1932,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         return;
       }
 
+      if (clicked === "park") {
+        for (const { threadKey } of selectedThreadEntries) {
+          useUiStateStore.getState().setThreadParked(threadKey, true);
+        }
+        removeFromSelection(threadKeys);
+        return;
+      }
       if (clicked === "archive") {
         if (appSettingsConfirmThreadArchive) {
           const confirmed = await api.dialogs.confirm(
@@ -2296,6 +2317,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         [
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
+          { id: "park", label: "Park thread" },
           { id: "copy-path", label: "Copy Path" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
           { id: "delete", label: "Delete", destructive: true, icon: "trash" },
@@ -2308,6 +2330,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         return;
       }
 
+      if (clicked === "park") {
+        useUiStateStore.getState().setThreadParked(threadKey, true);
+        return;
+      }
       if (clicked === "mark-unread") {
         markThreadUnread(threadKey, thread.latestTurn?.completedAt);
         return;
@@ -3244,6 +3270,13 @@ const SidebarChatsSection = memo(function SidebarChatsSection(props: SidebarChat
         clearSelection();
         return;
       }
+      if (clicked === "park") {
+        for (const { threadKey } of selectedThreadEntries) {
+          useUiStateStore.getState().setThreadParked(threadKey, true);
+        }
+        removeFromSelection(threadKeys);
+        return;
+      }
       if (clicked === "archive") {
         if (appSettingsConfirmThreadArchive) {
           const confirmed = await api.dialogs.confirm(
@@ -3343,6 +3376,7 @@ const SidebarChatsSection = memo(function SidebarChatsSection(props: SidebarChat
         [
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
+          { id: "park", label: "Park thread" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
           { id: "delete", label: "Delete", destructive: true, icon: "trash" },
         ],
@@ -3350,6 +3384,10 @@ const SidebarChatsSection = memo(function SidebarChatsSection(props: SidebarChat
       );
       if (clicked === "rename") {
         startThreadRename(threadKey, thread.title);
+        return;
+      }
+      if (clicked === "park") {
+        useUiStateStore.getState().setThreadParked(threadKey, true);
         return;
       }
       if (clicked === "mark-unread") {
@@ -3504,6 +3542,8 @@ interface SidebarProjectsContentProps {
   handleNewChat: () => void;
   chatThreads: readonly SidebarThreadSummary[];
   allSidebarThreads: readonly SidebarThreadSummary[];
+  workingThreads: readonly SidebarThreadSummary[];
+  parkedThreads: readonly SidebarThreadSummary[];
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
   sortedProjects: readonly SidebarProjectSnapshot[];
@@ -3548,6 +3588,8 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     handleNewChat,
     chatThreads,
     allSidebarThreads,
+    workingThreads,
+    parkedThreads,
     archiveThread,
     deleteThread,
     sortedProjects,
@@ -3847,6 +3889,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
           collapseThreadList={collapseThreadListForProject}
         />
       ) : null}
+      <SidebarFocusShelves working={workingThreads} parked={parkedThreads} />
     </SidebarContent>
   );
 });
@@ -3968,9 +4011,15 @@ export default function Sidebar() {
     () => new Map(sidebarProjects.map((project) => [project.projectKey, project] as const)),
     [sidebarProjects],
   );
+  const focusMode = useClientSettings((settings) => settings.focusMode);
+  const parkedThreadKeys = useUiStateStore((state) => state.parkedThreadKeys);
+  const focusPartition = useMemo(
+    () => partitionFocusThreads({ threads: sidebarThreads, focusMode, pinnedThreadKeys, parkedThreadKeys }),
+    [focusMode, parkedThreadKeys, pinnedThreadKeys, sidebarThreads],
+  );
   const { chatThreads, projectThreads } = useMemo(
-    () => partitionSidebarThreadsByScope(sidebarThreads),
-    [sidebarThreads],
+    () => partitionSidebarThreadsByScope(focusPartition.active),
+    [focusPartition.active],
   );
   const sidebarThreadByKey = useMemo(
     () =>
@@ -4592,6 +4641,8 @@ export default function Sidebar() {
             handleNewChat={handleNewChat}
             chatThreads={chatThreads}
             allSidebarThreads={allSidebarThreads}
+            workingThreads={focusPartition.working}
+            parkedThreads={focusPartition.parked}
             archiveThread={archiveThread}
             deleteThread={deleteThread}
             sortedProjects={sortedProjects}

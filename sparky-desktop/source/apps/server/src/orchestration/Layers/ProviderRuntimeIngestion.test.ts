@@ -2518,7 +2518,9 @@ describe("ProviderRuntimeIngestion", () => {
     const finalMessage = finalThread.messages.find(
       (entry: ProviderRuntimeTestMessage) => entry.id === "assistant:item-streaming-mode",
     );
-    expect(finalMessage?.text).toBe("hello live");
+    // The provider's completion detail can be stale relative to already
+    // delivered deltas. Finalization must retain all 80 flushed characters.
+    expect(finalMessage?.text).toBe(`hello live${"x".repeat(80)}`);
     expect(finalMessage?.streaming).toBe(false);
   });
 

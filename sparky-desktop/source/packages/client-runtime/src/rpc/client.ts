@@ -212,6 +212,8 @@ interface SubscriptionOptions<TTag extends EnvironmentSubscriptionRpcTag> {
   readonly retryExpectedFailureAfter?: Duration.Input;
   /** A failed subscription need not mean its shared session was closed. */
   readonly retryTransportFailureAfter?: Duration.Input;
+  /** A durable subscription that completes normally also needs a new attempt. */
+  readonly retryUnexpectedCompletionAfter?: Duration.Input;
   readonly onTransportFailure?: (
     cause: Cause.Cause<EnvironmentRpcStreamFailure<TTag>>,
   ) => Effect.Effect<void, never, never>;
@@ -260,6 +262,20 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                       makeInput(session).pipe(
                         Effect.map((input) =>
                           method(input).pipe(
+                            // A cleanly completed server stream can leave this
+                            // subscription dormant while the shared RPC socket
+                            // stays connected. Only enable this for subscriptions
+                            // intended to live for the whole session.
+                            Stream.concat(
+                              options?.retryUnexpectedCompletionAfter === undefined
+                                ? Stream.empty
+                                : Stream.fromEffect(
+                                    Effect.sleep(options.retryUnexpectedCompletionAfter),
+                                  ).pipe(
+                                    Stream.drain,
+                                    Stream.concat(subscribeToSession()),
+                                  ),
+                            ),
                             Stream.catchCause((cause) => {
                               const hasOnlyExpectedFailures =
                                 cause.reasons.length > 0 &&

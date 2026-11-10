@@ -317,8 +317,10 @@ describe("DesktopBackendManager", () => {
             // production one-minute deadline in this fake-clock test.
             readinessTimeout: Duration.millis(250),
           },
-          httpClientLayer: httpClientLayer(() =>
-            Deferred.succeed(firstProbe, undefined).pipe(Effect.andThen(Effect.never)),
+          httpClientLayer: httpClientLayer((request) =>
+            Deferred.succeed(firstProbe, undefined).pipe(
+              Effect.as(responseForRequest(request, 503)),
+            ),
           ),
         });
 

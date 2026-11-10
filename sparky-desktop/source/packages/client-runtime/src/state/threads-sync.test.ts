@@ -18,6 +18,7 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
+import { RpcClientError } from "effect/unstable/rpc";
 
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
@@ -557,6 +558,40 @@ describe("EnvironmentThreads", () => {
 
       expect(Option.isNone(recovered.error)).toBe(true);
       expect(yield* Ref.get(harness.subscriptionCount)).toBe(2);
+      expect(yield* Ref.get(harness.retryCount)).toBe(0);
+    }),
+  );
+
+  it.effect("recovers a blank thread after a transport failure without replacing the socket", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* Queue.offer(
+        harness.inputs,
+        new RpcClientError.RpcClientError({
+          reason: new RpcClientError.RpcClientDefect({
+            message: "subscription dropped",
+            cause: new Error("subscription dropped"),
+          }),
+        }),
+      );
+      const failed = yield* awaitThreadState(harness.observed, (value) =>
+        Option.isSome(value.error),
+      );
+      expect(failed.status).toBe("empty");
+      expect(yield* Ref.get(harness.subscriptionCount)).toBe(1);
+
+      yield* TestClock.adjust("1 second");
+      for (let n = 0; n < 100 && (yield* Ref.get(harness.subscriptionCount)) < 2; n += 1) {
+        yield* Effect.yieldNow;
+      }
+      expect(yield* Ref.get(harness.subscriptionCount)).toBe(2);
+      yield* Queue.offer(harness.inputs, snapshot(BASE_THREAD));
+      const recovered = yield* awaitThreadState(
+        harness.observed,
+        (value) => value.status === "live" && Option.isSome(value.data),
+      );
+      expect(Option.getOrThrow(recovered.data)).toEqual(BASE_THREAD);
+      expect(Option.isNone(recovered.error)).toBe(true);
       expect(yield* Ref.get(harness.retryCount)).toBe(0);
     }),
   );

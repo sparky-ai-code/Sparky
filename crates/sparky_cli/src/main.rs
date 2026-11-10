@@ -30,6 +30,13 @@ struct Cli {
     #[arg(long, help = "Print ChatGPT Codex authentication status as JSON")]
     codex_auth_status: bool,
 
+    #[arg(
+        long,
+        hide = true,
+        help = "Read the current ChatGPT subscription rate limits"
+    )]
+    codex_usage: bool,
+
     #[arg(long, hide = true, help = "Refresh the saved ChatGPT plan-usage session")]
     codex_auth_refresh: bool,
 
@@ -568,6 +575,13 @@ async fn main() -> anyhow::Result<()> {
 
     if cli.codex_login {
         println!("{}", serde_json::to_string(&login_codex().await?)?);
+        return Ok(());
+    }
+    if cli.codex_usage {
+        println!(
+            "{}",
+            serde_json::to_string(&sparky_ai::codex_auth::codex_usage().await?)?
+        );
         return Ok(());
     }
     if cli.codex_auth_refresh {

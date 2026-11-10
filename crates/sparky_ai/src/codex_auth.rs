@@ -488,6 +488,24 @@ pub async fn valid_codex_credentials() -> anyhow::Result<CodexCredentials> {
     Ok(credentials)
 }
 
+pub async fn codex_usage() -> anyhow::Result<serde_json::Value> {
+    let credentials = valid_codex_credentials().await?;
+    let response = Client::new()
+        .get("https://chatgpt.com/backend-api/wham/usage")
+        .bearer_auth(&credentials.access)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .await?
+        .error_for_status()
+        .map_err(|error| anyhow::anyhow!("ChatGPT subscription usage request failed: {error}"))?;
+    let usage: serde_json::Value = response.json().await?;
+    anyhow::ensure!(
+        usage.is_object(),
+        "ChatGPT returned an invalid subscription usage response"
+    );
+    Ok(usage)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

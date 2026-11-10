@@ -160,6 +160,12 @@ describe("environment RPC", () => {
           Effect.succeed({ status: "available", version: "2026.6.0" }),
       } as unknown as WsRpcProtocolClient;
       const { activeSession, supervisor } = yield* makeHarness();
+      yield* SubscriptionRef.update(supervisor.state, (state) => ({
+        ...state,
+        desired: true,
+        phase: "connecting",
+        stage: "opening",
+      }));
       const requestFiber = yield* request(WS_METHODS.cloudGetRelayClientStatus, {}).pipe(
         Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
         Effect.forkChild,
@@ -173,6 +179,40 @@ describe("environment RPC", () => {
         status: "available",
         version: "2026.6.0",
       });
+    }),
+  );
+
+  it.effect("fails promptly instead of hanging when the environment was disconnected", () =>
+    Effect.gen(function* () {
+      const { supervisor } = yield* makeHarness();
+      const error = yield* request(WS_METHODS.cloudGetRelayClientStatus, {}).pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.flip,
+      );
+      expect(error).toBeInstanceOf(EnvironmentRpcUnavailableError);
+      expect(error.message).toContain("not connected");
+    }),
+  );
+
+  it.effect("times out a mutation waiting for a connection that never completes", () =>
+    Effect.gen(function* () {
+      const { supervisor } = yield* makeHarness();
+      yield* SubscriptionRef.update(supervisor.state, (state) => ({
+        ...state,
+        desired: true,
+        phase: "connecting",
+        stage: "opening",
+      }));
+      const fiber = yield* request(WS_METHODS.cloudGetRelayClientStatus, {}).pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.flip,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("20 seconds");
+      const error = yield* Fiber.join(fiber);
+      expect(error).toBeInstanceOf(EnvironmentRpcUnavailableError);
+      expect(error.message).toContain("20 seconds");
     }),
   );
 

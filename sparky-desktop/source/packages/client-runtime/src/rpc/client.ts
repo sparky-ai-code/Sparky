@@ -94,10 +94,16 @@ const currentSession = Effect.fn("EnvironmentRpc.currentSession")(function* () {
     return session.value;
   }
 
-  // A supervisor clears the session while a connection is being established or
-  // re-established. Wait for that transition instead of turning a brief
-  // transport gap into a user-visible "not connected" mutation failure.
-  return yield* SubscriptionRef.changes(supervisor.session).pipe(
+  const unavailable = (message: string) =>
+    new EnvironmentRpcUnavailableError({
+      environmentId: supervisor.target.environmentId,
+      message,
+    });
+
+  // Wait through brief reconnects, but never leave mutations hanging forever:
+  // stop immediately on intentional disconnect/offline/blocked states, and
+  // bound the wait if connection setup never produces an RPC session.
+  const awaitSession = SubscriptionRef.changes(supervisor.session).pipe(
     Stream.filterMap((next) =>
       Option.match(next, {
         onNone: () => Result.failVoid,
@@ -107,16 +113,40 @@ const currentSession = Effect.fn("EnvironmentRpc.currentSession")(function* () {
     Stream.runHead,
     Effect.flatMap(
       Option.match({
-        onNone: () =>
-          Effect.fail(
-            new EnvironmentRpcUnavailableError({
-              environmentId: supervisor.target.environmentId,
-              message: `${supervisor.target.label} is not connected.`,
-            }),
-          ),
+        onNone: () => Effect.fail(unavailable(`${supervisor.target.label} is not connected.`)),
         onSome: Effect.succeed,
       }),
     ),
+  );
+  const awaitUnavailableState = SubscriptionRef.changes(supervisor.state).pipe(
+    Stream.filter(
+      (state) => !state.desired || state.phase === "offline" || state.phase === "blocked",
+    ),
+    Stream.runHead,
+    Effect.flatMap(
+      Option.match({
+        onNone: () => Effect.fail(unavailable(`${supervisor.target.label} is not connected.`)),
+        onSome: (state) =>
+          Effect.fail(
+            unavailable(
+              state.lastFailure?.message ??
+                (state.phase === "offline"
+                  ? `${supervisor.target.label} is offline.`
+                  : `${supervisor.target.label} is not connected.`),
+            ),
+          ),
+      }),
+    ),
+  );
+
+  return yield* Effect.raceFirst(awaitSession, awaitUnavailableState).pipe(
+    Effect.timeoutOrElse({
+      duration: "20 seconds",
+      orElse: () =>
+        Effect.fail(
+          unavailable(`${supervisor.target.label} did not connect within 20 seconds.`),
+        ),
+    }),
   );
 });
 

@@ -11,6 +11,8 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
+import { RpcClientError } from "effect/unstable/rpc";
 
 import {
   AVAILABLE_CONNECTION_STATE,
@@ -232,6 +234,88 @@ describe("environment shell synchronization", () => {
       yield* SubscriptionRef.changes(shellState).pipe(
         Stream.filter((value) => value.status === "live"),
         Stream.runHead,
+      );
+    }),
+  );
+
+  it.effect("recovers a blank sidebar after its stream fails without closing the socket", () =>
+    Effect.gen(function* () {
+      const attempts = yield* Ref.make(0);
+      const client = {
+        [ORCHESTRATION_WS_METHODS.subscribeShell]: () =>
+          Stream.unwrap(
+            Ref.updateAndGet(attempts, (n) => n + 1).pipe(
+              Effect.map((n) =>
+                n === 1
+                  ? Stream.fail(
+                      new RpcClientError.RpcClientError({
+                        reason: new RpcClientError.RpcClientDefect({
+                          message: "shell subscription dropped",
+                          cause: new Error("shell subscription dropped"),
+                        }),
+                      }),
+                    )
+                  : Stream.concat(
+                      Stream.make(
+                        { kind: "snapshot" as const, snapshot: LIVE_SHELL_SNAPSHOT },
+                        { kind: "synchronized" as const },
+                      ),
+                      Stream.never,
+                    ),
+              ),
+            ),
+          ),
+      } as unknown as WsRpcProtocolClient;
+      const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+        target: TARGET,
+        state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
+        session: yield* SubscriptionRef.make(Option.some(session(client))),
+        prepared: yield* SubscriptionRef.make(Option.some(PREPARED)),
+        connect: Effect.void,
+        disconnect: Effect.void,
+        retryNow: Effect.void,
+      } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+      const cache = Persistence.EnvironmentCacheStore.of({
+        loadShell: () => Effect.succeed(Option.none()),
+        saveShell: () => Effect.void,
+        loadThread: () => Effect.succeed(Option.none()),
+        saveThread: () => Effect.void,
+        removeThread: () => Effect.void,
+        loadServerConfig: () => Effect.succeed(Option.none()),
+        saveServerConfig: () => Effect.void,
+        loadVcsRefs: () => Effect.succeed(Option.none()),
+        saveVcsRefs: () => Effect.void,
+        clear: () => Effect.void,
+      });
+      const loader = ShellSnapshotLoader.of({
+        load: () => Effect.succeed(Option.none()),
+      });
+      const shellState = yield* makeEnvironmentShellState().pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.provideService(Persistence.EnvironmentCacheStore, cache),
+        Effect.provideService(ShellSnapshotLoader, loader),
+      );
+
+      const failed = yield* SubscriptionRef.changes(shellState).pipe(
+        Stream.filter((state) => Option.isSome(state.error)),
+        Stream.runHead,
+      );
+      expect(Option.getOrThrow(failed).status).toBe("empty");
+      expect(yield* Ref.get(attempts)).toBe(1);
+
+      yield* TestClock.adjust("1 second");
+      for (let n = 0; n < 100 && (yield* Ref.get(attempts)) < 2; n += 1) {
+        yield* Effect.yieldNow;
+      }
+      const recovered = yield* SubscriptionRef.changes(shellState).pipe(
+        Stream.filter((state) => state.status === "live"),
+        Stream.runHead,
+      );
+
+      expect(yield* Ref.get(attempts)).toBe(2);
+      expect(Option.getOrThrow(recovered).error).toEqual(Option.none());
+      expect(Option.getOrThrow(Option.getOrThrow(recovered).snapshot)).toEqual(
+        LIVE_SHELL_SNAPSHOT,
       );
     }),
   );

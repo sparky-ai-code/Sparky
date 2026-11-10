@@ -454,7 +454,6 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     },
     [routeThreadRef, setSplit, threadRef],
   );
-  const isParked = useUiStateStore((state) => state.parkedThreadKeys.includes(threadKey));
   const setThreadParked = useUiStateStore((state) => state.setThreadParked);
   const isPinned = useUiStateStore((state) => state.pinnedThreadKeys.includes(threadKey));
   const toggleThreadPinned = useUiStateStore((state) => state.toggleThreadPinned);
@@ -973,10 +972,10 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                 </MenuItem>
                 <MenuItem
                   data-testid={`thread-park-${thread.id}`}
-                  onClick={() => setThreadParked(threadKey, !isParked)}
+                  onClick={() => setThreadParked(threadKey, true)}
                 >
                   <ArchiveIcon className="size-3.5" />
-                  {isParked ? "Restore thread" : "Park thread"}
+                  Park thread
                 </MenuItem>
                 <MenuItem
                   data-testid={`thread-archive-${thread.id}`}
@@ -1410,7 +1409,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       projectStatus,
       visibleProjectThreads,
     };
-  }, [focusMode, parkedThreadKeys, pinnedThreadKeys, projectThreads, threadLastVisitedAts, threadSortOrder]);
+  }, [
+    focusMode,
+    parkedThreadKeys,
+    pinnedThreadKeys,
+    projectThreads,
+    threadLastVisitedAts,
+    threadSortOrder,
+  ]);
   const pinnedCollapsedThread = useMemo(() => {
     const activeThreadKey = activeRouteThreadKey ?? undefined;
     if (!activeThreadKey || projectExpanded) {
@@ -1473,7 +1479,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         hiddenThreads.map((thread) => resolveProjectThreadStatus(thread)),
       ),
       renderedThreads,
-      showEmptyThreadState: projectExpanded && projectThreads.every((thread) => thread.archivedAt !== null),
+      showEmptyThreadState:
+        projectExpanded && projectThreads.every((thread) => thread.archivedAt !== null),
       shouldShowThreadPanel: projectExpanded || pinnedCollapsedThread !== null,
     };
   }, [
@@ -4014,7 +4021,13 @@ export default function Sidebar() {
   const focusMode = useClientSettings((settings) => settings.focusMode);
   const parkedThreadKeys = useUiStateStore((state) => state.parkedThreadKeys);
   const focusPartition = useMemo(
-    () => partitionFocusThreads({ threads: sidebarThreads, focusMode, pinnedThreadKeys, parkedThreadKeys }),
+    () =>
+      partitionFocusThreads({
+        threads: sidebarThreads,
+        focusMode,
+        pinnedThreadKeys,
+        parkedThreadKeys,
+      }),
     [focusMode, parkedThreadKeys, pinnedThreadKeys, sidebarThreads],
   );
   const { chatThreads, projectThreads } = useMemo(

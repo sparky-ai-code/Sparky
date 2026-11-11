@@ -19,6 +19,22 @@ export const ListThreadsTool = Tool.make("sparky_threads_list", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
 
+export const ProjectBranchesTool = Tool.make("sparky_project_branches", {
+  description:
+    "List Git branches and existing worktree paths for an exact project ID, including worktrees that have no Sparky thread yet. Use this before creating a thread with an explicit branch or worktree.",
+  parameters: Schema.Struct({
+    projectId: NonEmptyText,
+    query: Schema.optional(Schema.String),
+    cursor: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  }),
+  success: Schema.Unknown,
+  failure: Schema.Never,
+})
+  .annotate(Tool.Title, "List project branches and worktrees")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
+
 export const ThreadModelsTool = Tool.make("sparky_thread_models", {
   description:
     "List the live models and their exact option descriptors (reasoning, context window, thinking, etc.) for provider instances in this backend environment. Use this before specifying modelSelection options in sparky_thread_create.",
@@ -51,12 +67,13 @@ export const ReadThreadTool = Tool.make("sparky_thread_read", {
 
 export const CreateThreadTool = Tool.make("sparky_thread_create", {
   description:
-    "Create a new thread in any project listed by sparky_threads_list, not just the current project. Select the model and its provider-supported reasoning/context traits in modelSelection.options; discover valid model IDs and option choices with sparky_thread_models. workspaceMode=current keeps the checkout unchanged; existing reuses the exact listed branch/worktree; new creates an isolated worktree from the chosen base branch. Set initialMessage to start the new agent immediately; otherwise it remains idle.",
+    "Create a new thread in any project listed by sparky_threads_list, not just the current project. Select the model and its provider-supported reasoning/context traits in modelSelection.options; discover valid model IDs and option choices with sparky_thread_models. workspaceMode=current keeps the checkout unchanged; existing reuses the exact listed branch/worktree; new creates an isolated worktree from required baseBranch with optional branch name. Use sparky_project_branches to discover refs. Set initialMessage to start the new agent immediately; otherwise it remains idle.",
   parameters: Schema.Struct({
     projectId: NonEmptyText,
     title: NonEmptyText,
     workspaceMode: WorkspaceMode,
     branch: Schema.optional(NonEmptyText),
+    baseBranch: Schema.optional(NonEmptyText),
     worktreePath: Schema.optional(NonEmptyText),
     modelSelection: Schema.optional(ModelSelection),
     initialMessage: Schema.optional(NonEmptyText),
@@ -98,6 +115,7 @@ export const SteerThreadTool = Tool.make("sparky_thread_steer", {
 
 export const ThreadTools = [
   ListThreadsTool,
+  ProjectBranchesTool,
   ThreadModelsTool,
   ReadThreadTool,
   CreateThreadTool,

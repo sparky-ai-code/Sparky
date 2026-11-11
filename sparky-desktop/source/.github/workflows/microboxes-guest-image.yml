@@ -1,0 +1,33 @@
+name: Build Sparky Microboxes Linux guest
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "sparky-desktop/source/microboxes/os/**"
+      - "sparky-desktop/source/.github/workflows/microboxes-guest-image.yml"
+
+jobs:
+  build-micro-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Buildroot host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git wget curl rsync cpio unzip file bc bison flex \
+            libssl-dev libncurses-dev python3 python3-setuptools xz-utils
+      - name: Build standalone Sparky Micro Linux image
+        run: bash microboxes/os/build-x86_64.sh
+        env:
+          JOBS: "4"
+      - name: Upload guest image (no publication)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparky-micro-x86_64
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-x86_64/
+          retention-days: 14

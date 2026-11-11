@@ -206,6 +206,7 @@ import {
   isContextMenuPointerDown,
   isProjectFreeChatThread,
   partitionSidebarThreadsByScope,
+  selectNewChatProjectThread,
   isTrailingDoubleClick,
   resolveProjectStatusIndicator,
   resolveSidebarNewThreadSeedContext,
@@ -4123,18 +4124,11 @@ export default function Sidebar() {
       setOpenMobile(false);
     }
     const activeRouteThread = routeThreadKey ? sidebarThreadByKey.get(routeThreadKey) : null;
-    const latestProjectThread =
-      activeRouteThread && !isProjectFreeChatThread(activeRouteThread)
-        ? activeRouteThread
-        : sortThreads(
-            allProjectThreads.filter((thread) => thread.archivedAt === null),
-            "updated_at",
-          ).find((thread) =>
-            projects.some(
-              (project) =>
-                project.id === thread.projectId && project.environmentId === thread.environmentId,
-            ),
-          );
+    const latestProjectThread = selectNewChatProjectThread({
+      activeThread: activeRouteThread ?? null,
+      projectThreads: allProjectThreads,
+      projects,
+    });
     const lastUsedProjectRef = latestProjectThread
       ? scopeProjectRef(latestProjectThread.environmentId, latestProjectThread.projectId)
       : unscopedChatProjectRef;

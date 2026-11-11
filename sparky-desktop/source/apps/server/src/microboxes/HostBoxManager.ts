@@ -40,6 +40,31 @@ const SAFE_IMAGE_ID = /^[a-z0-9_-]{1,48}$/u;
 const SAFE_IMAGE_FILE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u;
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 
+const DESKTOP_READY_MARKER = "SPARKY_MICRO_DESKTOP_READY";
+const DESKTOP_FAILED_MARKER = "SPARKY_MICRO_DESKTOP_ERROR";
+const BOOT_POLL_MS = 1_000;
+const LINUX_BOOT_TIMEOUT_MS = 120_000;
+const ARM_EMULATED_BOOT_TIMEOUT_MS = 240_000;
+
+/** Boot diagnostics are local; only these fixed status messages reach an agent. */
+export function microLinuxBootState(serialOutput: string): "ready" | "failed" | "booting" {
+  if (serialOutput.includes(DESKTOP_READY_MARKER)) return "ready";
+  if (
+    serialOutput.includes(DESKTOP_FAILED_MARKER) ||
+    /kernel panic|VFS: Unable to mount root fs|No working init found/iu.test(serialOutput)
+  ) return "failed";
+  return "booting";
+}
+
+export function visibleLinuxKernelArguments(append: string): string {
+  // Display kernel/init messages in the VM while retaining the serial debug
+  // console. Without tty0, the framebuffer remains at "Booting the kernel".
+  return /(?:^|\s)console=tty0(?:\s|$)/u.test(append)
+    ? append
+    : `${append} console=tty0`;
+}
+
+
 export class MicroboxHostError extends Error {
   readonly code: string;
   constructor(code: string, message: string) {
@@ -110,6 +135,35 @@ export class HostBoxManager {
 
   private readonly root: string;
   constructor(root: string) { this.root = root; }
+
+  private async watchLinuxDesktop(boxId: string, timeoutMs: number): Promise<void> {
+    const box = this.boxes.get(boxId);
+    if (!box) return;
+    const serialFile = Path.join(box.directory, "boot-serial.log");
+    const deadline = Date.now() + timeoutMs;
+    let outcome: "ready" | "failed" | "booting" = "booting";
+    while (
+      Date.now() < deadline &&
+      this.boxes.get(boxId) === box &&
+      box.status.state === "starting"
+    ) {
+      const serialOutput = await Fs.readFile(serialFile, "utf8").catch(() => "");
+      outcome = microLinuxBootState(serialOutput);
+      if (outcome !== "booting") break;
+      await new Promise<void>((resolve) => setTimeout(resolve, BOOT_POLL_MS));
+    }
+    if (this.boxes.get(boxId) !== box || box.status.state !== "starting") return;
+    if (outcome === "ready") {
+      box.status.state = "running";
+      delete box.status.bootMessage;
+      return;
+    }
+    box.status.state = "error";
+    box.status.bootMessage = outcome === "failed"
+      ? "The Linux guest could not start its desktop. Install the updated Sparky Micro Linux image."
+      : "The Linux graphical desktop did not become ready. Install the latest Sparky Micro Linux image and recreate this box.";
+    await box.qmp.stop().catch(() => undefined);
+  }
 
   async importImage(sourceDirectory: string): Promise<MicroboxImage> {
     if (!Path.isAbsolute(sourceDirectory)) {
@@ -258,7 +312,8 @@ export class HostBoxManager {
     await Fs.mkdir(directory, { recursive: true });
     const args = [
       "-nodefaults", "-no-user-config", "-display", "none",
-      "-monitor", "none", "-serial", "null", "-qmp", "stdio",
+      "-monitor", "none", "-serial", manifest.kind === "linux-kernel"
+        ? `file:${Path.join(directory, "boot-serial.log")}` : "null", "-qmp", "stdio",
       "-m", String(memoryMiB), "-smp", String(cpus),
       "-machine", manifest.architecture === "aarch64" ? "virt" : "pc",
       ...(manifest.architecture === "aarch64" ? ["-cpu", "max"] : []),
@@ -313,7 +368,7 @@ export class HostBoxManager {
         ], { timeout: 60_000, windowsHide: true, env: guestRuntimeEnv() });
         args.push(
           "-kernel", Path.join(imageDir, manifest.kernel!),
-          "-append", manifest.append ?? "root=/dev/vda rw console=ttyS0",
+          "-append", visibleLinuxKernelArguments(manifest.append ?? "root=/dev/vda rw console=ttyS0"),
           "-drive", `file=${guestDrivePath(overlay)},format=qcow2,if=virtio`,
         );
       } else if (manifest.kind === "disk") {
@@ -356,7 +411,13 @@ export class HostBoxManager {
       this.boxes.set(boxId, { status, process: child, qmp, directory, width: 1024, height: 768 });
       child.on("exit", () => {
         const current = this.boxes.get(boxId);
-        if (current) current.status.state = "stopped";
+        if (!current || current.status.state === "error") return;
+        if (current.status.state === "starting") {
+          current.status.state = "error";
+          current.status.bootMessage = "The Linux guest exited before its desktop finished starting.";
+        } else {
+          current.status.state = "stopped";
+        }
       });
       let startupTimeout: ReturnType<typeof setTimeout> | undefined;
       try {
@@ -370,7 +431,24 @@ export class HostBoxManager {
         if (this.stopping || this.deletedThreads.has(input.threadId) || status.state === "stopped") {
           throw new Error("Box setup was canceled.");
         }
-        status.state = "running";
+        if (manifest.kind === "linux-kernel" && manifest.id.startsWith("sparky-micro-")) {
+          status.bootMessage = "Starting the Linux graphical desktop…";
+          // Return once the VM monitor is connected, but report "running"
+          // only after the guest actually starts Weston.
+          void this.watchLinuxDesktop(
+            boxId,
+            manifest.architecture === nativeArch ? LINUX_BOOT_TIMEOUT_MS : ARM_EMULATED_BOOT_TIMEOUT_MS,
+          ).catch(() => {
+            const current = this.boxes.get(boxId);
+            if (current && current.status.state === "starting") {
+              current.status.state = "error";
+              current.status.bootMessage = "The Linux desktop could not start.";
+              void current.qmp.stop().catch(() => undefined);
+            }
+          });
+        } else {
+          status.state = "running";
+        }
       } catch {
         await qmp.stop();
         this.boxes.delete(boxId);
@@ -402,7 +480,10 @@ export class HostBoxManager {
   }
 
   async snapshot(threadId: string, boxId: string): Promise<MicroboxSnapshot> {
-    const box = this.running(threadId, boxId);
+    const box = this.owned(threadId, boxId);
+    if (box.status.state !== "starting" && box.status.state !== "running") {
+      throw new MicroboxHostError("busy", "This box is not booting or running.");
+    }
     const image = Path.join(box.directory, `screen-${randomUUID()}.png`);
     let bytes: Buffer;
     try {

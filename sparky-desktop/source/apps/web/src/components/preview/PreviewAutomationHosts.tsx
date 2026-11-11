@@ -552,7 +552,6 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
             if (await window.desktopBridge?.secrets?.isProtected(ready.tabId)) {
               throw new Error("Recording is disabled after a saved credential was filled in this tab.");
             }
-            const ready = await requireReadyTab();
             const startedAt = await startBrowserRecording(ready.tabId);
             return {
               tabId: ready.tabId,

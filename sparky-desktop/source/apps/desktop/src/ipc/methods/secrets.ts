@@ -12,9 +12,17 @@ import * as Vault from "../../secrets/SecretVault.ts";
 import * as PreviewManager from "../../preview/Manager.ts";
 
 // Renderer receives only public metadata. Decryption happens in the privileged desktop process.
+class SecretVaultOperationError extends Schema.TaggedErrorClass<SecretVaultOperationError>()(
+  "SecretVaultOperationError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return "Saved login operation failed.";
+  }
+}
 const attempt = <T>(work: () => Promise<T>) => Effect.tryPromise({
   try: work,
-  catch: (cause) => cause instanceof Error ? cause : new Error("Credential vault operation failed."),
+  catch: (cause) => new SecretVaultOperationError({ cause }),
 });
 
 export const list = DesktopIpc.makeIpcMethod({
@@ -45,7 +53,7 @@ export const use = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.secrets.use")(function* ({ tabId, input }) {
     const manager = yield* PreviewManager.PreviewManager;
     const url = yield* manager.automationPageUrl(tabId);
-    if (!url) return yield* Effect.fail(new Error("Open the saved site in the browser first."));
+    if (!url) return yield* Effect.fail(new SecretVaultOperationError({ cause: "Browser site is unavailable." }));
     const secret = yield* attempt(() => Vault.getSecretForOrigin(input.id, url));
     // A second origin check runs inside the browser control session, preventing navigation races.
     return yield* manager.automationUseSecret(tabId, {
@@ -53,9 +61,9 @@ export const use = DesktopIpc.makeIpcMethod({
       kind: secret.metadata.kind,
       email: secret.metadata.email,
       password: secret.password,
-      emailLocator: input.emailLocator,
-      passwordLocator: input.passwordLocator,
-      passkeyLocator: input.passkeyLocator,
+      ...(input.emailLocator === undefined ? {} : { emailLocator: input.emailLocator }),
+      ...(input.passwordLocator === undefined ? {} : { passwordLocator: input.passwordLocator }),
+      ...(input.passkeyLocator === undefined ? {} : { passkeyLocator: input.passkeyLocator }),
     });
   }),
 });

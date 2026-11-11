@@ -14,7 +14,7 @@ import type {
   DesktopPreviewRecordingFrame,
   DesktopPreviewScreenshotArtifact,
   PreviewAutomationClickInput,
-  type SecretVaultUseResult,
+  SecretVaultUseResult,
   PreviewAutomationActionEvent,
   PreviewAutomationConsoleEntry,
   PreviewAutomationEvaluateInput,
@@ -2978,6 +2978,17 @@ export class PreviewManager extends Context.Service<
       mimeType: string,
       data: Uint8Array,
     ) => Effect.Effect<DesktopPreviewRecordingArtifact, PreviewManagerError>;
+    readonly automationPageUrl: (tabId: string) => Effect.Effect<string, PreviewManagerError>;
+    readonly automationIsProtected: (tabId: string) => Effect.Effect<boolean, PreviewManagerError>;
+    readonly automationUseSecret: (tabId: string, input: {
+      readonly origin: string;
+      readonly kind: "password" | "passkey";
+      readonly email: string;
+      readonly password: string | null;
+      readonly emailLocator?: string;
+      readonly passwordLocator?: string;
+      readonly passkeyLocator?: string;
+    }) => Effect.Effect<SecretVaultUseResult, PreviewManagerError>;
     readonly automationStatus: (
       tabId: string,
     ) => Effect.Effect<PreviewAutomationStatus, PreviewManagerError>;
@@ -3081,6 +3092,9 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     startRecording: operations.startRecording,
     stopRecording: operations.stopRecording,
     saveRecording: operations.saveRecording,
+    automationPageUrl: operations.automationPageUrl,
+    automationIsProtected: operations.automationIsProtected,
+    automationUseSecret: operations.automationUseSecret,
     automationStatus: operations.automationStatus,
     automationSnapshot: operations.automationSnapshot,
     automationClick: operations.automationClick,

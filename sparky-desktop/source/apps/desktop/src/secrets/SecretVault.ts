@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off - Atomic local file permissions require Node FS primitives.
+// @effect-diagnostics globalDate:off - Vault timestamps use the system wall-clock ISO representation.
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";

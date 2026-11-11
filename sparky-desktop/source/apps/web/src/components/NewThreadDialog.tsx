@@ -75,7 +75,7 @@ function buildModelSelection(
 ): ModelSelection {
   const options: ProviderOptionSelection[] =
     projectDefaultSelection?.instanceId === choice.entry.instanceId &&
-    projectDefaultSelection.model === choice.slug
+    projectDefaultSelection?.model === choice.slug
       ? [...(projectDefaultSelection.options ?? [])]
       : [];
   for (const [id, value] of Object.entries(selectedTraits)) {
@@ -205,7 +205,7 @@ export function NewThreadDialog({
             ),
             selections:
               defaultModel?.instanceId === selectedModel.entry.instanceId &&
-              defaultModel.model === selectedModel.slug
+              defaultModel?.model === selectedModel.slug
                 ? defaultModel.options
                 : undefined,
           })
@@ -280,7 +280,11 @@ export function NewThreadDialog({
         aria-label={label}
         className={fieldClassName}
         disabled={!descriptor || busy}
-        value={descriptor ? (selectedTraits[descriptor.id] ?? currentDescriptorValue(descriptor)) : ""}
+        value={descriptor
+          ? (typeof selectedTraits[descriptor.id] === "string"
+              ? selectedTraits[descriptor.id] as string
+              : currentDescriptorValue(descriptor))
+          : ""}
         onChange={(event) => {
           if (!descriptor) return;
           setSelectedTraits((previous) => ({

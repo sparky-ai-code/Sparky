@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Protocol tests use native mock streams.
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
@@ -6,9 +7,10 @@ import { describe, expect, it } from "vite-plus/test";
 import { QmpClient, keyEvent, textKeyEvents } from "./QmpClient.ts";
 
 function simulateMachine() {
+  const stdout = new PassThrough();
   const process = Object.assign(new EventEmitter(), {
     stdin: new PassThrough(),
-    stdout: new PassThrough(),
+    stdout,
     stderr: new PassThrough(),
     kill: () => true,
   }) as unknown as ChildProcessWithoutNullStreams;
@@ -20,11 +22,11 @@ function simulateMachine() {
         execute: string; id: string; arguments?: Record<string, unknown>;
       };
       commands.push(command);
-      process.stdout.write(JSON.stringify({ id: command.id, return: {} }) + "\n");
+      stdout.write(JSON.stringify({ id: command.id, return: {} }) + "\n");
     }
   });
   const qmp = new QmpClient(process);
-  process.stdout.write(JSON.stringify({ QMP: { version: {}, capabilities: [] } }) + "\n");
+  stdout.write(JSON.stringify({ QMP: { version: {}, capabilities: [] } }) + "\n");
   return { qmp, process, commands };
 }
 

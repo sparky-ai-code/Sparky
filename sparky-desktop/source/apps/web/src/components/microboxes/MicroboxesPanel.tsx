@@ -49,6 +49,8 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
   const selectedImage = chosenImageId || images.data?.[0]?.imageId || "";
   const selectedBox = boxes.data?.find((box) => box.boxId === boxId);
   const running = selectedBox?.state === "running";
+  const booting = selectedBox?.state === "starting";
+  const showingScreen = running || booting;
 
   useEffect(() => {
     if (!enabled) return;
@@ -80,11 +82,11 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
   useEffect(() => {
     setScreen(null);
     setScreenError(null);
-    if (!running) return;
+    if (!showingScreen) return;
     void refreshScreen();
     const timer = window.setInterval(() => void refreshScreen(), 1_000);
     return () => window.clearInterval(timer);
-  }, [running, refreshScreen]);
+  }, [showingScreen, refreshScreen]);
 
   const create = async () => {
     if (!enabled || !selectedImage || busy) return;
@@ -214,10 +216,10 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
         <div className="flex items-center gap-2">
           {boxId ? (
             <>
-              <Button size="icon-xs" variant="ghost" onClick={() => void refreshScreen()} aria-label="Refresh VM screen" disabled={!running}>
+              <Button size="icon-xs" variant="ghost" onClick={() => void refreshScreen()} aria-label="Refresh VM screen" disabled={!showingScreen}>
                 <RefreshCw className="size-3.5" />
               </Button>
-              <Button size="icon-xs" variant="ghost" onClick={() => void endBox(false)} aria-label="Stop box" disabled={busy || !running}>
+              <Button size="icon-xs" variant="ghost" onClick={() => void endBox(false)} aria-label="Stop box" disabled={busy || !selectedBox || selectedBox.state === "stopped" || selectedBox.state === "stopping"}>
                 <Square className="size-3.5" />
               </Button>
               <Button size="icon-xs" variant="ghost" onClick={() => void endBox(true)} aria-label="Destroy box" disabled={busy}>
@@ -231,7 +233,7 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
         </div>
       </div>
 
-      {enabled && boxId && running ? (
+      {enabled && boxId && showingScreen ? (
         <div className="flex min-h-0 flex-1 flex-col bg-black">
           <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-2">
             {screen ? (
@@ -255,6 +257,11 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
           <p className="shrink-0 border-t border-white/10 px-3 py-1.5 text-center text-[11px] text-white/60">
             Click the display to focus it, then use your keyboard.
           </p>
+          {selectedBox?.bootMessage ? (
+            <p role="status" className="px-3 py-2 text-center text-xs text-amber-200">
+              {selectedBox.bootMessage}
+            </p>
+          ) : null}
           {screenError ? <p role="status" className="px-3 py-1 text-center text-xs text-yellow-300">{screenError}</p> : null}
         </div>
       ) : (
@@ -264,7 +271,10 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
           ) : (
             <>
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold">{boxId ? "Box is not running" : "Create a graphical box"}</h3>
+                <h3 className="text-sm font-semibold">{boxId && selectedBox?.state === "error" ? "Box could not boot" : boxId ? "Box is not running" : "Create a graphical box"}</h3>
+                {selectedBox?.bootMessage ? (
+                  <p role="alert" className="text-xs text-destructive">{selectedBox.bootMessage}</p>
+                ) : null}
                 <p className="text-xs text-muted-foreground">
                   Choose a previously installed guest image. Your agent can also create and control boxes when this feature is enabled.
                 </p>

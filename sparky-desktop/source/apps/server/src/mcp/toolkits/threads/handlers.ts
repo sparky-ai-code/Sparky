@@ -7,6 +7,7 @@ import {
   ThreadId,
   type OrchestrationThread,
   type OrchestrationThreadShell,
+  type VcsRef,
 } from "@sparky/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -51,6 +52,16 @@ export function canAgentSendThreadMessage(
   };
   return source.interactionMode !== "plan" &&
     permissions[source.runtimeMode] >= permissions[target.runtimeMode];
+}
+
+export function resolveExistingWorktreeRef(
+  refs: ReadonlyArray<Pick<VcsRef, "name" | "worktreePath">>,
+  branch: string,
+  path: string,
+  projectRoot: string,
+): Pick<VcsRef, "name" | "worktreePath"> | null {
+  const ref = refs.find((candidate) => candidate.name === branch);
+  return ref?.worktreePath === path && path !== projectRoot ? ref : null;
 }
 
 const failureMessage = (cause: Cause.Cause<unknown>): string => {
@@ -365,15 +376,16 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
           );
         }
         if (input.workspaceMode === "existing") {
-          if (!input.worktreePath || !ref.worktreePath ||
-              ref.worktreePath !== input.worktreePath ||
-              ref.worktreePath === project.workspaceRoot) {
+          const existing = input.worktreePath
+            ? resolveExistingWorktreeRef(refs.refs, ref.name, input.worktreePath, project.workspaceRoot)
+            : null;
+          if (!existing) {
             return yield* Effect.fail(
               new Error("Existing worktree path must exactly match the selected branch's registered worktree."),
             );
           }
-          branch = ref.name;
-          worktreePath = ref.worktreePath;
+          branch = existing.name;
+          worktreePath = existing.worktreePath;
         } else {
           if (input.worktreePath) {
             return yield* Effect.fail(

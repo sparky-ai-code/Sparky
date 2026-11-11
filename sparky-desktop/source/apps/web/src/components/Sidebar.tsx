@@ -1395,6 +1395,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         focusMode,
         pinnedThreadKeys,
         parkedThreadKeys,
+        activeThreadKey: activeRouteThreadKey,
       }).active,
       threadSortOrder,
       pinnedThreadKeys,
@@ -1410,6 +1411,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       visibleProjectThreads,
     };
   }, [
+    activeRouteThreadKey,
     focusMode,
     parkedThreadKeys,
     pinnedThreadKeys,
@@ -4027,12 +4029,18 @@ export default function Sidebar() {
         focusMode,
         pinnedThreadKeys,
         parkedThreadKeys,
+        activeThreadKey: routeThreadKey,
       }),
-    [focusMode, parkedThreadKeys, pinnedThreadKeys, sidebarThreads],
+    [focusMode, parkedThreadKeys, pinnedThreadKeys, routeThreadKey, sidebarThreads],
   );
   const { chatThreads, projectThreads } = useMemo(
     () => partitionSidebarThreadsByScope(focusPartition.active),
     [focusPartition.active],
+  );
+  // Thread creation must use the complete shell, not Focus Mode's display-only shelf.
+  const { projectThreads: allProjectThreads } = useMemo(
+    () => partitionSidebarThreadsByScope(sidebarThreads),
+    [sidebarThreads],
   );
   const sidebarThreadByKey = useMemo(
     () =>
@@ -4119,7 +4127,7 @@ export default function Sidebar() {
       activeRouteThread && !isProjectFreeChatThread(activeRouteThread)
         ? activeRouteThread
         : sortThreads(
-            projectThreads.filter((thread) => thread.archivedAt === null),
+            allProjectThreads.filter((thread) => thread.archivedAt === null),
             "updated_at",
           ).find((thread) =>
             projects.some(
@@ -4145,7 +4153,7 @@ export default function Sidebar() {
   }, [
     handleNewThread,
     isMobile,
-    projectThreads,
+    allProjectThreads,
     projects,
     routeThreadKey,
     setOpenMobile,

@@ -1,0 +1,51 @@
+name: Microboxes runtime verification
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "sparky-desktop/source/packages/contracts/src/microboxes.ts"
+      - "sparky-desktop/source/packages/contracts/src/rpc.ts"
+      - "sparky-desktop/source/apps/server/src/microboxes/**"
+      - "sparky-desktop/source/apps/server/src/mcp/toolkits/microboxes/**"
+      - "sparky-desktop/source/apps/web/src/components/microboxes/**"
+      - "sparky-desktop/source/packages/client-runtime/src/state/microboxes.ts"
+      - ".github/workflows/microboxes-checks.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Typecheck contracts
+        run: pnpm --filter @sparky/contracts typecheck
+      - name: Typecheck shared client runtime
+        run: pnpm --filter @sparky/client-runtime typecheck
+      - name: Typecheck server
+        run: pnpm --filter t3 typecheck
+      - name: Typecheck web
+        run: pnpm --filter @sparky/web typecheck
+      - name: Run contracts tests
+        run: pnpm --filter @sparky/contracts test
+      - name: Run focused client tests
+        run: pnpm --filter @sparky/client-runtime test

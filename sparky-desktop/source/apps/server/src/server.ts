@@ -358,14 +358,16 @@ export const makeRoutesLayer = Layer.mergeAll(
     sparkyCodexAuthRouteLayer,
     assetRouteLayer,
     staticAndDevRouteLayer,
-    websocketRpcRouteLayer.pipe(Layer.provide(Microboxes.layer)),
+    websocketRpcRouteLayer,
   ),
   McpHttpServer.layer.pipe(
-    Layer.provide(Microboxes.layer),
     Layer.provide(McpSessionRegistry.layer),
     Layer.provide(McpProcessRunnerLayerLive),
   ),
 ).pipe(
+  // Provide one scoped VM manager to both the chat agent and the desktop UI.
+  // Separate route-level providers created two independent box registries.
+  Layer.provide(Microboxes.layer),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(browserApiCorsLayer),
 );

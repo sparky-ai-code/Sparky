@@ -5,6 +5,7 @@ import {
   FileDiff,
   Files,
   Globe2,
+  Monitor,
   Plus,
   TerminalSquare,
   Workflow,
@@ -50,11 +51,13 @@ interface RightPanelTabsProps {
   onCloseAllSurfaces: () => void;
   onCopyFilePath: (relativePath: string) => void;
   onAddBrowser: () => void;
+  onAddBox: () => void;
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
   onAddEnvironment: () => void;
   browserAvailable: boolean;
+  boxAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   environmentAvailable: boolean;
@@ -64,6 +67,7 @@ interface RightPanelTabsProps {
 
 const SURFACE_DISABLED_REASONS = {
   browser: "Browser previews are only available in the Sparky desktop app.",
+  box: "Enable Sparky Microboxes in settings to open Boxes.",
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
 } as const;
@@ -100,11 +104,13 @@ function SurfaceMenuItem(props: {
 
 function RightPanelEmptyState(props: {
   onAddBrowser: () => void;
+  onAddBox: () => void;
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
   onAddEnvironment: () => void;
   browserAvailable: boolean;
+  boxAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   environmentAvailable: boolean;
@@ -117,6 +123,14 @@ function RightPanelEmptyState(props: {
       available: props.browserAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.browser,
       onClick: props.onAddBrowser,
+    },
+    {
+      label: "Boxes",
+      description: "Manage graphical virtual machines.",
+      icon: Monitor,
+      available: props.boxAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.box,
+      onClick: props.onAddBox,
     },
     {
       label: "Terminal",
@@ -218,6 +232,8 @@ function surfaceTitle(
       return "Diff";
     case "files":
       return "Files";
+    case "box":
+      return surface.resourceId ? `Box ${surface.resourceId.slice(0, 8)}` : "Boxes";
     case "file":
       return surface.relativePath.slice(surface.relativePath.lastIndexOf("/") + 1);
     case "terminal":
@@ -277,6 +293,8 @@ function SurfaceIcon({
       return <FileDiff className="size-3.5 shrink-0" />;
     case "files":
       return <Files className="size-3.5 shrink-0" />;
+    case "box":
+      return <Monitor className="size-3.5 shrink-0" />;
     case "file":
       return (
         <PierreEntryIcon
@@ -476,6 +494,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     <Globe2 />
                     Browser
                   </SurfaceMenuItem>
+                  <SurfaceMenuItem
+                    available={props.boxAvailable}
+                    disabledReason={SURFACE_DISABLED_REASONS.box}
+                    onClick={props.onAddBox}
+                  >
+                    <Monitor />
+                    Boxes
+                  </SurfaceMenuItem>
                   <SurfaceMenuItem available onClick={props.onAddTerminal}>
                     <TerminalSquare />
                     Terminal
@@ -514,11 +540,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         {props.activeSurfaceId === null ? (
           <RightPanelEmptyState
             onAddBrowser={props.onAddBrowser}
+            onAddBox={props.onAddBox}
             onAddTerminal={props.onAddTerminal}
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}
             onAddEnvironment={props.onAddEnvironment}
             browserAvailable={props.browserAvailable}
+            boxAvailable={props.boxAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
             environmentAvailable={props.environmentAvailable}

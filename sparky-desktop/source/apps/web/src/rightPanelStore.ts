@@ -20,6 +20,7 @@ export const RIGHT_PANEL_KINDS = [
   "files",
   "file",
   "preview",
+  "box",
   "terminal",
   "environment",
 ] as const;
@@ -28,6 +29,8 @@ export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 export type RightPanelSurface =
   | { id: `browser:${string}`; kind: "preview"; resourceId: string }
   | { id: "browser:new"; kind: "preview"; resourceId: null }
+  | { id: `box:${string}`; kind: "box"; resourceId: string }
+  | { id: "box:new"; kind: "box"; resourceId: null }
   | {
       id: `terminal:${string}`;
       kind: "terminal";
@@ -61,6 +64,7 @@ interface RightPanelStoreState {
   byThreadKey: Record<string, ThreadRightPanelState>;
   open: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
+  openBox: (ref: ScopedThreadRef, boxId: string | null) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
   splitTerminal: (
@@ -92,7 +96,7 @@ const EMPTY_THREAD_STATE: ThreadRightPanelState = {
 };
 
 const singletonSurface = (
-  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal">,
+  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "box">,
 ): RightPanelSurface => {
   switch (kind) {
     case "diff":
@@ -110,6 +114,11 @@ const browserSurface = (tabId: string | null): RightPanelSurface =>
   tabId
     ? { id: `browser:${tabId}`, kind: "preview", resourceId: tabId }
     : { id: "browser:new", kind: "preview", resourceId: null };
+
+const boxSurface = (boxId: string | null): RightPanelSurface =>
+  boxId
+    ? { id: `box:${boxId}`, kind: "box", resourceId: boxId }
+    : { id: "box:new", kind: "box", resourceId: null };
 
 const fileSurface = (
   relativePath: string,
@@ -181,6 +190,14 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                 threadState && typeof threadState === "object" ? threadState : null;
               const surfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
+                    if (surface.kind === "box") {
+                      const id = surface.resourceId === null
+                        ? "box:new"
+                        : typeof surface.resourceId === "string"
+                          ? `box:${surface.resourceId}`
+                          : null;
+                      return id === surface.id ? [surface] : [];
+                    }
                     if (surface.kind === "file") {
                       const revealLine =
                         typeof surface.revealLine === "number" &&
@@ -257,6 +274,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               const existing = current.surfaces.find((surface) => surface.kind === "preview");
               return upsertSurface(current, existing ?? browserSurface(null));
             }
+            if (kind === "box") {
+              const existing = current.surfaces.find((surface) => surface.kind === "box");
+              return upsertSurface(current, existing ?? boxSurface(null));
+            }
             return upsertSurface(current, singletonSurface(kind));
           }),
         })),
@@ -268,6 +289,16 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               ? current.surfaces.filter((entry) => entry.id !== "browser:new")
               : current.surfaces;
             return upsertSurface({ ...current, surfaces: withoutPlaceholder }, surface);
+          }),
+        })),
+      openBox: (ref, boxId) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+            const surface = boxSurface(boxId);
+            const surfaces = boxId
+              ? current.surfaces.filter((entry) => entry.id !== "box:new")
+              : current.surfaces;
+            return upsertSurface({ ...current, surfaces }, surface);
           }),
         })),
       openFile: (ref, relativePath, line) =>
@@ -520,6 +551,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             if (kind === "preview") {
               const existing = current.surfaces.find((surface) => surface.kind === "preview");
               return upsertSurface(current, existing ?? browserSurface(null));
+            }
+            if (kind === "box") {
+              const existing = current.surfaces.find((surface) => surface.kind === "box");
+              return upsertSurface(current, existing ?? boxSurface(null));
             }
             return upsertSurface(current, singletonSurface(kind));
           }),

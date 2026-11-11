@@ -24,8 +24,9 @@ type GuestManifest = {
   kernel?: string;
   append?: string;
 };
+type MutableStatus = { -readonly [K in keyof MicroboxStatus]: MicroboxStatus[K] };
 type RunningBox = {
-  status: MicroboxStatus;
+  status: MutableStatus;
   process: ChildProcessWithoutNullStreams;
   qmp: QmpClient;
   directory: string;
@@ -38,7 +39,11 @@ const SAFE_IMAGE_FILE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u;
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 
 export class MicroboxHostError extends Error {
-  constructor(readonly code: string, message: string) { super(message); }
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
 }
 
 const nativeArch = process.arch === "arm64" ? "aarch64" : "x86_64";
@@ -77,7 +82,8 @@ export class HostBoxManager {
   private stopping = false;
   private creating = 0;
 
-  constructor(private readonly root: string) {}
+  private readonly root: string;
+  constructor(root: string) { this.root = root; }
 
   async importImage(sourceDirectory: string): Promise<MicroboxImage> {
     if (!Path.isAbsolute(sourceDirectory)) {
@@ -297,7 +303,7 @@ export class HostBoxManager {
         env: { ...process.env },
       });
       const qmp = new QmpClient(child);
-      const status: MicroboxStatus = {
+      const status: MutableStatus = {
         boxId,
         threadId: input.threadId,
         imageId: input.imageId,

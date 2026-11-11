@@ -103,6 +103,7 @@ function guestDrivePath(path: string): string {
  */
 export class HostBoxManager {
   private readonly boxes = new Map<string, RunningBox>();
+  private readonly deletedThreads = new Set<string>();
   private stopping = false;
   private creating = 0;
 
@@ -235,6 +236,9 @@ export class HostBoxManager {
   }
 
   async create(input: MicroboxCreateInput, workspaceRoot?: string): Promise<MicroboxStatus> {
+    if (this.deletedThreads.has(input.threadId)) {
+      throw new MicroboxHostError("forbidden", "This chat thread no longer exists.");
+    }
     if (this.stopping) throw new MicroboxHostError("busy", "Microboxes are shutting down.");
     if (this.boxes.size + this.creating >= MAX_BOXES) {
       throw new MicroboxHostError("limit", "Stop an existing box first (maximum four).");
@@ -355,7 +359,9 @@ export class HostBoxManager {
             startupTimeout = setTimeout(() => reject(new Error("VM startup timed out.")), 20_000);
           }),
         ]);
-        if (this.stopping || status.state === "stopped") throw new Error("Box setup was disabled.");
+        if (this.stopping || this.deletedThreads.has(input.threadId) || status.state === "stopped") {
+          throw new Error("Box setup was canceled.");
+        }
         status.state = "running";
       } catch {
         await qmp.stop();
@@ -529,6 +535,8 @@ export class HostBoxManager {
 
   /** Thread deletion must stop running VMs and discard private disks. */
   async destroyThread(threadId: string): Promise<void> {
+    // Keep a tombstone so an overlapping VM boot cannot resurrect a deleted chat.
+    this.deletedThreads.add(threadId);
     const owned = [...this.boxes.entries()]
       .filter(([, box]) => box.status.threadId === threadId);
     await Promise.all(owned.map(async ([boxId, box]) => {

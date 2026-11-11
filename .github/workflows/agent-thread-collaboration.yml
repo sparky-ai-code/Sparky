@@ -1,0 +1,57 @@
+name: Agent thread collaboration PR
+
+on:
+  pull_request:
+    paths:
+      - "crates/sparky_prompt/**"
+      - "sparky-desktop/source/apps/server/src/mcp/**"
+      - "sparky-desktop/source/apps/web/src/components/preview/**"
+      - "sparky-desktop/source/packages/contracts/src/previewAutomation.ts"
+      - "sparky-desktop/source/pnpm-lock.yaml"
+      - ".github/workflows/agent-thread-collaboration.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    name: Typecheck and test cross-environment thread tools
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Typecheck contracts
+        run: pnpm --filter @sparky/contracts typecheck
+      - name: Typecheck server
+        run: pnpm --filter t3 typecheck
+      - name: Typecheck web
+        run: pnpm --filter @sparky/web typecheck
+      - name: Test agent MCP tool schemas and permissions
+        run: pnpm --filter t3 exec vp test run src/mcp/toolkits/threads/handlers.test.ts
+      - name: Test cross-environment relay
+        run: pnpm --filter @sparky/web exec vp test run --passWithNoTests --project unit src/components/preview/threadCollaborationRelay.test.ts
+
+  rust:
+    name: Verify agent thread system prompt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Test Build and Plan thread guidance
+        run: cargo test -p sparky_prompt default_build_prompt_describes_agent_thread_collaboration

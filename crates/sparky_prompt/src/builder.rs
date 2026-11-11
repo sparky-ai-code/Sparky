@@ -777,6 +777,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn default_build_prompt_describes_agent_thread_collaboration() {
+        let directory = tempfile::tempdir().expect("temporary workspace");
+        let build = PromptBuilder::new(directory.path().to_string_lossy())
+            .build()
+            .await;
+
+        for tool in [
+            "sparky_threads_list",
+            "sparky_project_branches",
+            "sparky_thread_models",
+            "sparky_thread_read",
+            "sparky_thread_create",
+            "sparky_thread_message",
+            "sparky_thread_steer",
+        ] {
+            assert!(build.contains(tool), "missing instructions for {tool}");
+        }
+        assert!(build.contains("Do not ask the user to click a New Thread button"));
+        assert!(build.contains("Never use cross-thread tools to bypass Plan mode"));
+
+        let plan = PromptBuilder::new(directory.path().to_string_lossy())
+            .with_plan_mode(true)
+            .build()
+            .await;
+        assert!(!plan.contains("sparky_thread_create"));
+    }
+
+    #[tokio::test]
     async fn project_free_prompt_omits_workspace_inventory_and_cwd() {
         let directory = tempfile::tempdir().expect("temporary workspace");
         std::fs::write(

@@ -365,7 +365,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     Layer.provide(McpProcessRunnerLayerLive),
   ),
 ).pipe(
-  Layer.provideMerge(Microboxes.layer),
+  Layer.provide(Microboxes.layer),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(browserApiCorsLayer),
 );

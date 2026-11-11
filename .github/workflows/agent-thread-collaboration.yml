@@ -45,6 +45,7 @@ jobs:
       - name: Typecheck web
         run: pnpm --filter @sparky/web typecheck
       - name: Typecheck server
+        if: ${{ !cancelled() }}
         run: pnpm --filter t3 typecheck
 
   rust:

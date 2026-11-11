@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { MicroboxError } from "@sparky/contracts";
+import { squashAtomCommandFailure } from "@sparky/client-runtime/state/runtime";
+import * as Schema from "effect/Schema";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -25,9 +28,15 @@ export function MicroboxesSettingsPanel() {
     setImageMessage(null);
     try {
       const result = await importGuestImage({ environmentId, input: { sourceDirectory } });
-      setImageMessage(result._tag === "Success"
-        ? "Guest image installed. You can now create a box."
-        : "Couldn't install this image. Select a folder containing a supported Microboxes image.");
+      if (result._tag === "Success") {
+        setImageMessage("Guest image installed. You can now create a box.");
+      } else {
+        // Surface only the server's sanitized product error, never a raw host exception.
+        const cause = squashAtomCommandFailure(result);
+        setImageMessage(Schema.is(MicroboxError)(cause)
+          ? cause.message
+          : "Couldn't install the guest image. Check the selected folder and try again.");
+      }
     } catch {
       setImageMessage("Couldn't install the guest image.");
     } finally {

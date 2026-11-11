@@ -35,7 +35,8 @@ type RunningBox = {
   height: number;
 };
 const MAX_BOXES = 4;
-const SAFE_IMAGE_ID = /^[a-z0-9-]{1,48}$/u;
+// Image artifacts use IDs such as "sparky-micro-x86_64"; underscores are safe in a single directory component.
+const SAFE_IMAGE_ID = /^[a-z0-9_-]{1,48}$/u;
 const SAFE_IMAGE_FILE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u;
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 

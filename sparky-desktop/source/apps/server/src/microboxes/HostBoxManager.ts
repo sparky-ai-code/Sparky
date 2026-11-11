@@ -187,13 +187,13 @@ export class HostBoxManager {
           "-boot", "order=d",
         );
       }
-      const process = spawn(imageBinary(manifest.architecture), args, {
+      const child = spawn(imageBinary(manifest.architecture), args, {
         cwd: directory,
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
         env: { ...process.env },
       });
-      const qmp = new QmpClient(process);
+      const qmp = new QmpClient(child);
       const status: MicroboxStatus = {
         boxId,
         threadId: input.threadId,
@@ -204,8 +204,8 @@ export class HostBoxManager {
         internet: input.internet ?? false,
         startedAt: new Date().toISOString(),
       };
-      this.boxes.set(boxId, { status, process, qmp, directory, width: 1024, height: 768 });
-      process.on("exit", () => {
+      this.boxes.set(boxId, { status, process: child, qmp, directory, width: 1024, height: 768 });
+      child.on("exit", () => {
         const current = this.boxes.get(boxId);
         if (current) current.status.state = "stopped";
       });

@@ -232,9 +232,10 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
       const remote = yield* relay("discover", { excludeEnvironmentId: scope.environmentId, projectId: input.projectId }, scope).pipe(
         Effect.catch(() => Effect.succeed({ environments: [], warning: "Other environments are unreachable without a connected Desktop host." })),
       );
-      const parsed = remote as { environments?: unknown[]; warning?: string };
+      const parsed = remote as { environments?: unknown[]; errors?: unknown[]; warning?: string };
       return {
         environments: [local, ...(parsed.environments ?? [])],
+        unreachableEnvironments: parsed.errors ?? [],
         ...(parsed.warning ? { warning: parsed.warning } : {}),
       };
     });

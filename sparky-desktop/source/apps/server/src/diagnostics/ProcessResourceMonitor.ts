@@ -18,6 +18,12 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import * as ProcessDiagnostics from "./ProcessDiagnostics.ts";
 
 const SAMPLE_INTERVAL_MS = 5_000;
+// Avoid spawning ps/PowerShell continuously when the diagnostics view is closed.
+const SAMPLING_IDLE_TIMEOUT_MS = 60_000;
+
+export function shouldSampleProcessResources(lastReadAtMs: number, nowMs: number): boolean {
+  return lastReadAtMs > 0 && nowMs - lastReadAtMs <= SAMPLING_IDLE_TIMEOUT_MS;
+}
 const RETENTION_MS = 60 * 60_000;
 const MAX_RETAINED_SAMPLES = 20_000;
 
@@ -184,47 +190,55 @@ function buildBuckets(input: {
 }): ReadonlyArray<ServerProcessResourceHistoryBucket> {
   const bucketMs = Math.max(1_000, input.bucketMs);
   const windowStartMs = input.nowMs - input.windowMs;
-  const buckets: ServerProcessResourceHistoryBucket[] = [];
+  const bucketCount = Math.ceil(input.windowMs / bucketMs);
 
-  for (let startedAtMs = windowStartMs; startedAtMs < input.nowMs; startedAtMs += bucketMs) {
-    const endedAtMs = Math.min(input.nowMs, startedAtMs + bucketMs);
-    const bucketSamples = input.samples.filter(
-      (sample) =>
-        sample.sampledAtMs >= startedAtMs &&
-        (endedAtMs === input.nowMs
-          ? sample.sampledAtMs <= endedAtMs
-          : sample.sampledAtMs < endedAtMs),
-    );
-    const samplesByRead = new Map<number, ProcessResourceSample[]>();
-    for (const sample of bucketSamples) {
-      const samplesAtTime = samplesByRead.get(sample.sampledAtMs) ?? [];
-      samplesAtTime.push(sample);
-      samplesByRead.set(sample.sampledAtMs, samplesAtTime);
+  // Aggregate each sampling instant once, rather than filtering the entire
+  // history separately for every bucket (O(samples * buckets)).
+  const totalsByRead = new Map<number, { cpuPercent: number; rssBytes: number; processCount: number }>();
+  for (const sample of input.samples) {
+    if (sample.sampledAtMs < windowStartMs || sample.sampledAtMs > input.nowMs) {
+      continue;
     }
-
-    const readTotals = [...samplesByRead.values()].map((samplesAtTime) => ({
-      cpuPercent: samplesAtTime.reduce((total, sample) => total + sample.cpuPercent, 0),
-      rssBytes: samplesAtTime.reduce((total, sample) => total + sample.rssBytes, 0),
-      processCount: samplesAtTime.length,
-    }));
-    const avgCpuPercent =
-      readTotals.length === 0
-        ? 0
-        : readTotals.reduce((total, read) => total + read.cpuPercent, 0) / readTotals.length;
-
-    buckets.push({
-      startedAt: dateTimeFromMillis(startedAtMs),
-      endedAt: dateTimeFromMillis(endedAtMs),
-      avgCpuPercent,
-      maxCpuPercent: readTotals.length ? Math.max(...readTotals.map((read) => read.cpuPercent)) : 0,
-      maxRssBytes: readTotals.length ? Math.max(...readTotals.map((read) => read.rssBytes)) : 0,
-      maxProcessCount: readTotals.length
-        ? Math.max(...readTotals.map((read) => read.processCount))
-        : 0,
-    });
+    const totals = totalsByRead.get(sample.sampledAtMs) ?? {
+      cpuPercent: 0,
+      rssBytes: 0,
+      processCount: 0,
+    };
+    totals.cpuPercent += sample.cpuPercent;
+    totals.rssBytes += sample.rssBytes;
+    totals.processCount += 1;
+    totalsByRead.set(sample.sampledAtMs, totals);
   }
 
-  return buckets;
+  const totalsByBucket = Array.from({ length: bucketCount }, () => ({
+    readCount: 0,
+    cpuTotal: 0,
+    maxCpuPercent: 0,
+    maxRssBytes: 0,
+    maxProcessCount: 0,
+  }));
+  for (const [sampledAtMs, totals] of totalsByRead) {
+    // A sample exactly at nowMs belongs to the final bucket.
+    const index = Math.min(bucketCount - 1, Math.floor((sampledAtMs - windowStartMs) / bucketMs));
+    const bucket = totalsByBucket[index]!;
+    bucket.readCount += 1;
+    bucket.cpuTotal += totals.cpuPercent;
+    bucket.maxCpuPercent = Math.max(bucket.maxCpuPercent, totals.cpuPercent);
+    bucket.maxRssBytes = Math.max(bucket.maxRssBytes, totals.rssBytes);
+    bucket.maxProcessCount = Math.max(bucket.maxProcessCount, totals.processCount);
+  }
+
+  return totalsByBucket.map((totals, index) => {
+    const startedAtMs = windowStartMs + index * bucketMs;
+    return {
+      startedAt: dateTimeFromMillis(startedAtMs),
+      endedAt: dateTimeFromMillis(Math.min(input.nowMs, startedAtMs + bucketMs)),
+      avgCpuPercent: totals.readCount > 0 ? totals.cpuTotal / totals.readCount : 0,
+      maxCpuPercent: totals.maxCpuPercent,
+      maxRssBytes: totals.maxRssBytes,
+      maxProcessCount: totals.maxProcessCount,
+    };
+  });
 }
 
 export function aggregateProcessResourceHistory(input: {
@@ -266,6 +280,7 @@ export function aggregateProcessResourceHistory(input: {
 export const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const state = yield* Ref.make<MonitorState>({ samples: [], lastFailure: null });
+  const lastHistoryReadAtMs = yield* Ref.make(0);
 
   const recordSamplingFailure = (cause: {
     readonly _tag: ServerProcessResourceHistoryFailureTagType;
@@ -304,14 +319,29 @@ export const make = Effect.gen(function* () {
     }),
   );
 
-  yield* Effect.forever(sampleOnce.pipe(Effect.andThen(Effect.sleep(SAMPLE_INTERVAL_MS)))).pipe(
-    Effect.forkScoped,
-  );
+  // The monitor service exists for the lifetime of the backend, but process
+  // enumeration is needed only while a client is viewing resource history.
+  const sampleWhenObserved = Effect.gen(function* () {
+    const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+    if (shouldSampleProcessResources(yield* Ref.get(lastHistoryReadAtMs), nowMs)) {
+      yield* sampleOnce;
+    }
+  });
+  yield* Effect.forever(
+    sampleWhenObserved.pipe(Effect.andThen(Effect.sleep(SAMPLE_INTERVAL_MS))),
+  ).pipe(Effect.forkScoped);
 
   const readHistory: ProcessResourceMonitor["Service"]["readHistory"] = (input) =>
     Effect.gen(function* () {
       const readAt = yield* DateTime.now;
       const readAtMs = DateTime.toEpochMillis(readAt);
+      const previousReadAtMs = yield* Ref.get(lastHistoryReadAtMs);
+      yield* Ref.set(lastHistoryReadAtMs, readAtMs);
+      // Give the first diagnostics request a useful sample immediately; resume
+      // periodic collection until the view has been idle for a minute.
+      if (!shouldSampleProcessResources(previousReadAtMs, readAtMs)) {
+        yield* sampleOnce;
+      }
       const current = yield* Ref.get(state);
       return aggregateProcessResourceHistory({
         samples: current.samples,

@@ -1,3 +1,4 @@
+// @effect-diagnostics cryptoRandomUUID:off
 import {
   CommandId,
   EnvironmentId,

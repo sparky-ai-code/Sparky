@@ -19,7 +19,7 @@ export interface MicroboxesService {
   readonly images: BoxAction<MicroboxImage[]>;
   readonly importImage: (path: string) => BoxAction<MicroboxImage>;
   readonly list: (threadId: string) => BoxAction<MicroboxStatus[]>;
-  readonly create: (input: MicroboxCreateInput) => BoxAction<MicroboxStatus>;
+  readonly create: (input: MicroboxCreateInput, workspaceRoot?: string) => BoxAction<MicroboxStatus>;
   readonly status: (target: Target) => BoxAction<MicroboxStatus>;
   readonly snapshot: (target: Target) => BoxAction<MicroboxSnapshot>;
   readonly click: (target: Target & { x: number; y: number; button?: "left" | "right" | "middle" }) => BoxAction<void>;
@@ -83,7 +83,7 @@ export const layer = Layer.scoped(
       images: guarded(() => manager.images()),
       importImage: (path) => guarded(() => manager.importImage(path)),
       list,
-      create: (input) =>
+      create: (input, workspaceRoot) =>
         enabled.pipe(
           Effect.flatMap((current) =>
             input.internet && !current.microboxesInternetEnabled
@@ -93,7 +93,7 @@ export const layer = Layer.scoped(
                     message: "Enable internet access for Microboxes before creating an online box.",
                   }),
                 )
-              : Effect.tryPromise({ try: () => manager.create(input), catch: wrapError }),
+              : Effect.tryPromise({ try: () => manager.create(input, workspaceRoot), catch: wrapError }),
           ),
         ),
       status: ({ threadId, boxId }) =>

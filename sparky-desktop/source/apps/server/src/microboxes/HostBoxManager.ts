@@ -127,6 +127,7 @@ export class HostBoxManager {
       await this.image(manifest.id);
     } catch (cause) {
       await Fs.rm(temporary, { recursive: true, force: true });
+      await Fs.rm(target, { recursive: true, force: true });
       if (cause instanceof MicroboxHostError) throw cause;
       throw new MicroboxHostError("io-error", "Couldn't install this guest image.");
     }
@@ -201,7 +202,7 @@ export class HostBoxManager {
     return box;
   }
 
-  async create(input: MicroboxCreateInput): Promise<MicroboxStatus> {
+  async create(input: MicroboxCreateInput, workspaceRoot?: string): Promise<MicroboxStatus> {
     if (this.stopping) throw new MicroboxHostError("busy", "Microboxes are shutting down.");
     if (this.boxes.size + this.creating >= MAX_BOXES) {
       throw new MicroboxHostError("limit", "Stop an existing box first (maximum four).");
@@ -229,7 +230,41 @@ export class HostBoxManager {
       ...(input.internet ? ["-netdev", "user,id=net0", "-device", "virtio-net-pci,netdev=net0"] : ["-nic", "none"]),
     ];
     const guestFile = Path.join(imageDir, manifest.file);
+    let artifactName: string | undefined;
     try {
+      if (input.artifactRelativePath !== undefined) {
+        if (!workspaceRoot || !Path.isAbsolute(workspaceRoot)) {
+          throw new MicroboxHostError("forbidden", "An authenticated workspace is required to attach an installer.");
+        }
+        const relative = input.artifactRelativePath;
+        if (Path.isAbsolute(relative) || relative.includes("\\") || relative.includes(":") || relative.includes("\0")) {
+          throw new MicroboxHostError("invalid-input", "Installer path must be relative to the workspace.");
+        }
+        const root = await Fs.realpath(workspaceRoot);
+        const resolved = await Fs.realpath(Path.resolve(root, relative)).catch(() => {
+          throw new MicroboxHostError("not-found", "The installer was not found in this workspace.");
+        });
+        if (!resolved.startsWith(root + Path.sep)) {
+          throw new MicroboxHostError("forbidden", "Installers must be inside this thread's workspace.");
+        }
+        const stat = await Fs.stat(resolved);
+        if (!stat.isFile() || stat.size <= 0 || stat.size > 2 * 1024 * 1024 * 1024) {
+          throw new MicroboxHostError("invalid-input", "Installer file must be nonempty and smaller than 2 GiB.");
+        }
+        const extension = Path.extname(resolved).toLowerCase();
+        if (![".exe", ".msi", ".appimage", ".deb", ".rpm", ".sh", ".pkg"].includes(extension)) {
+          throw new MicroboxHostError("invalid-input", "Unsupported installer artifact type.");
+        }
+        artifactName = "sparky-installer" + extension;
+        const mountDirectory = Path.join(directory, "installer");
+        await Fs.mkdir(mountDirectory, { recursive: true });
+        await Fs.copyFile(resolved, Path.join(mountDirectory, artifactName));
+        // QEMU snapshots a virtual FAT directory at boot; never mutate while guest is running.
+        args.push(
+          "-drive", `file=fat:${mountDirectory},format=raw,if=none,id=installer`,
+          "-device", "usb-storage,drive=installer",
+        );
+      }
       if (manifest.kind === "linux-kernel") {
         const overlay = Path.join(directory, "rootfs.img");
         await Fs.copyFile(guestFile, overlay);
@@ -246,7 +281,7 @@ export class HostBoxManager {
         args.push("-drive", `file=${overlay},format=qcow2,if=virtio`);
       } else {
         const overlay = Path.join(directory, "disk.qcow2");
-        await execFile("qemu-img", ["create", "-f", "qcow2", overlay, "32G"], {
+        await execFile(imageTool("qemu-img"), ["create", "-f", "qcow2", overlay, "32G"], {
           timeout: 60_000, windowsHide: true,
         });
         args.push(
@@ -270,6 +305,7 @@ export class HostBoxManager {
         state: "starting",
         memoryMiB, cpus,
         internet: input.internet ?? false,
+        ...(artifactName ? { artifactName } : {}),
         startedAt: new Date().toISOString(),
       };
       this.boxes.set(boxId, { status, process: child, qmp, directory, width: 1024, height: 768 });

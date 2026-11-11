@@ -15,7 +15,11 @@ const withScope = Effect.fn("MicroboxesToolkit.withScope")(function* <A>(
 export const MicroboxesToolkitHandlersLive = MicroboxesToolkit.toLayer({
   box_images: () => withScope((service) => service.images),
   box_list: () => withScope((service, threadId) => service.list(threadId)),
-  box_create: (input) => withScope((service, threadId) => service.create({ threadId, ...input })),
+  box_create: (input) => Effect.gen(function* () {
+    const scope = yield* McpInvocationContext.McpInvocationContext;
+    const service = yield* Microboxes.Microboxes;
+    return yield* service.create({ threadId: scope.threadId, ...input }, scope.cwd);
+  }),
   box_status: (input) => withScope((service, threadId) => service.status({ threadId, ...input })),
   box_snapshot: (input) => withScope((service, threadId) => service.snapshot({ threadId, ...input })),
   box_click: (input) => withScope((service, threadId) =>

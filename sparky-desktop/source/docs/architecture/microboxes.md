@@ -38,4 +38,8 @@ Do not expose host private networks, host credentials or arbitrary mount points 
 
 ## Release testing
 
+Agents can pass `artifactRelativePath` in `box_create` for an installer built inside their authenticated thread workspace. The backend verifies the resolved real path is strictly within that workspace, copies the artifact before VM boot, and mounts it as a **read-only virtual FAT USB disk**. The user or agent can then open that device inside the VM and click through the installer GUI. There is intentionally no arbitrary host-path artifact attachment agent tool.
+
+Current constraints: only supported installer file types are mountable; Windows 11 UEFI/TPM guest provisioning, automatic installer execution, clean restore snapshots, and post-run test reports require separate guest integration. User-supplied licensed Windows guest images are required to test native Windows installers; the Micro Linux guest is not a Windows installer test environment.
+
 A future release test plan should select a guest OS matching the installer artifact, restore a clean snapshot, transfer the artifact, run the installer through the GUI, validate app startup/interactions and preserve logs/screenshots as evidence. Windows and macOS guest licensing and host compatibility requirements are separate from whether the Sparky desktop application can itself run on the host platform.

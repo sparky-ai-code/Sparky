@@ -25,13 +25,14 @@ export const BoxListTool = readonly(Tool.make("box_list", {
   parameters: empty, success: Schema.Array(MicroboxStatus), failure: MicroboxError, dependencies,
 }).annotate(Tool.Title, "List graphical boxes"));
 export const BoxCreateTool = mutate(Tool.make("box_create", {
-  description: "Start an isolated GUI virtual machine from a previously installed image. This tool only works after the user explicitly enables Sparky Microboxes in settings. Internet access is opt-in and disabled by default.",
+  description: "Start an isolated GUI virtual machine from a previously installed image. This tool only works after the user explicitly enables Sparky Microboxes. Use artifactRelativePath to attach a compiled installer from your thread workspace as a read-only virtual USB disk during boot; click the installer in the guest GUI to test it. Internet access is separately opt-in and disabled by default.",
   parameters: Schema.Struct({
     imageId: MicroboxCreateInput.fields.imageId,
     name: Schema.optionalKey(Schema.String),
     memoryMiB: MicroboxCreateInput.fields.memoryMiB,
     cpus: MicroboxCreateInput.fields.cpus,
     internet: MicroboxCreateInput.fields.internet,
+    artifactRelativePath: MicroboxCreateInput.fields.artifactRelativePath,
   }),
   success: MicroboxStatus, failure: MicroboxError, dependencies,
 }).annotate(Tool.Title, "Create graphical box"));

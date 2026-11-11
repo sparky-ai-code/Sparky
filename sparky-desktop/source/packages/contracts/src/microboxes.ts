@@ -15,6 +15,8 @@ export const MicroboxCreateInput = Schema.Struct({
   memoryMiB: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 256, maximum: 8192 }))),
   cpus: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 4 }))),
   internet: Schema.optionalKey(Schema.Boolean),
+  // Only a file inside the authenticated agent's workspace may be mounted.
+  artifactRelativePath: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024))),
 });
 export type MicroboxCreateInput = typeof MicroboxCreateInput.Type;
 export const MicroboxListInput = Schema.Struct({ threadId: ThreadId });
@@ -43,6 +45,7 @@ export const MicroboxStatus = Schema.Struct({
   memoryMiB: Schema.Int,
   cpus: Schema.Int,
   internet: Schema.Boolean,
+  artifactName: Schema.optionalKey(Schema.String),
   startedAt: Schema.String,
 });
 export type MicroboxStatus = typeof MicroboxStatus.Type;

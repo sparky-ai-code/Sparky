@@ -32,7 +32,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
           PUPPETEER_SKIP_DOWNLOAD: "true"

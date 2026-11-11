@@ -422,6 +422,24 @@ export class HostBoxManager {
     ] });
   }
 
+  async scroll(
+    threadId: string,
+    boxId: string,
+    direction: "up" | "down",
+    steps: number,
+  ): Promise<void> {
+    const box = this.running(threadId, boxId);
+    if (!Number.isInteger(steps) || steps < 1 || steps > 16) {
+      throw new MicroboxHostError("invalid-input", "Scroll steps must be between 1 and 16.");
+    }
+    const button = direction === "up" ? "wheel-up" : "wheel-down";
+    const events = Array.from({ length: steps }, () => [
+      { type: "btn", data: { button, down: true } },
+      { type: "btn", data: { button, down: false } },
+    ]).flat();
+    await box.qmp.command("input-send-event", { events });
+  }
+
   async press(threadId: string, boxId: string, key: string): Promise<void> {
     const box = this.running(threadId, boxId);
     const aliases: Record<string, string> = {

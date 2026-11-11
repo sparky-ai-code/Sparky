@@ -54,6 +54,11 @@ export function createMicroboxesEnvironmentAtoms<R, E>(
       tag: WS_METHODS.microboxClick,
       scheduler: controls, concurrency: scoped,
     }),
+    scroll: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:microboxes:scroll",
+      tag: WS_METHODS.microboxScroll,
+      scheduler: controls, concurrency: scoped,
+    }),
     type: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:microboxes:type",
       tag: WS_METHODS.microboxType,

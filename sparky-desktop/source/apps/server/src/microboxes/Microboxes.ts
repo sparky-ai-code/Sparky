@@ -25,6 +25,7 @@ export interface MicroboxesService {
   readonly snapshot: (target: Target) => BoxAction<MicroboxSnapshot>;
   readonly click: (target: Target & { x: number; y: number; button?: "left" | "right" | "middle" }) => BoxAction<void>;
   readonly type: (target: Target & { text: string }) => BoxAction<void>;
+  readonly scroll: (target: Target & { direction: "up" | "down"; steps: number }) => BoxAction<void>;
   readonly press: (target: Target & { key: string }) => BoxAction<void>;
   readonly stop: (target: Target) => BoxAction<void>;
   readonly destroy: (target: Target) => BoxAction<void>;
@@ -105,6 +106,8 @@ export const layer = Layer.effect(
         guarded(() => manager.click(threadId, boxId, x, y, button ?? "left")),
       type: ({ threadId, boxId, text }) =>
         guarded(() => manager.type(threadId, boxId, text)),
+      scroll: ({ threadId, boxId, direction, steps }) =>
+        guarded(() => manager.scroll(threadId, boxId, direction, steps)),
       press: ({ threadId, boxId, key }) =>
         guarded(() => manager.press(threadId, boxId, key)),
       stop: ({ threadId, boxId }) =>

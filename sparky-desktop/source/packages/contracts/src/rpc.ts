@@ -165,6 +165,7 @@ import {
   MicroboxListInput,
   MicroboxTarget,
   MicroboxClickInput,
+  MicroboxScrollInput,
   MicroboxTypeInput,
   MicroboxKeyInput,
   MicroboxStatus,
@@ -226,6 +227,7 @@ export const WS_METHODS = {
   microboxStatus: "microbox.status",
   microboxSnapshot: "microbox.snapshot",
   microboxClick: "microbox.click",
+  microboxScroll: "microbox.scroll",
   microboxType: "microbox.type",
   microboxPress: "microbox.press",
   microboxStop: "microbox.stop",
@@ -643,6 +645,11 @@ export const WsMicroboxClickRpc = Rpc.make(WS_METHODS.microboxClick, {
   payload: MicroboxClickInput,
   error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
 });
+export const WsMicroboxScrollRpc = Rpc.make(WS_METHODS.microboxScroll, {
+  payload: MicroboxScrollInput,
+  error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
+});
+
 export const WsMicroboxTypeRpc = Rpc.make(WS_METHODS.microboxType, {
   payload: MicroboxTypeInput,
   error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
@@ -885,6 +892,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsMicroboxStatusRpc,
   WsMicroboxSnapshotRpc,
   WsMicroboxClickRpc,
+  WsMicroboxScrollRpc,
   WsMicroboxTypeRpc,
   WsMicroboxPressRpc,
   WsMicroboxStopRpc,

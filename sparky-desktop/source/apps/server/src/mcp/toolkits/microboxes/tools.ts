@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import {
   MicroboxError, MicroboxStatus, MicroboxImage, MicroboxSnapshot, MicroboxTarget,
-  MicroboxCreateInput, MicroboxClickInput, MicroboxTypeInput, MicroboxKeyInput,
+  MicroboxCreateInput, MicroboxClickInput, MicroboxScrollInput, MicroboxTypeInput, MicroboxKeyInput,
 } from "@sparky/contracts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as Microboxes from "../../../microboxes/Microboxes.ts";
@@ -54,6 +54,16 @@ export const BoxClickTool = mutate(Tool.make("box_click", {
   }),
   success: Schema.Null, failure: MicroboxError, dependencies,
 }).annotate(Tool.Title, "Click inside box"));
+export const BoxScrollTool = mutate(Tool.make("box_scroll", {
+  description: "Scroll the real graphical desktop inside a box. Choose up or down and 1–16 wheel steps.",
+  parameters: Schema.Struct({
+    ...target.fields,
+    direction: MicroboxScrollInput.fields.direction,
+    steps: MicroboxScrollInput.fields.steps,
+  }),
+  success: Schema.Null, failure: MicroboxError, dependencies,
+}).annotate(Tool.Title, "Scroll inside box"));
+
 export const BoxTypeTool = mutate(Tool.make("box_type", {
   description: "Type text into the currently focused graphical application in a VM.",
   parameters: Schema.Struct({ ...target.fields, text: MicroboxTypeInput.fields.text }),
@@ -75,5 +85,5 @@ export const BoxDestroyTool = mutate(Tool.make("box_destroy", {
 
 export const MicroboxesToolkit = Toolkit.make(
   BoxImagesTool, BoxListTool, BoxCreateTool, BoxStatusTool, BoxSnapshotTool, BoxClickTool,
-  BoxTypeTool, BoxPressTool, BoxStopTool, BoxDestroyTool,
+  BoxScrollTool, BoxTypeTool, BoxPressTool, BoxStopTool, BoxDestroyTool,
 );

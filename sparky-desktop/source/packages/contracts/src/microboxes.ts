@@ -28,6 +28,12 @@ export const MicroboxClickInput = Schema.Struct({
   y: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8192 })),
   button: Schema.optionalKey(Schema.Literals(["left", "right", "middle"])),
 });
+export const MicroboxScrollInput = Schema.Struct({
+  ...MicroboxTarget.fields,
+  direction: Schema.Literals(["up", "down"]),
+  steps: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 16 })),
+});
+
 export const MicroboxKeyInput = Schema.Struct({
   ...MicroboxTarget.fields,
   key: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(40)),

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type WheelEvent } from "react";
 import { Monitor, Settings2, Plus, Square, Trash2, RefreshCw } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { ScopedThreadRef, MicroboxSnapshot } from "@sparky/contracts";
@@ -28,6 +28,7 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
   const createBox = useAtomCommand(microboxesEnvironment.create, { reportFailure: false });
   const takeSnapshot = useAtomCommand(microboxesEnvironment.snapshot, { reportFailure: false });
   const clickBox = useAtomCommand(microboxesEnvironment.click, { reportFailure: false });
+  const scrollBox = useAtomCommand(microboxesEnvironment.scroll, { reportFailure: false });
   const typeBox = useAtomCommand(microboxesEnvironment.type, { reportFailure: false });
   const pressBox = useAtomCommand(microboxesEnvironment.press, { reportFailure: false });
   const stopBox = useAtomCommand(microboxesEnvironment.stop, { reportFailure: false });
@@ -137,6 +138,13 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
     event.currentTarget.focus();
   };
 
+  const onScreenWheel = (event: WheelEvent<HTMLImageElement>) => {
+    if (!running || !boxId || event.deltaY === 0) return;
+    const direction = event.deltaY < 0 ? "up" : "down";
+    const steps = Math.min(16, Math.max(1, Math.round(Math.abs(event.deltaY) / 100)));
+    void scrollBox({ environmentId, input: { threadId, boxId, direction, steps } });
+  };
+
   const onScreenKey = (event: KeyboardEvent<HTMLImageElement>) => {
     if (!running || !boxId || event.repeat) return;
     let key: string | null = null;
@@ -200,6 +208,7 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
                 role="button"
                 tabIndex={0}
                 onClick={onScreenClick}
+                onWheel={onScreenWheel}
                 onKeyDown={onScreenKey}
                 draggable={false}
                 className="max-h-full max-w-full cursor-crosshair object-contain outline-none focus-visible:ring-2 focus-visible:ring-primary"

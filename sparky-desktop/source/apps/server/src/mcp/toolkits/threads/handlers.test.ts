@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import {
   canAgentSendThreadMessage,
   formatAgentThreadMessage,
+  resolveExistingWorktreeRef,
 } from "./handlers.ts";
 import {
   CreateThreadTool,
@@ -75,6 +76,26 @@ describe("agent-managed thread collaboration tools", () => {
     expect(input.workspaceMode).toBe("new");
     expect(input.baseBranch).toBe("main");
     expect(input.modelSelection?.options).toHaveLength(2);
+  });
+
+  it("reuses only a worktree registered for exactly the selected branch", () => {
+    const refs = [
+      { name: "main", worktreePath: "/repo" },
+      { name: "feature/a", worktreePath: "/repo/.worktrees/a" },
+      { name: "feature/b", worktreePath: "/repo/.worktrees/b" },
+    ];
+    expect(
+      resolveExistingWorktreeRef(refs, "feature/a", "/repo/.worktrees/a", "/repo"),
+    ).toEqual(refs[1]);
+    expect(
+      resolveExistingWorktreeRef(refs, "feature/a", "/repo/.worktrees/b", "/repo"),
+    ).toBeNull();
+    expect(
+      resolveExistingWorktreeRef(refs, "main", "/repo", "/repo"),
+    ).toBeNull();
+    expect(
+      resolveExistingWorktreeRef(refs, "feature/a", "/tmp/unlisted", "/repo"),
+    ).toBeNull();
   });
 
   it("rejects unknown workspace modes and empty message IDs", () => {

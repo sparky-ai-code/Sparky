@@ -1,0 +1,4 @@
+# Default guest networking is disabled. When enabled, the optional
+# S45sparky-network script configures eth0 only if a real virtual NIC exists.
+auto lo
+iface lo inet loopback

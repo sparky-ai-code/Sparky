@@ -36,6 +36,8 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
 
   const [chosenImageId, setChosenImageId] = useState("");
   const [allowInternet, setAllowInternet] = useState(false);
+  const [memoryMiB, setMemoryMiB] = useState(512);
+  const [cpus, setCpus] = useState(2);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<MicroboxSnapshot | null>(null);
@@ -90,7 +92,7 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
       const result = await createBox({
         environmentId,
         input: {
-          threadId, imageId: selectedImage,
+          threadId, imageId: selectedImage, memoryMiB, cpus,
           ...(allowInternet && internetAllowed ? { internet: true } : {}),
         },
       });
@@ -246,6 +248,34 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
                   ))}
                 </select>
                 {!images.data?.length ? <p className="text-xs text-muted-foreground">No guest images installed. Use Settings → Microboxes to prepare an image.</p> : null}
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1 text-xs font-medium">
+                    Memory
+                    <select
+                      value={memoryMiB}
+                      onChange={(event) => setMemoryMiB(Number(event.target.value))}
+                      className="w-full rounded-md border border-border bg-background p-2 text-xs"
+                    >
+                      <option value={512}>512 MiB</option>
+                      <option value={1024}>1 GiB</option>
+                      <option value={2048}>2 GiB</option>
+                      <option value={4096}>4 GiB</option>
+                      <option value={8192}>8 GiB</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-medium">
+                    CPU cores
+                    <select
+                      value={cpus}
+                      onChange={(event) => setCpus(Number(event.target.value))}
+                      className="w-full rounded-md border border-border bg-background p-2 text-xs"
+                    >
+                      <option value={1}>1 core</option>
+                      <option value={2}>2 cores</option>
+                      <option value={4}>4 cores</option>
+                    </select>
+                  </label>
+                </div>
                 {internetAllowed ? (
                   <label className="flex items-center gap-2 text-xs">
                     <input type="checkbox" checked={allowInternet} onChange={(event) => setAllowInternet(event.target.checked)} />

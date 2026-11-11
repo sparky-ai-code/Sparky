@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - "sparky-desktop/source/microboxes/os/**"
-      - "sparky-desktop/source/.github/workflows/microboxes-guest-image.yml"
+      - ".github/workflows/microboxes-guest-image.yml"
 
 jobs:
   build-micro-linux:
@@ -15,12 +15,14 @@ jobs:
         working-directory: sparky-desktop/source
     steps:
       - uses: actions/checkout@v4
-      - name: Install Buildroot host dependencies
+      # The GitHub-hosted Ubuntu image already contains these build tools.
+      # Avoid a fragile apt update: mirrors occasionally fail in hosted runners.
+      - name: Verify Buildroot host dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential git wget curl rsync cpio unzip file bc bison flex \
-            libssl-dev libncurses-dev python3 python3-setuptools xz-utils
+          set -eu
+          for bin in gcc g++ make git wget curl rsync cpio unzip file bc bison flex python3 sha256sum; do
+            command -v "$bin" >/dev/null || { echo "Missing build dependency: $bin"; exit 1; }
+          done
       - name: Build standalone Sparky Micro Linux image
         run: bash microboxes/os/build-x86_64.sh
         env:

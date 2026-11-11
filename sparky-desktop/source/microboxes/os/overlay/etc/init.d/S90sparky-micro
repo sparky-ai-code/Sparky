@@ -12,6 +12,20 @@ case "$1" in
     sleep 1
     /usr/bin/weston --backend=drm-backend.so --renderer=pixman --tty=1 \
       --log=/var/log/sparky-micro-desktop.log >/dev/null 2>&1 &
+    # Offer a clickable GUI terminal, so the agent can launch test programs
+    # after clicking into the real desktop instead of needing an SSH service.
+    (
+      export WAYLAND_DISPLAY=wayland-0
+      i=0
+      while [ "$i" -lt 60 ]; do
+        [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] && break
+        sleep 1
+        i=$((i + 1))
+      done
+      if [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] && [ -x /usr/bin/weston-terminal ]; then
+        /usr/bin/weston-terminal >/var/log/desktop-terminal.log 2>&1
+      fi
+    ) &
     ;;
   stop)
     killall weston seatd 2>/dev/null || true

@@ -12,6 +12,7 @@ import {
 } from "@sparky/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -34,7 +35,9 @@ import {
 } from "./tools.ts";
 
 type Invocation = McpInvocationContext.McpInvocationScope;
-type ThreadToolEffect = Effect.Effect<unknown, unknown>;
+class ThreadCollaborationError extends Data.TaggedError("ThreadCollaborationError")<{ readonly message: string }> {}
+const invalid = (message: string) => new ThreadCollaborationError({ message });
+type ThreadToolEffect = Effect.Effect<unknown, Error>;
 
 const newCommandId = () => CommandId.make(randomUUID());
 const nowIso = () => new Date().toISOString();
@@ -120,7 +123,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
         yield* projection.getThreadShellById(scope.threadId),
       );
       if (!source) {
-        return yield* Effect.fail(new Error("The calling thread is no longer available."));
+        return yield* Effect.fail(invalid("The calling thread is no longer available."));
       }
       return source;
     });
@@ -129,7 +132,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
     Effect.gen(function* () {
       const source = yield* sourceThread(scope);
       if (source.interactionMode === "plan") {
-        return yield* Effect.fail(new Error("Plan-mode agents cannot create or message threads."));
+        return yield* Effect.fail(invalid("Plan-mode agents cannot create or message threads."));
       }
       return source;
     });
@@ -140,7 +143,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
         yield* projection.getThreadDetailById(ThreadId.make(threadId)),
       );
       if (!thread || thread.deletedAt !== null || thread.archivedAt !== null) {
-        return yield* Effect.fail(new Error("The target thread was not found or is archived."));
+        return yield* Effect.fail(invalid("The target thread was not found or is archived."));
       }
       return thread;
     });
@@ -154,12 +157,12 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
     Effect.gen(function* () {
       if (target.id === scope.threadId) {
         return yield* Effect.fail(
-          new Error("An agent cannot message its own active thread through a collaboration tool."),
+          invalid("An agent cannot message its own active thread through a collaboration tool."),
         );
       }
       if (!canAgentSendThreadMessage(source, target)) {
         return yield* Effect.fail(
-          new Error("Cannot steer a thread with more permissive runtime access than the calling thread."),
+          invalid("Cannot steer a thread with more permissive runtime access than the calling thread."),
         );
       }
       const messageId = MessageId.make(randomUUID());
@@ -251,7 +254,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
         yield* projection.getProjectShellById(ProjectId.make(input.projectId)),
       );
       if (!project) {
-        return yield* Effect.fail(new Error("Project not found in this environment."));
+        return yield* Effect.fail(invalid("Project not found in this environment."));
       }
       const refs = yield* git.listRefs({
         cwd: project.workspaceRoot,
@@ -359,7 +362,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
       );
       if (!project) {
         return yield* Effect.fail(
-          new Error("Project not found in this environment. Call sparky_threads_list first."),
+          invalid("Project not found in this environment. Call sparky_threads_list first."),
         );
       }
       const modelSelection =
@@ -375,7 +378,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
         );
         if (!requestedModel) {
           return yield* Effect.fail(
-            new Error("Model/provider instance is unavailable. Use sparky_thread_models for valid choices."),
+            invalid("Model/provider instance is unavailable. Use sparky_thread_models for valid choices."),
           );
         }
         for (const selectedOption of input.modelSelection.options ?? []) {
@@ -384,19 +387,19 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
           );
           if (!descriptor) {
             return yield* Effect.fail(
-              new Error("Unsupported model option " + selectedOption.id + ". Consult sparky_thread_models."),
+              invalid("Unsupported model option " + selectedOption.id + ". Consult sparky_thread_models."),
             );
           }
           if (descriptor.type === "boolean") {
             if (typeof selectedOption.value !== "boolean") {
               return yield* Effect.fail(
-                new Error("Model option " + selectedOption.id + " requires a boolean."),
+                invalid("Model option " + selectedOption.id + " requires a boolean."),
               );
             }
           } else if (typeof selectedOption.value !== "string" ||
             !descriptor.options.some((option) => option.id === selectedOption.value)) {
             return yield* Effect.fail(
-              new Error("Unsupported value for model option " + selectedOption.id + "."),
+              invalid("Unsupported value for model option " + selectedOption.id + "."),
             );
           }
         }
@@ -411,19 +414,19 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
         branch = status.refName;
         if (input.worktreePath) {
           return yield* Effect.fail(
-            new Error("Use workspaceMode=existing when specifying a worktree path."),
+            invalid("Use workspaceMode=existing when specifying a worktree path."),
           );
         }
         if (input.branch && input.branch !== branch) {
           return yield* Effect.fail(
-            new Error("Current checkout is on a different branch; use a new worktree instead."),
+            invalid("Current checkout is on a different branch; use a new worktree instead."),
           );
         }
       } else {
         const requestedRef = input.workspaceMode === "new" ? input.baseBranch : input.branch;
         if (!requestedRef) {
           return yield* Effect.fail(
-            new Error(input.workspaceMode === "new"
+            invalid(input.workspaceMode === "new"
               ? "A baseBranch is required when creating a new worktree."
               : "An exact branch is required when reusing a worktree."),
           );
@@ -436,7 +439,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
         const ref = refs.refs.find((candidate) => candidate.name === requestedRef);
         if (!ref) {
           return yield* Effect.fail(
-            new Error("Branch was not found in the selected project's Git repository."),
+            invalid("Branch was not found in the selected project's Git repository."),
           );
         }
         if (input.workspaceMode === "existing") {
@@ -445,7 +448,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
             : null;
           if (!existing) {
             return yield* Effect.fail(
-              new Error("Existing worktree path must exactly match the selected branch's registered worktree."),
+              invalid("Existing worktree path must exactly match the selected branch's registered worktree."),
             );
           }
           branch = existing.name;
@@ -453,7 +456,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
         } else {
           if (input.worktreePath) {
             return yield* Effect.fail(
-              new Error("New worktree paths are generated by Git; do not supply worktreePath."),
+              invalid("New worktree paths are generated by Git; do not supply worktreePath."),
             );
           }
           const newBranchName = input.branch ?? ("sparky/agent-" + String(threadId).slice(0, 12));
@@ -490,7 +493,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
       );
       // If persistence rejects the creation, undo only the worktree made by this call.
       yield* createCommand.pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           createdWorktreePath
             ? git.removeWorktree({ cwd: project.workspaceRoot, path: createdWorktreePath }).pipe(
                 Effect.ignore,
@@ -559,7 +562,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
       const target = yield* loadTarget(input.threadId);
       if (target.latestTurn?.state !== "running") {
         return yield* Effect.fail(
-          new Error("The target thread is not running; use sparky_thread_message instead."),
+          invalid("The target thread is not running; use sparky_thread_message instead."),
         );
       }
       return yield* dispatchAgentMessage(scope, target, source, input.message);

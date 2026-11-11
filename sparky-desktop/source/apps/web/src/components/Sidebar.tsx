@@ -119,6 +119,7 @@ import { useShortcutModifierState } from "../shortcutModifierState";
 import { readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { NewThreadDialog } from "./NewThreadDialog";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
 import { sameSplitChatThread, useSplitChatStore } from "../splitChatStore";
 
@@ -3502,6 +3503,7 @@ interface SidebarProjectsContentProps {
   handleProjectDragCancel: (event: DragCancelEvent) => void;
   handleNewThread: ReturnType<typeof useNewThreadHandler>;
   handleNewChat: () => void;
+  openNewThreadDialog: () => void;
   chatThreads: readonly SidebarThreadSummary[];
   allSidebarThreads: readonly SidebarThreadSummary[];
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
@@ -3546,6 +3548,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     handleProjectDragCancel,
     handleNewThread,
     handleNewChat,
+    openNewThreadDialog,
     chatThreads,
     allSidebarThreads,
     archiveThread,
@@ -3624,6 +3627,18 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                   {newThreadShortcutLabel}
                 </Kbd>
               ) : null}
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              size="sm"
+              className="gap-2 bg-transparent px-2 py-1.5 font-medium text-muted-foreground/80 outline-none hover:bg-white/5 hover:text-foreground"
+              data-testid="sidebar-new-thread-trigger"
+              aria-label="Create configured thread in any project"
+              onClick={openNewThreadDialog}
+            >
+              <PlusIcon className="size-3.5" />
+              <span className="flex-1 truncate text-left text-xs">New thread…</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
@@ -3871,6 +3886,7 @@ export default function Sidebar() {
   const sidebarThreadPreviewCount = useClientSettings((s) => s.sidebarThreadPreviewCount);
   const updateSettings = useUpdateClientSettings();
   const handleNewThread = useNewThreadHandler();
+  const [newThreadDialogOpen, setNewThreadDialogOpen] = useState(false);
   const { archiveThread, deleteThread } = useThreadActions();
   const { isMobile, setOpenMobile } = useSidebar();
   const routeThreadRef = useParams({
@@ -4565,6 +4581,11 @@ export default function Sidebar() {
         <SidebarThreadDetailPrewarmer key={scopedThreadKey(threadRef)} threadRef={threadRef} />
       ))}
       <SidebarChromeHeader isElectron={isElectron} />
+      <NewThreadDialog
+        open={newThreadDialogOpen}
+        onOpenChange={setNewThreadDialogOpen}
+        onCreated={() => { if (isMobile) setOpenMobile(false); }}
+      />
 
       {isOnSettings ? (
         <SettingsSidebarNav pathname={pathname} />
@@ -4590,6 +4611,7 @@ export default function Sidebar() {
             handleProjectDragCancel={handleProjectDragCancel}
             handleNewThread={handleNewThread}
             handleNewChat={handleNewChat}
+            openNewThreadDialog={() => setNewThreadDialogOpen(true)}
             chatThreads={chatThreads}
             allSidebarThreads={allSidebarThreads}
             archiveThread={archiveThread}

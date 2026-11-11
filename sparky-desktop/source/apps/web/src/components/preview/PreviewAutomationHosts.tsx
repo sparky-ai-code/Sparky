@@ -303,6 +303,8 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
     "preview automation host focus",
   );
   const [automationConnectionAtom] = useState(() => Atom.make<string | null>(null));
+  // Keep deduplication across consumer atom rebuilds during React rerenders.
+  const [processedAutomationRequestIds] = useState(() => new Set<string>());
   const automationConnectionId = useAtomValue(automationConnectionAtom);
 
   const handleRequest = useCallback(
@@ -389,6 +391,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                 environmentId,
                 input: {
                   threadId: request.threadId,
+                  requestId: request.requestId,
                   ...(resolvedInputUrl ? { url: resolvedInputUrl } : {}),
                 },
               });
@@ -589,6 +592,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
         connectionAtom: automationConnectionAtom,
         environmentId,
         requestHandlerAtom,
+        processedRequestIds: processedAutomationRequestIds,
         respond: (response) =>
           respondToAutomation({
             environmentId,
@@ -601,6 +605,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
       automationConnectionAtom,
       automationRequestsAtom,
       requestHandlerAtom,
+      processedAutomationRequestIds,
       respondToAutomation,
       environmentId,
     ],

@@ -61,6 +61,7 @@ export const MicroboxStatus = Schema.Struct({
   cpus: Schema.Int,
   internet: Schema.Boolean,
   artifactName: Schema.optionalKey(Schema.String),
+  bootMessage: Schema.optionalKey(Schema.String),
   startedAt: Schema.String,
 });
 export type MicroboxStatus = typeof MicroboxStatus.Type;

@@ -482,6 +482,18 @@ export class HostBoxManager {
     }
   }
 
+  /** Thread deletion must stop running VMs and discard private disks. */
+  async destroyThread(threadId: string): Promise<void> {
+    const owned = [...this.boxes.entries()]
+      .filter(([, box]) => box.status.threadId === threadId);
+    await Promise.all(owned.map(async ([boxId, box]) => {
+      this.boxes.delete(boxId);
+      await box.qmp.stop().catch(() => undefined);
+      box.status.state = "stopped";
+      await Fs.rm(box.directory, { recursive: true, force: true });
+    }));
+  }
+
   resume(): void {
     this.stopping = false;
   }

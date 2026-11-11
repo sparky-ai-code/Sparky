@@ -7,7 +7,7 @@ import { scopedThreadKey, scopeThreadRef } from "@sparky/client-runtime/environm
  * This is a sidebar presentation rule: it never pauses or stops a session.
  */
 export function isFocusWorkingThread(thread: SidebarThreadSummary): boolean {
-  if (thread.hasPendingApprovals || thread.hasPendingUserInput) return false;
+  if (thread.hasPendingApprovals || thread.hasPendingUserInput || thread.hasActionableProposedPlan) return false;
   if (thread.session?.status === "error" || thread.latestTurn?.state === "error") {
     return false;
   }
@@ -22,6 +22,8 @@ export function partitionFocusThreads(input: {
   focusMode: boolean;
   pinnedThreadKeys: readonly string[];
   parkedThreadKeys: readonly string[];
+  /** Keep the open conversation visible while its agent is working. */
+  activeThreadKey?: string | null;
 }): {
   active: SidebarThreadSummary[];
   working: SidebarThreadSummary[];
@@ -38,7 +40,12 @@ export function partitionFocusThreads(input: {
     const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
     if (parkedKeys.has(key)) {
       parked.push(thread);
-    } else if (input.focusMode && !pinnedKeys.has(key) && isFocusWorkingThread(thread)) {
+    } else if (
+      input.focusMode &&
+      key !== input.activeThreadKey &&
+      !pinnedKeys.has(key) &&
+      isFocusWorkingThread(thread)
+    ) {
       working.push(thread);
     } else {
       active.push(thread);

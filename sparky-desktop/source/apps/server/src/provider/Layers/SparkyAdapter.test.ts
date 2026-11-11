@@ -30,6 +30,18 @@ import {
 } from "./SparkyAdapter.ts";
 import { ProviderAdapterProcessError } from "../Errors.ts";
 
+describe("Sparky Boxes tool presentations", () => {
+  it("routes Box tools through the graphical MCP presentation", () => {
+    expect(sparkyToolPresentation("box_create", { imageId: "sparky-micro-x86_64" }))
+      .toMatchObject({
+        itemType: "mcp_tool_call",
+        title: "Create box",
+        data: { kind: "box_create", toolName: "box_create" },
+      });
+    expect(sparkyToolPresentation("box_snapshot", { boxId: "a" }).title).toBe("View box screen");
+  });
+});
+
 describe("hidden Sparky control tools", () => {
   it("suppresses only the terminal control tool from UI lifecycle rendering", () => {
     expect(isHiddenSparkyControlTool("end_task")).toBe(true);

@@ -20,6 +20,7 @@ import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
 import { GitWorkflowService } from "../../../git/GitWorkflowService.ts";
 import { ProviderRegistry } from "../../../provider/Services/ProviderRegistry.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
@@ -83,6 +84,35 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
   const engine = yield* OrchestrationEngineService;
   const git = yield* GitWorkflowService;
   const providerRegistry = yield* ProviderRegistry;
+  const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+
+  // The Desktop host owns the authenticated connections to the user's other
+  // backend environments. Never pass backend URLs, access tokens, or arbitrary
+  // orchestration commands through the model-facing tool schema.
+  const relay = (
+    operation: "discover" | "branches" | "models" | "read" | "create" | "message" | "steer",
+    payload: unknown,
+    scope: Invocation,
+    source?: OrchestrationThreadShell,
+  ): ThreadToolEffect =>
+    broker.invoke({
+      scope,
+      operation: "threadCollaboration",
+      input: {
+        operation,
+        payload,
+        source: source
+          ? {
+              environmentId: scope.environmentId,
+              threadId: scope.threadId,
+              runtimeMode: source.runtimeMode,
+              interactionMode: source.interactionMode,
+              modelSelection: source.modelSelection,
+            }
+          : { environmentId: scope.environmentId, threadId: scope.threadId },
+      },
+      timeoutMs: 60_000,
+    });
 
   const sourceThread = (scope: Invocation) =>
     Effect.gen(function* () {
@@ -167,11 +197,14 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
     Effect.gen(function* () {
       const input = yield* Schema.decodeUnknownEffect(ListThreadsTool.parametersSchema)(payload);
       yield* sourceThread(scope);
+      if (input.environmentId && input.environmentId !== scope.environmentId) {
+        return yield* relay("discover", input, scope);
+      }
       const snapshot = yield* projection.getShellSnapshot();
       const projects = snapshot.projects.filter(
         (project) => !input.projectId || project.id === input.projectId,
       );
-      return {
+      const local = {
         environmentId: scope.environmentId,
         projects: projects.map((project) => ({
           projectId: project.id,
@@ -192,7 +225,17 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
             interactionMode: thread.interactionMode,
             latestTurnState: thread.latestTurn?.state ?? "idle",
           })),
-        note: "Targets are scoped to this backend environment. A different connected environment requires its own agent session.",
+        note: "This backend environment is reachable directly.",
+      };
+      if (input.environmentId) return local;
+      // No filter means discover all connected environments, not just this server.
+      const remote = yield* relay("discover", { excludeEnvironmentId: scope.environmentId, projectId: input.projectId }, scope).pipe(
+        Effect.catch(() => Effect.succeed({ environments: [], warning: "Other environments are unreachable without a connected Desktop host." })),
+      );
+      const parsed = remote as { environments?: unknown[]; warning?: string };
+      return {
+        environments: [local, ...(parsed.environments ?? [])],
+        ...(parsed.warning ? { warning: parsed.warning } : {}),
       };
     });
 
@@ -200,6 +243,9 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
     Effect.gen(function* () {
       const input = yield* Schema.decodeUnknownEffect(ProjectBranchesTool.parametersSchema)(payload);
       yield* sourceThread(scope);
+      if (input.environmentId && input.environmentId !== scope.environmentId) {
+        return yield* relay("branches", input, scope);
+      }
       const project = Option.getOrNull(
         yield* projection.getProjectShellById(ProjectId.make(input.projectId)),
       );
@@ -234,6 +280,9 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
     Effect.gen(function* () {
       const input = yield* Schema.decodeUnknownEffect(ThreadModelsTool.parametersSchema)(payload);
       yield* sourceThread(scope);
+      if (input.environmentId && input.environmentId !== scope.environmentId) {
+        return yield* relay("models", input, scope);
+      }
       const providers = yield* providerRegistry.getProviders;
       return {
         environmentId: scope.environmentId,
@@ -260,6 +309,9 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
     Effect.gen(function* () {
       const input = yield* Schema.decodeUnknownEffect(ReadThreadTool.parametersSchema)(payload);
       yield* sourceThread(scope);
+      if (input.environmentId && input.environmentId !== scope.environmentId) {
+        return yield* relay("read", input, scope);
+      }
       const thread = yield* loadTarget(input.threadId);
       const limit = input.limit ?? 20;
       const offset = input.offsetFromLatest ?? 0;
@@ -298,6 +350,9 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
     Effect.gen(function* () {
       const input = yield* Schema.decodeUnknownEffect(CreateThreadTool.parametersSchema)(payload);
       const source = yield* requireMutableSource(scope);
+      if (input.environmentId && input.environmentId !== scope.environmentId) {
+        return yield* relay("create", input, scope, source);
+      }
       const project = Option.getOrNull(
         yield* projection.getProjectShellById(ProjectId.make(input.projectId)),
       );
@@ -486,6 +541,9 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
     Effect.gen(function* () {
       const input = yield* Schema.decodeUnknownEffect(MessageThreadTool.parametersSchema)(payload);
       const source = yield* requireMutableSource(scope);
+      if (input.environmentId && input.environmentId !== scope.environmentId) {
+        return yield* relay("message", input, scope, source);
+      }
       const target = yield* loadTarget(input.threadId);
       return yield* dispatchAgentMessage(scope, target, source, input.message);
     });
@@ -494,6 +552,9 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
     Effect.gen(function* () {
       const input = yield* Schema.decodeUnknownEffect(SteerThreadTool.parametersSchema)(payload);
       const source = yield* requireMutableSource(scope);
+      if (input.environmentId && input.environmentId !== scope.environmentId) {
+        return yield* relay("steer", input, scope, source);
+      }
       const target = yield* loadTarget(input.threadId);
       if (target.latestTurn?.state !== "running") {
         return yield* Effect.fail(

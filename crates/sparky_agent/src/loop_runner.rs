@@ -9,13 +9,58 @@ use sparky_extensions::{EventBus, SparkyEvent};
 use sparky_prompt::PromptBuilder;
 use sparky_session::SessionManager;
 use sparky_tools::{ToolExecutionMode, ToolExecutionResult, ToolRegistry, END_TASK_TOOL_NAME};
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InteractionMode {
     Build,
     Plan,
+}
+
+/// Runtime authorization is separate from the build/plan interaction mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessMode {
+    FullAccess,
+    ApprovalRequired,
+    AutoAcceptEdits,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolApprovalDecision {
+    Accept,
+    AcceptForSession,
+    Deny,
+}
+
+/// A pending request delivered to the process host. Dropping the response channel denies it.
+pub struct ToolApprovalRequest {
+    pub request_id: String,
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub arguments: serde_json::Value,
+    pub reply: oneshot::Sender<ToolApprovalDecision>,
+}
+
+/// Unknown tools are considered capable of side effects (including MCP/extension tools).
+/// Only known, read-only builtins are exempt; commands always need authorization.
+pub fn requires_tool_approval(mode: AccessMode, tool_name: &str) -> bool {
+    if mode == AccessMode::FullAccess {
+        return false;
+    }
+    if matches!(
+        tool_name,
+        "read" | "ls" | "grep" | "find" | "web_search" | "memory_search"
+            | "bash_monitor" | "update_plan" | "end_task" | "ask_user"
+    ) {
+        return false;
+    }
+    if mode == AccessMode::AutoAcceptEdits && matches!(tool_name, "write" | "edit") {
+        return false;
+    }
+    true
 }
 
 pub struct AgentLoopOptions {
@@ -33,6 +78,24 @@ pub struct AgentLoopOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_access_modes_gate_side_effects_and_unknown_tools() {
+        for tool in ["bash", "write", "edit", "memory_add", "memory_update", "memory_delete", "preview_click", "plugin_tool"] {
+            assert!(!requires_tool_approval(AccessMode::FullAccess, tool));
+            assert!(requires_tool_approval(AccessMode::ApprovalRequired, tool));
+        }
+        for tool in ["read", "ls", "grep", "find", "web_search", "memory_search", "bash_monitor", "end_task"] {
+            assert!(!requires_tool_approval(AccessMode::ApprovalRequired, tool));
+            assert!(!requires_tool_approval(AccessMode::AutoAcceptEdits, tool));
+        }
+        for tool in ["write", "edit"] {
+            assert!(!requires_tool_approval(AccessMode::AutoAcceptEdits, tool));
+        }
+        for tool in ["bash", "memory_delete", "unknown_mcp_tool"] {
+            assert!(requires_tool_approval(AccessMode::AutoAcceptEdits, tool));
+        }
+    }
     use async_trait::async_trait;
     use futures::stream;
     use sparky_ai::EventStream;
@@ -1038,6 +1101,10 @@ pub struct AgentLoop {
     pending_background_tools: tokio::sync::Mutex<HashMap<String, PendingBackgroundTool>>,
     compaction: CompactionEngine,
     options: AgentLoopOptions,
+    access_mode: AccessMode,
+    approval_sender: Option<mpsc::UnboundedSender<ToolApprovalRequest>>,
+    next_approval_id: AtomicU64,
+    session_approved_tools: Mutex<HashSet<String>>,
 }
 
 fn is_end_task_tool(tool_call: &ToolCall) -> bool {
@@ -1076,6 +1143,56 @@ impl AgentLoop {
             pending_background_tools: tokio::sync::Mutex::new(HashMap::new()),
             compaction: CompactionEngine::default(),
             options,
+            access_mode: AccessMode::FullAccess,
+            approval_sender: None,
+            next_approval_id: AtomicU64::new(1),
+            session_approved_tools: Mutex::new(HashSet::new()),
+        }
+    }
+
+    pub fn set_access_mode(&mut self, mode: AccessMode) {
+        if self.access_mode != mode {
+            self.session_approved_tools.lock().expect("approval mutex poisoned").clear();
+        }
+        self.access_mode = mode;
+    }
+
+    pub fn set_approval_sender(&mut self, sender: mpsc::UnboundedSender<ToolApprovalRequest>) {
+        self.approval_sender = Some(sender);
+    }
+
+    async fn tool_is_authorized(&self, tool_call: &ToolCall) -> bool {
+        if !requires_tool_approval(self.access_mode, &tool_call.name) {
+            return true;
+        }
+        if self.session_approved_tools.lock().expect("approval mutex poisoned").contains(&tool_call.name) {
+            return true;
+        }
+        // Without an attached host, supervised modes always fail closed.
+        let Some(sender) = &self.approval_sender else {
+            return false;
+        };
+        let (reply, receiver) = oneshot::channel();
+        let request_id = format!(
+            "sparky-approval-{}",
+            self.next_approval_id.fetch_add(1, Ordering::Relaxed),
+        );
+        if sender.send(ToolApprovalRequest {
+            request_id,
+            tool_call_id: tool_call.id.clone(),
+            tool_name: tool_call.name.clone(),
+            arguments: tool_call.arguments.clone(),
+            reply,
+        }).is_err() {
+            return false;
+        }
+        match receiver.await.unwrap_or(ToolApprovalDecision::Deny) {
+            ToolApprovalDecision::Accept => true,
+            ToolApprovalDecision::AcceptForSession => {
+                self.session_approved_tools.lock().expect("approval mutex poisoned").insert(tool_call.name.clone());
+                true
+            }
+            ToolApprovalDecision::Deny => false,
         }
     }
 
@@ -1569,12 +1686,16 @@ impl AgentLoop {
             &tool_call.name,
             self.options.interaction_mode == InteractionMode::Plan,
         ) {
-            match tool
-                .execute(tool_call.arguments.clone(), &self.options.cwd)
-                .await
-            {
-                Ok(res) => res,
-                Err(e) => ToolExecutionResult::error(format!("Tool execution error: {}", e)),
+            if !self.tool_is_authorized(tool_call).await {
+                ToolExecutionResult::error(format!(
+                    "Permission denied for tool '{}'. No action was executed.",
+                    tool_call.name
+                ))
+            } else {
+                match tool.execute(tool_call.arguments.clone(), &self.options.cwd).await {
+                    Ok(res) => res,
+                    Err(e) => ToolExecutionResult::error(format!("Tool execution error: {}", e)),
+                }
             }
         } else {
             ToolExecutionResult::error(format!("Unknown tool: {}", tool_call.name))

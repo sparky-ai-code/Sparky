@@ -77,6 +77,18 @@ describe("Sparky reconnect classification", () => {
     ).toBe(true);
   });
 
+  it("retries classified provider connection failures without repeating permanent ones", () => {
+    expect(isRetryableSparkyProcessError(
+      processError("The connection to the model provider was interrupted. Check your connection and retry."),
+    )).toBe(true);
+    expect(isRetryableSparkyProcessError(
+      processError("The selected model provider rejected its credentials. Reconnect or update your API key in Models."),
+    )).toBe(false);
+    expect(isRetryableSparkyProcessError(
+      processError("The selected model has reached its usage quota. Choose another model."),
+    )).toBe(false);
+  });
+
   it("does not retry permanent request or authentication failures", () => {
     expect(
       isRetryableSparkyProcessError(processError("Unsupported parameter: max_output_tokens")),

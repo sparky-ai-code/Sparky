@@ -435,6 +435,40 @@ struct PersistentTurnRequest {
     mcp_bearer_token: Option<String>,
 }
 
+/// Persistent JSON streams must return actionable, non-sensitive failures.
+/// Never serialize the raw upstream error: remote error bodies can contain
+/// access tokens, URLs with credentials, and fragments of user prompts.
+fn classify_persistent_turn_error(error: &anyhow::Error) -> (&'static str, &'static str) {
+    let text = format!("{error:#}").to_ascii_lowercase();
+    let has = |terms: &[&str]| terms.iter().any(|term| text.contains(term));
+
+    if has(&["freeusagelimit", "free usage limit", "insufficient_quota", "quota exhausted"]) {
+        return ("quota_exhausted", "The selected model has reached its usage quota. Choose another model or check your provider account.");
+    }
+    if has(&["invalid api key", "incorrect api key", "401 unauthorized", "authentication failed", "invalid token", "authentication_error", "not authenticated", "api key is not set", "api_key is not set"]) {
+        return ("model_authentication", "The selected model provider rejected its credentials. Reconnect or update your API key in Models.");
+    }
+    if has(&["context_length_exceeded", "maximum context length", "context window exceeded", "prompt is too long"]) {
+        return ("context_full", "The selected model's context window is full. Try compacting this conversation or choosing a model with a larger context.");
+    }
+    if has(&["unsupported parameter", "invalid value", "unsupported model", "model_not_found", "model not found", "not supported for this model"]) {
+        return ("model_configuration", "The selected model rejected this request. Check the model and reasoning settings in Sparky.");
+    }
+    if has(&["429", "rate limit", "too many requests", "temporarily overloaded"]) {
+        return ("rate_limit", "The selected model provider is rate limiting requests. Wait briefly or choose another model.");
+    }
+    if has(&["mcp initialize", "mcp tools/list", "mcp request", "mcp server", "mcp response"]) {
+        return ("mcp_connection", "Sparky couldn't communicate with an agent tool. Check the MCP server connection and retry.");
+    }
+    if has(&["timeout", "timed out", "network", "connection", "econnreset", "econnrefused", "dns", "failed to connect", "error sending request", "fetch failed", "llm stream ended before", "incomplete stream"]) {
+        return ("provider_connection", "The connection to the model provider was interrupted. Check your connection and retry.");
+    }
+    if has(&["no space left", "permission denied", "access is denied"]) {
+        return ("storage_access", "Sparky couldn't save or access its conversation files. Check free disk space and file permissions.");
+    }
+    ("turn_failed", "Sparky could not complete this turn. Try another model or check the provider connection.");
+}
+
 async fn run_persistent_json_stream(
     cli: &Cli,
     agent_loop: &mut AgentLoop,
@@ -503,10 +537,15 @@ async fn run_persistent_json_stream(
         match result {
             Ok(response) => write_result(cli, &response, session.session_id()),
             Err(error) => {
-                tracing::error!("Persistent Sparky turn failed: {error:#}");
+                let (error_code, message) = classify_persistent_turn_error(&error);
+                // stderr is captured by the desktop process; stdout is only
+                // for NDJSON protocol frames. Do not log unredacted provider
+                // errors or response bodies, which may contain credentials.
+                eprintln!("Persistent Sparky turn failed [code={error_code}]");
                 write_json_line(serde_json::json!({
                     "type": "error",
-                    "message": "Sparky could not complete this turn. Check the server logs for details.",
+                    "errorCode": error_code,
+                    "message": message,
                     "sessionId": session.session_id(),
                 }));
             }
@@ -1021,4 +1060,52 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod persistent_error_tests {
+    use super::*;
+
+    #[test]
+    fn classifies_credentials_without_echoing_secrets() {
+        let error = anyhow::anyhow!("401 Unauthorized invalid api key sk-secret-not-for-logs");
+        let (code, message) = classify_persistent_turn_error(&error);
+        assert_eq!(code, "model_authentication");
+        assert!(!message.contains("sk-secret"));
+        assert!(message.contains("API key"));
+    }
+
+    #[test]
+    fn distinguishes_mcp_and_network_failures() {
+        let (code, _) = classify_persistent_turn_error(&anyhow::anyhow!(
+            "MCP tools/list response omitted tools"
+        ));
+        assert_eq!(code, "mcp_connection");
+        let (code, message) = classify_persistent_turn_error(&anyhow::anyhow!(
+            "LLM stream ended before a completion event"
+        ));
+        assert_eq!(code, "provider_connection");
+        assert!(message.contains("connection"));
+    }
+
+    #[test]
+    fn keeps_unknown_upstream_errors_private() {
+        let (code, message) = classify_persistent_turn_error(&anyhow::anyhow!(
+            "provider error: sensitive account or request body details"
+        ));
+        assert_eq!(code, "turn_failed");
+        assert!(!message.contains("sensitive"));
+    }
+
+    #[test]
+    fn distinguishes_quota_from_retryable_rate_limits() {
+        let (code, _) = classify_persistent_turn_error(&anyhow::anyhow!(
+            "FreeUsageLimitError: 429 Too Many Requests"
+        ));
+        assert_eq!(code, "quota_exhausted");
+        let (code, _) = classify_persistent_turn_error(&anyhow::anyhow!(
+            "HTTP 429 Too Many Requests"
+        ));
+        assert_eq!(code, "rate_limit");
+    }
 }

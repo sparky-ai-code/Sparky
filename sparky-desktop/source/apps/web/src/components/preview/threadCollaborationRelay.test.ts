@@ -167,6 +167,52 @@ describe("cross-environment agent thread collaboration", () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  it("creates a thread on a second backend and starts its agent with inherited access", async () => {
+    const { transport, dispatch } = makeTransport();
+    const result = await runThreadCollaboration({
+      operation: "create",
+      payload: {
+        environmentId: "remote-env",
+        projectId: "remote-project",
+        title: "Remote implementation",
+        workspaceMode: "current",
+        initialMessage: "Please fix the remote tests",
+        modelSelection: source.modelSelection,
+      },
+      source,
+    }, {
+      ...transport,
+      serverConfig: async () => ({
+        providers: [{
+          instanceId: "codex", enabled: true, availability: "available",
+          models: [{ slug: "gpt-6", capabilities: { optionDescriptors: [] } }],
+        }],
+      }) as unknown as ServerConfig,
+    });
+    expect(result).toMatchObject({
+      environmentId: "remote-env",
+      projectId: "remote-project",
+      turnRequested: true,
+      runtimeMode: "approval-required",
+    });
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(dispatch.mock.calls[0]?.[1]).toMatchObject({
+      type: "thread.create",
+      projectId: "remote-project",
+      runtimeMode: "approval-required",
+    });
+    const start = dispatch.mock.calls[1]?.[1];
+    expect(start).toMatchObject({
+      type: "thread.turn.start",
+      runtimeMode: "approval-required",
+      interactionMode: "default",
+    });
+    if (start?.type === "thread.turn.start") {
+      expect(start.message.text).toContain("origin-thread (environment source-env)");
+      expect(start.message.text).toContain("Please fix the remote tests");
+    }
+  });
+
   it("rejects worktree spoofing rather than checking out an arbitrary path", async () => {
     const { transport, dispatch } = makeTransport();
     await expect(runThreadCollaboration({
@@ -184,7 +230,7 @@ describe("cross-environment agent thread collaboration", () => {
       ...transport,
       serverConfig: async () => ({
         providers: [{
-          instanceId: "codex", enabled: true, availability: { status: "available" },
+          instanceId: "codex", enabled: true, availability: "available",
           models: [{ slug: "gpt-6" }],
         }],
       }) as unknown as ServerConfig,

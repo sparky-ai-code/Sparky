@@ -16,12 +16,14 @@ import * as Schema from "effect/Schema";
 import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
 
 import { GitWorkflowService } from "../../../git/GitWorkflowService.ts";
+import { ProviderRegistry } from "../../../provider/Services/ProviderRegistry.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
   CreateThreadTool,
   ListThreadsTool,
+  ThreadModelsTool,
   MessageThreadTool,
   ReadThreadTool,
   SteerThreadTool,
@@ -67,6 +69,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
   const projection = yield* ProjectionSnapshotQuery;
   const engine = yield* OrchestrationEngineService;
   const git = yield* GitWorkflowService;
+  const providerRegistry = yield* ProviderRegistry;
 
   const sourceThread = (scope: Invocation) =>
     Effect.gen(function* () {
@@ -181,6 +184,32 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
       };
     });
 
+  const models = (payload: unknown, scope: Invocation): ThreadToolEffect =>
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(ThreadModelsTool.parametersSchema)(payload);
+      yield* sourceThread(scope);
+      const providers = yield* providerRegistry.getProviders;
+      return {
+        environmentId: scope.environmentId,
+        providers: providers
+          .filter((provider) => !input.providerInstanceId ||
+            provider.instanceId === input.providerInstanceId)
+          .map((provider) => ({
+            instanceId: provider.instanceId,
+            driver: provider.driver,
+            displayName: provider.displayName,
+            enabled: provider.enabled,
+            availability: provider.availability,
+            models: provider.models.map((model) => ({
+              slug: model.slug,
+              name: model.name,
+              isDefault: model.isDefault ?? false,
+              optionDescriptors: model.capabilities?.optionDescriptors ?? [],
+            })),
+          })),
+      };
+    });
+
   const read = (payload: unknown, scope: Invocation): ThreadToolEffect =>
     Effect.gen(function* () {
       const input = yield* Schema.decodeUnknownEffect(ReadThreadTool.parametersSchema)(payload);
@@ -226,6 +255,43 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
       }
       const modelSelection =
         input.modelSelection ?? project.defaultModelSelection ?? source.modelSelection;
+      if (input.modelSelection) {
+        const availableProviders = yield* providerRegistry.getProviders;
+        const requestedProvider = availableProviders.find(
+          (provider) => provider.instanceId === input.modelSelection?.instanceId &&
+            provider.enabled && provider.availability === "available",
+        );
+        const requestedModel = requestedProvider?.models.find(
+          (model) => model.slug === input.modelSelection?.model,
+        );
+        if (!requestedModel) {
+          return yield* Effect.fail(
+            new Error("Model/provider instance is unavailable. Use sparky_thread_models for valid choices."),
+          );
+        }
+        for (const selectedOption of input.modelSelection.options ?? []) {
+          const descriptor = requestedModel.capabilities?.optionDescriptors?.find(
+            (item) => item.id === selectedOption.id,
+          );
+          if (!descriptor) {
+            return yield* Effect.fail(
+              new Error("Unsupported model option " + selectedOption.id + ". Consult sparky_thread_models."),
+            );
+          }
+          if (descriptor.type === "boolean") {
+            if (typeof selectedOption.value !== "boolean") {
+              return yield* Effect.fail(
+                new Error("Model option " + selectedOption.id + " requires a boolean."),
+              );
+            }
+          } else if (typeof selectedOption.value !== "string" ||
+            !descriptor.options.some((option) => option.id === selectedOption.value)) {
+            return yield* Effect.fail(
+              new Error("Unsupported value for model option " + selectedOption.id + "."),
+            );
+          }
+        }
+      }
       const threadId = ThreadId.make(randomUUID());
       let branch: string | null = null;
       let worktreePath: string | null = null;
@@ -413,6 +479,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
     });
 
   yield* register(ListThreadsTool, list);
+  yield* register(ThreadModelsTool, models);
   yield* register(ReadThreadTool, read);
   yield* register(CreateThreadTool, create);
   yield* register(MessageThreadTool, message);

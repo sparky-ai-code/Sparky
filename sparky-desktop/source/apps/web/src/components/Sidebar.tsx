@@ -4257,7 +4257,8 @@ export default function Sidebar() {
       ...project,
       id: project.projectKey,
     }));
-    const sortableThreads = visibleThreads.map((thread) => {
+    // Project ordering must account for hidden Working and Parked threads.
+    const sortableThreads = allProjectThreads.filter((thread) => thread.archivedAt === null).map((thread) => {
       const physicalKey =
         projectPhysicalKeyByScopedRef.get(
           scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId)),
@@ -4281,7 +4282,7 @@ export default function Sidebar() {
     projectPhysicalKeyByScopedRef,
     sidebarProjectByKey,
     sidebarProjects,
-    visibleThreads,
+    allProjectThreads,
   ]);
   const isManualProjectSorting = sidebarProjectSortOrder === "manual";
   const visibleChatSidebarThreadKeys = useMemo(() => {

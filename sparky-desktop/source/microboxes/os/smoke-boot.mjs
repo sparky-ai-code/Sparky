@@ -3,11 +3,13 @@
  * This verifies QMP startup and produces a real VM framebuffer screenshot.
  * It does not by itself certify that all graphical applications are functional.
  */
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, copyFile, rm, stat, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, copyFile, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
+const runFile = promisify(execFile);
 
 const [imageDirectory, screenshotDirectory] = process.argv.slice(2);
 if (!imageDirectory || !screenshotDirectory) {
@@ -24,7 +26,7 @@ async function main(directory, screenshotDirectory) {
     throw new Error("Unsupported graphical Linux boot image.");
   }
   const scratch = await mkdtemp(join(tmpdir(), "sparky-micro-smoke-"));
-  const target = join(scratch, "rootfs.img");
+  const target = join(scratch, "rootfs.qcow2");
   let machine;
   let pending = new Map();
   let sequence = 0;
@@ -53,7 +55,10 @@ async function main(directory, screenshotDirectory) {
     machine.stdin.write(JSON.stringify({ execute, arguments: args, id }) + "\n");
   });
   try {
-    await copyFile(join(directory, manifest.file), target);
+    await runFile("qemu-img", [
+      "create", "-f", "qcow2", "-F", "raw", "-b",
+      join(directory, manifest.file), target,
+    ], { timeout: 60_000 });
     const args = [
       "-nodefaults", "-no-user-config",
       "-machine", arch === "aarch64" ? "virt" : "pc",
@@ -67,7 +72,7 @@ async function main(directory, screenshotDirectory) {
       "-nic", "none",
       "-kernel", join(directory, manifest.kernel),
       "-append", manifest.append ?? "root=/dev/vda rw",
-      "-drive", `file=${target.replaceAll(",", ",,")},format=raw,if=virtio`,
+      "-drive", `file=${target.replaceAll(",", ",,")},format=qcow2,if=virtio`,
     ];
     machine = spawn(`qemu-system-${arch}`, args, {
       cwd: scratch, stdio: ["pipe", "pipe", "pipe"],

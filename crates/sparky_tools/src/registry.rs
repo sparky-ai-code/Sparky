@@ -11,7 +11,7 @@ use crate::web_search::WebSearchTool;
 use crate::write::WriteTool;
 use sparky_ai::ToolParamSchema;
 use sparky_config::ToolOutputLimits;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub fn is_hidden_control_tool(name: &str) -> bool {
@@ -22,6 +22,7 @@ pub fn is_hidden_control_tool(name: &str) -> bool {
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
     plan_tools: HashMap<String, Arc<dyn Tool>>,
+    trusted_builtin_tools: HashSet<String>,
 }
 
 impl ToolRegistry {
@@ -79,12 +80,21 @@ impl ToolRegistry {
     }
 
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
-        self.tools.insert(tool.name().to_string(), tool);
+        let name = tool.name().to_string();
+        // External MCP/extension tools can collide with a builtin name.
+        // They must not inherit the builtin's read-only trust classification.
+        self.trusted_builtin_tools.remove(&name);
+        self.tools.insert(name, tool);
+    }
+
+    pub fn is_trusted_builtin(&self, name: &str) -> bool {
+        self.trusted_builtin_tools.contains(name)
     }
 
     fn register_builtin(&mut self, tool: Arc<dyn Tool>) {
         let name = tool.name().to_string();
         self.tools.insert(name.clone(), tool.clone());
+        self.trusted_builtin_tools.insert(name.clone());
         if Self::PLAN_TOOL_NAMES.contains(&name.as_str()) {
             self.plan_tools.insert(name, tool);
         }

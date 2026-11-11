@@ -7,7 +7,6 @@ import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_SERVER_SETTINGS,
   type ScopedProjectRef,
-  type ModelSelection,
 } from "@sparky/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
@@ -54,7 +53,6 @@ export function useNewThreadHandler() {
         replace?: boolean;
         forceNew?: boolean;
         initialPrompt?: string;
-        modelSelection?: ModelSelection;
       },
     ): Promise<void> => {
       const {
@@ -65,7 +63,6 @@ export function useNewThreadHandler() {
         setDraftThreadContext,
         setLogicalProjectDraftThreadId,
         setPrompt,
-        setModelSelection,
       } = useComposerDraftStore.getState();
       const currentRouteTarget = getCurrentRouteTarget();
       const project = projects.find(
@@ -114,9 +111,6 @@ export function useNewThreadHandler() {
               ...(hasStartFromOriginOption ? { startFromOrigin: options?.startFromOrigin } : {}),
             });
           }
-          if (options?.modelSelection) {
-            setModelSelection(reusableStoredDraftThread.draftId, options.modelSelection);
-          }
           setLogicalProjectDraftThreadId(
             logicalProjectKey,
             projectRef,
@@ -159,9 +153,6 @@ export function useNewThreadHandler() {
             ...(hasStartFromOriginOption ? { startFromOrigin: options?.startFromOrigin } : {}),
           });
         }
-        if (options?.modelSelection) {
-          setModelSelection(currentRouteTarget.draftId, options.modelSelection);
-        }
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, currentRouteTarget.draftId, {
           threadId: latestActiveDraftThread.threadId,
           createdAt: latestActiveDraftThread.createdAt,
@@ -196,10 +187,6 @@ export function useNewThreadHandler() {
         });
         if (shouldApplyStickyModelSelection(projectRef.projectId)) {
           applyStickyState(draftId);
-        }
-        // Explicit creation settings win over sticky selections and project defaults.
-        if (options?.modelSelection) {
-          setModelSelection(draftId, options.modelSelection);
         }
         if (options?.initialPrompt !== undefined) {
           setPrompt(draftId, options.initialPrompt);

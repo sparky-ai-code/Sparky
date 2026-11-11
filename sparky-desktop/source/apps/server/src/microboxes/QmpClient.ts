@@ -16,16 +16,18 @@ export class QmpClient {
   private readonly readyPromise: Promise<void>;
   private greeting = false;
   private closed = false;
+  private readonly process: ChildProcessWithoutNullStreams;
 
-  constructor(private readonly process: ChildProcessWithoutNullStreams) {
+  constructor(child: ChildProcessWithoutNullStreams) {
+    this.process = child;
     this.readyPromise = new Promise<void>((resolve, reject) => {
       this.readyResolve = resolve;
       this.readyReject = reject;
     });
-    process.stdout.setEncoding("utf8");
-    process.stdout.on("data", (chunk: string) => this.receive(chunk));
-    process.on("error", (cause) => this.close(cause));
-    process.on("exit", () => this.close(new Error("The box has stopped.")));
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => this.receive(chunk));
+    child.on("error", (cause) => this.close(cause));
+    child.on("exit", () => this.close(new Error("The box has stopped.")));
   }
 
   get ready(): Promise<void> {

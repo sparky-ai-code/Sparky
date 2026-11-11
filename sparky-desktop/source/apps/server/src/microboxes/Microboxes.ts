@@ -12,6 +12,7 @@ import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { HostBoxManager, MicroboxHostError } from "./HostBoxManager.ts";
 
 type Target = MicroboxTarget;
@@ -51,6 +52,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     const settings = yield* ServerSettings.ServerSettingsService;
+    const orchestration = yield* OrchestrationEngineService;
     const manager = new HostBoxManager(Path.join(config.baseDir, "microboxes"));
     yield* Effect.addFinalizer(() => Effect.promise(() => manager.stopAll()));
 
@@ -70,6 +72,16 @@ export const layer = Layer.effect(
       );
     const list = (threadId: string): BoxAction<MicroboxStatus[]> =>
       enabled.pipe(Effect.map(() => manager.list(threadId)));
+
+    // Delete per-thread private VM disks when the corresponding chat thread is deleted.
+    yield* orchestration.streamDomainEvents.pipe(
+      Stream.runForEach((event) =>
+        event.type === "thread.deleted"
+          ? Effect.promise(() => manager.destroyThread(event.payload.threadId))
+          : Effect.void,
+      ),
+      Effect.forkScoped,
+    );
 
     // An opt-out is authoritative even for existing agents and running boxes.
     yield* settings.streamChanges.pipe(

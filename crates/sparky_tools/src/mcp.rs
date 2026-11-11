@@ -32,6 +32,32 @@ struct HttpMcpTool {
     client: HttpMcpClient,
 }
 
+/// Effect MCP toolkits may advertise both named-object and positional-array
+/// input variants. Native model function calling sends named JSON objects and
+/// some providers reject an anyOf/oneOf schema at the root of a function.
+/// Keep the object variant for the model while leaving server-side validation
+/// untouched. Never discard unions of different object shapes.
+fn model_input_schema(input: Value) -> Value {
+    for union_keyword in ["anyOf", "oneOf"] {
+        let Some(alternatives) = input.get(union_keyword).and_then(Value::as_array) else {
+            continue;
+        };
+        let objects: Vec<&Value> = alternatives
+            .iter()
+            .filter(|value| value.get("type").and_then(Value::as_str) == Some("object"))
+            .collect();
+        if objects.len() == 1
+            && alternatives.iter().all(|value| matches!(
+                value.get("type").and_then(Value::as_str),
+                Some("object" | "array")
+            ))
+        {
+            return objects[0].clone();
+        }
+    }
+    input
+}
+
 fn truncate_for_error(body: &str) -> String {
     body.chars().take(MAX_ERROR_BODY_CHARS).collect()
 }
@@ -186,10 +212,12 @@ impl HttpMcpClient {
                         .and_then(Value::as_str)
                         .unwrap_or("Tool provided by the Sparky desktop app")
                         .to_string(),
-                    parameters: definition
-                        .get("inputSchema")
-                        .cloned()
-                        .unwrap_or_else(|| json!({ "type": "object", "properties": {} })),
+                    parameters: model_input_schema(
+                        definition
+                            .get("inputSchema")
+                            .cloned()
+                            .unwrap_or_else(|| json!({ "type": "object", "properties": {} })),
+                    ),
                     client: self.clone(),
                 });
             }
@@ -313,6 +341,41 @@ pub async fn register_http_mcp_tools_with_header(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exposes_named_object_parameters_for_mcp_toolkit_unions() {
+        let schema = json!({
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": { "imageId": { "type": "string" } },
+                    "required": ["imageId"],
+                    "additionalProperties": false
+                },
+                { "type": "array", "items": [{ "type": "string" }] }
+            ]
+        });
+        assert_eq!(
+            model_input_schema(schema),
+            json!({
+                "type": "object",
+                "properties": { "imageId": { "type": "string" } },
+                "required": ["imageId"],
+                "additionalProperties": false
+            })
+        );
+    }
+
+    #[test]
+    fn retains_object_unions_and_regular_input_schemas() {
+        let alternatives = json!({ "anyOf": [
+            { "type": "object", "properties": { "one": { "type": "string" } } },
+            { "type": "object", "properties": { "two": { "type": "string" } } },
+        ] });
+        assert_eq!(model_input_schema(alternatives.clone()), alternatives);
+        let original = json!({ "type": "object", "properties": {} });
+        assert_eq!(model_input_schema(original.clone()), original);
+    }
 
     #[test]
     fn parses_json_and_sse_json_rpc_responses() {

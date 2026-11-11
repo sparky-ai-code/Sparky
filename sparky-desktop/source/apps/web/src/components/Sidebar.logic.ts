@@ -54,6 +54,31 @@ export function partitionSidebarThreadsByScope(threads: readonly SidebarThreadSu
   return { chatThreads, projectThreads };
 }
 
+/**
+ * Resolve the target for New Chat from the complete server shell, not the
+ * visible sidebar subset. Focus Mode must never change where chats are created.
+ */
+export function selectNewChatProjectThread(input: {
+  activeThread: SidebarThreadSummary | null;
+  projectThreads: readonly SidebarThreadSummary[];
+  projects: readonly Pick<ScopedSidebarProject, "id" | "environmentId">[];
+}): SidebarThreadSummary | null {
+  if (input.activeThread && !isProjectFreeChatThread(input.activeThread)) {
+    return input.activeThread;
+  }
+  return (
+    sortThreads(
+      input.projectThreads.filter((thread) => thread.archivedAt === null),
+      "updated_at",
+    ).find((thread) =>
+      input.projects.some(
+        (project) =>
+          project.id === thread.projectId && project.environmentId === thread.environmentId,
+      ),
+    ) ?? null
+  );
+}
+
 export async function archiveSelectedThreadEntries<
   TEntry extends { readonly threadKey: string },
   TResult extends { readonly _tag: "Success" | "Failure" },

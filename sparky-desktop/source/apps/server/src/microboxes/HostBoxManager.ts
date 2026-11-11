@@ -130,6 +130,7 @@ function guestDrivePath(path: string): string {
 export class HostBoxManager {
   private readonly boxes = new Map<string, RunningBox>();
   private readonly deletedThreads = new Set<string>();
+  private readonly updatingImages = new Set<string>();
   private stopping = false;
   private creating = 0;
 
@@ -202,27 +203,59 @@ export class HostBoxManager {
     }
     const imagesDir = Path.join(this.root, "images");
     const target = Path.join(imagesDir, manifest.id);
-    await Fs.mkdir(imagesDir, { recursive: true });
-    const exists = await Fs.stat(target).then(() => true, () => false);
-    if (exists) throw new MicroboxHostError("invalid-input", "This guest image is already installed.");
-    const temporary = Path.join(imagesDir, `.install-${randomUUID()}`);
-    await Fs.mkdir(temporary);
-    let installed = false;
-    try {
-      for (const file of files) await Fs.copyFile(Path.join(source, file), Path.join(temporary, file));
-      await Fs.rename(temporary, target);
-      installed = true;
-      await this.image(manifest.id);
-    } catch (cause) {
-      await Fs.rm(temporary, { recursive: true, force: true });
-      if (installed) await Fs.rm(target, { recursive: true, force: true });
-      if (cause instanceof MicroboxHostError) throw cause;
-      throw new MicroboxHostError("io-error", "Couldn't install this guest image.");
+    // Upgrade in place, but never change the backing file under a live or
+    // stopped box's copy-on-write disk. The user must delete those boxes first.
+    if (this.updatingImages.has(manifest.id)) {
+      throw new MicroboxHostError("busy", "This guest image is already being installed.");
     }
-    return {
-      imageId: manifest.id, name: manifest.name,
-      kind: manifest.kind, architecture: manifest.architecture,
-    };
+    this.updatingImages.add(manifest.id);
+    try {
+      if (
+        this.creating > 0 ||
+        [...this.boxes.values()].some((box) => box.status.imageId === manifest.id)
+      ) {
+        throw new MicroboxHostError(
+          "busy", "Delete existing boxes using this guest image before installing its update.",
+        );
+      }
+      await Fs.mkdir(imagesDir, { recursive: true });
+      const exists = await Fs.stat(target).then(() => true, () => false);
+      const temporary = Path.join(imagesDir, `.install-${randomUUID()}`);
+      const backup = Path.join(imagesDir, `.previous-${randomUUID()}`);
+      await Fs.mkdir(temporary);
+      let backedUp = false;
+      let activated = false;
+      try {
+        for (const file of files) {
+          await Fs.copyFile(Path.join(source, file), Path.join(temporary, file));
+        }
+        if (exists) {
+          await Fs.rename(target, backup);
+          backedUp = true;
+        }
+        await Fs.rename(temporary, target);
+        activated = true;
+        await this.image(manifest.id);
+      } catch (cause) {
+        if (activated) await Fs.rm(target, { recursive: true, force: true });
+        if (backedUp) {
+          // Preserve the previously working image even if the new one fails
+          // validation or the final filesystem rename fails.
+          await Fs.rename(backup, target);
+        }
+        if (cause instanceof MicroboxHostError) throw cause;
+        throw new MicroboxHostError("io-error", "Couldn't install this guest image.");
+      } finally {
+        await Fs.rm(temporary, { recursive: true, force: true });
+      }
+      if (backedUp) await Fs.rm(backup, { recursive: true, force: true }).catch(() => undefined);
+      return {
+        imageId: manifest.id, name: manifest.name,
+        kind: manifest.kind, architecture: manifest.architecture,
+      };
+    } finally {
+      this.updatingImages.delete(manifest.id);
+    }
   }
 
   private async image(id: string): Promise<{ manifest: GuestManifest; directory: string }> {
@@ -296,6 +329,7 @@ export class HostBoxManager {
       throw new MicroboxHostError("forbidden", "This chat thread no longer exists.");
     }
     if (this.stopping) throw new MicroboxHostError("busy", "Microboxes are shutting down.");
+    if (this.updatingImages.has(input.imageId)) throw new MicroboxHostError("busy", "This image is being updated.");
     if (this.boxes.size + this.creating >= MAX_BOXES) {
       throw new MicroboxHostError("limit", "Stop an existing box first (maximum four).");
     }

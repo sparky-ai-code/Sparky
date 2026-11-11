@@ -403,6 +403,9 @@ describe("MessagesTimeline", () => {
     expect(markup.toLowerCase()).toContain("run mcp tool");
     expect(markup).not.toContain("sparky_mcp_call_tool");
     expect(markup).not.toContain("lucide-hammer");
+    for (const name of ["box_create", "box_snapshot", "box_click", "box_stop", "box_destroy"]) {
+      expect(resolveWorkEntryToolIconName(name)).toBe("microbox");
+    }
     expect(resolveWorkEntryToolIconName("sparky_mcp_setup_server")).toBe("plug-zap");
   });
 

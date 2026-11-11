@@ -28,6 +28,15 @@ export const MicroboxClickInput = Schema.Struct({
   y: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8192 })),
   button: Schema.optionalKey(Schema.Literals(["left", "right", "middle"])),
 });
+export const MicroboxDragInput = Schema.Struct({
+  ...MicroboxTarget.fields,
+  fromX: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8192 })),
+  fromY: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8192 })),
+  toX: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8192 })),
+  toY: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8192 })),
+  durationMs: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 1200 }))),
+});
+
 export const MicroboxScrollInput = Schema.Struct({
   ...MicroboxTarget.fields,
   direction: Schema.Literals(["up", "down"]),

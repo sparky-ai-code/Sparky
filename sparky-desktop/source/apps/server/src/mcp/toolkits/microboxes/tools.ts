@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import {
   MicroboxError, MicroboxStatus, MicroboxImage, MicroboxSnapshot, MicroboxTarget,
-  MicroboxCreateInput, MicroboxClickInput, MicroboxScrollInput, MicroboxTypeInput, MicroboxKeyInput,
+  MicroboxCreateInput, MicroboxClickInput, MicroboxDragInput, MicroboxScrollInput, MicroboxTypeInput, MicroboxKeyInput,
 } from "@sparky/contracts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as Microboxes from "../../../microboxes/Microboxes.ts";
@@ -54,6 +54,19 @@ export const BoxClickTool = mutate(Tool.make("box_click", {
   }),
   success: Schema.Null, failure: MicroboxError, dependencies,
 }).annotate(Tool.Title, "Click inside box"));
+export const BoxDragTool = mutate(Tool.make("box_drag", {
+  description: "Drag an item or window with the left mouse button between screenshot pixel coordinates. The cursor moves gradually before being released.",
+  parameters: Schema.Struct({
+    ...target.fields,
+    fromX: MicroboxDragInput.fields.fromX,
+    fromY: MicroboxDragInput.fields.fromY,
+    toX: MicroboxDragInput.fields.toX,
+    toY: MicroboxDragInput.fields.toY,
+    durationMs: MicroboxDragInput.fields.durationMs,
+  }),
+  success: Schema.Null, failure: MicroboxError, dependencies,
+}).annotate(Tool.Title, "Drag inside box"));
+
 export const BoxScrollTool = mutate(Tool.make("box_scroll", {
   description: "Scroll the real graphical desktop inside a box. Choose up or down and 1–16 wheel steps.",
   parameters: Schema.Struct({
@@ -85,5 +98,5 @@ export const BoxDestroyTool = mutate(Tool.make("box_destroy", {
 
 export const MicroboxesToolkit = Toolkit.make(
   BoxImagesTool, BoxListTool, BoxCreateTool, BoxStatusTool, BoxSnapshotTool, BoxClickTool,
-  BoxScrollTool, BoxTypeTool, BoxPressTool, BoxStopTool, BoxDestroyTool,
+  BoxDragTool, BoxScrollTool, BoxTypeTool, BoxPressTool, BoxStopTool, BoxDestroyTool,
 );

@@ -423,6 +423,51 @@ export class HostBoxManager {
     ] });
   }
 
+  async drag(
+    threadId: string,
+    boxId: string,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    durationMs: number,
+  ): Promise<void> {
+    const box = this.running(threadId, boxId);
+    const validPoint = (x: number, y: number) =>
+      Number.isInteger(x) && Number.isInteger(y) &&
+      x >= 0 && y >= 0 && x < box.width && y < box.height;
+    if (!validPoint(fromX, fromY) || !validPoint(toX, toY)) {
+      throw new MicroboxHostError("invalid-input", "Drag coordinates are outside the VM display.");
+    }
+    if (!Number.isInteger(durationMs) || durationMs < 100 || durationMs > 1200) {
+      throw new MicroboxHostError("invalid-input", "Drag duration must be between 100 and 1200 ms.");
+    }
+    const abs = (n: number, extent: number) => Math.round(n * 32767 / Math.max(extent - 1, 1));
+    const move = (x: number, y: number) => [
+      { type: "abs", data: { axis: "x", value: abs(x, box.width) } },
+      { type: "abs", data: { axis: "y", value: abs(y, box.height) } },
+    ];
+    const button = { type: "btn", data: { button: "left", down: true } };
+    await box.qmp.command("input-send-event", { events: [...move(fromX, fromY), button] });
+    try {
+      const steps = Math.min(40, Math.max(5, Math.ceil(durationMs / 30)));
+      for (let index = 1; index <= steps; index++) {
+        const t = index / steps;
+        const x = Math.round(fromX + (toX - fromX) * t);
+        const y = Math.round(fromY + (toY - fromY) * t);
+        await box.qmp.command("input-send-event", { events: move(x, y) });
+        if (index < steps) {
+          await new Promise<void>((resolve) => setTimeout(resolve, Math.ceil(durationMs / steps)));
+        }
+      }
+    } finally {
+      // Always release the mouse even when the drag is interrupted.
+      await box.qmp.command("input-send-event", {
+        events: [{ type: "btn", data: { button: "left", down: false } }],
+      }).catch(() => undefined);
+    }
+  }
+
   async scroll(
     threadId: string,
     boxId: string,

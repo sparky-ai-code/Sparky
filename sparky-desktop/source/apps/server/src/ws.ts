@@ -418,6 +418,7 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.microboxStatus, AuthOrchestrationReadScope],
   [WS_METHODS.microboxSnapshot, AuthOrchestrationReadScope],
   [WS_METHODS.microboxClick, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxDrag, AuthOrchestrationOperateScope],
   [WS_METHODS.microboxScroll, AuthOrchestrationOperateScope],
   [WS_METHODS.microboxType, AuthOrchestrationOperateScope],
   [WS_METHODS.microboxPress, AuthOrchestrationOperateScope],
@@ -2113,6 +2114,8 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.microboxSnapshot, microboxes.snapshot(input)),
         [WS_METHODS.microboxClick]: (input) =>
           observeRpcEffect(WS_METHODS.microboxClick, microboxes.click(input)),
+        [WS_METHODS.microboxDrag]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxDrag, microboxes.drag(input)),
         [WS_METHODS.microboxScroll]: (input) =>
           observeRpcEffect(WS_METHODS.microboxScroll, microboxes.scroll(input)),
         [WS_METHODS.microboxType]: (input) =>

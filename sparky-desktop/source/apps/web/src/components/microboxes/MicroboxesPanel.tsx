@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type WheelEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
 import { Monitor, Settings2, Plus, Square, Trash2, RefreshCw } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { ScopedThreadRef, MicroboxSnapshot } from "@sparky/contracts";
@@ -28,6 +28,7 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
   const createBox = useAtomCommand(microboxesEnvironment.create, { reportFailure: false });
   const takeSnapshot = useAtomCommand(microboxesEnvironment.snapshot, { reportFailure: false });
   const clickBox = useAtomCommand(microboxesEnvironment.click, { reportFailure: false });
+  const dragBox = useAtomCommand(microboxesEnvironment.drag, { reportFailure: false });
   const scrollBox = useAtomCommand(microboxesEnvironment.scroll, { reportFailure: false });
   const typeBox = useAtomCommand(microboxesEnvironment.type, { reportFailure: false });
   const pressBox = useAtomCommand(microboxesEnvironment.press, { reportFailure: false });
@@ -44,6 +45,7 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
   const [screenError, setScreenError] = useState<string | null>(null);
   const pending = useRef(false);
   const screenRef = useRef<HTMLImageElement | null>(null);
+  const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const selectedImage = chosenImageId || images.data?.[0]?.imageId || "";
   const selectedBox = boxes.data?.find((box) => box.boxId === boxId);
   const running = selectedBox?.state === "running";
@@ -129,15 +131,45 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
     }
   };
 
-  const onScreenClick = (event: MouseEvent<HTMLImageElement>) => {
-    if (!running || !boxId || !screen) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = Math.min(screen.width - 1, Math.max(0, Math.floor((event.clientX - rect.left) * screen.width / rect.width)));
-    const y = Math.min(screen.height - 1, Math.max(0, Math.floor((event.clientY - rect.top) * screen.height / rect.height)));
-    void clickBox({
-      environmentId, input: { threadId, boxId, x, y, button: "left" },
-    });
+  const imagePoint = (element: HTMLImageElement, clientX: number, clientY: number) => {
+    if (!screen) return null;
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return {
+      x: Math.min(screen.width - 1, Math.max(0, Math.floor((clientX - rect.left) * screen.width / rect.width))),
+      y: Math.min(screen.height - 1, Math.max(0, Math.floor((clientY - rect.top) * screen.height / rect.height))),
+    };
+  };
+
+  const onPointerDown = (event: PointerEvent<HTMLImageElement>) => {
+    if (!running || !boxId || event.button !== 0) return;
+    pointerStart.current = imagePoint(event.currentTarget, event.clientX, event.clientY);
+    event.currentTarget.setPointerCapture(event.pointerId);
     event.currentTarget.focus();
+  };
+  const onPointerUp = (event: PointerEvent<HTMLImageElement>) => {
+    const start = pointerStart.current;
+    pointerStart.current = null;
+    if (!running || !boxId || !start) return;
+    const end = imagePoint(event.currentTarget, event.clientX, event.clientY);
+    if (!end) return;
+    if (Math.hypot(end.x - start.x, end.y - start.y) > 6) {
+      void dragBox({
+        environmentId,
+        input: { threadId, boxId, fromX: start.x, fromY: start.y, toX: end.x, toY: end.y },
+      });
+    } else {
+      void clickBox({
+        environmentId, input: { threadId, boxId, x: end.x, y: end.y, button: "left" },
+      });
+    }
+  };
+  const onContextMenu = (event: MouseEvent<HTMLImageElement>) => {
+    event.preventDefault();
+    if (!running || !boxId) return;
+    const end = imagePoint(event.currentTarget, event.clientX, event.clientY);
+    if (!end) return;
+    void clickBox({ environmentId, input: { threadId, boxId, ...end, button: "right" } });
   };
 
   const onScreenWheel = (event: WheelEvent<HTMLImageElement>) => {
@@ -209,7 +241,10 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
                 alt="Live graphical desktop inside Sparky Microbox"
                 role="button"
                 tabIndex={0}
-                onClick={onScreenClick}
+                onPointerDown={onPointerDown}
+                onPointerUp={onPointerUp}
+                onPointerCancel={() => { pointerStart.current = null; }}
+                onContextMenu={onContextMenu}
                 onWheel={onScreenWheel}
                 onKeyDown={onScreenKey}
                 draggable={false}

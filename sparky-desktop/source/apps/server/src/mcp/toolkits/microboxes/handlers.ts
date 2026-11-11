@@ -24,6 +24,8 @@ export const MicroboxesToolkitHandlersLive = MicroboxesToolkit.toLayer({
   box_snapshot: (input) => withScope((service, threadId) => service.snapshot({ threadId, ...input })),
   box_click: (input) => withScope((service, threadId) =>
     service.click({ threadId, ...input }).pipe(Effect.as(null))),
+  box_drag: (input) => withScope((service, threadId) =>
+    service.drag({ threadId, ...input }).pipe(Effect.as(null))),
   box_scroll: (input) => withScope((service, threadId) =>
     service.scroll({ threadId, ...input }).pipe(Effect.as(null))),
   box_type: (input) => withScope((service, threadId) =>

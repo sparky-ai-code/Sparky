@@ -1,45 +1,112 @@
-# Sparky Microboxes: implementation status and architecture
+# Sparky Microboxes: implementation and operations
 
-This document describes internal implementation details. Product UI refers exclusively to **Sparky Microboxes** and **Boxes**; it must never display the underlying hypervisor's product name, including in errors or notifications.
+This document may name internal virtualization components. **Never expose the word
+"QEMU" or underlying host command/output in Sparky's end-user interface.** The
+user-facing setup message is **"Setting up Sparky Microboxes…"** and the right
+panel tab label is **"Boxes"**.
 
-## Status
+## Implemented in draft PR #108
 
-First foundation slice:
-- Server-authoritative `microboxesEnabled` setting, **false by default**.
-- Main-process-only, user-approved runtime provisioning for Windows (WinGet), macOS (Homebrew), and selected Linux package managers (polkit authorization where needed).
-- Host runtime detection, bounded execution, serialization of overlapping install requests, and explicit errors.
-- New thread-scoped Boxes right-panel surface and setup/settings integration.
-- Tests for installer command selection and independently addressable box tabs.
+- Server-authoritative `microboxesEnabled` switch (off by default); every
+  create, list, screenshot and input operation checks its current value.
+- Separate `microboxesInternetEnabled` switch (off by default). The host
+  uses user-mode NAT when requested; no networking for other boxes.
+- Host runtime detection and explicit, privileged Electron confirmation for
+  WinGet on Windows, Homebrew on macOS and selected Linux package managers.
+  Host setup checks binaries but does **not** imply a guest image exists.
+- Server-managed VM processes, bounded RAM/CPU, maximum four live boxes,
+  per-thread ownership and cleanup on server shutdown or opt-out.
+- VM monitor protocol for PNG screenshots and pointer, keyboard and scroll
+  inputs. Each screenshot is collected into a unique temporary file and deleted
+  after it is read. The browser-like Boxes tab polls only while shown.
+- Agent MCP tools: `box_images`, `box_list`, `box_create`, `box_status`,
+  `box_snapshot`, `box_click`, `box_scroll`, `box_type`, `box_press`,
+  `box_stop`, `box_destroy`. The agent's authenticated thread identity is
+  used; a tool caller cannot select a different thread. Tools may be visible
+  in discovery while disabled, but every action is denied server-side.
+- WebSocket RPC methods and typed client atoms for the same operations. Users
+  can install guest images from local folders and manage them in the Boxes tab.
+- Workspace-scoped `artifactRelativePath` in `box_create` copies a single
+  installer under 2 GiB and attaches it as a read-only virtual FAT USB device.
+- Buildroot image scripts and CI workflow for independent x86-64 and ARM64
+  artifacts, containing the Linux kernel, musl, BusyBox, eudev, seatd,
+  Weston/Wayland and Pixman rendering plus a GUI terminal. This is neither
+  Ubuntu nor Alpine.
+- A protocol unit test suite verifies the VM monitor handshake, command
+  correlation, keyboard events and unsupported character handling.
 
-**Not completed:** custom guest image, image manifest/download and signature verification, VM lifecycle and networking, QMP control, display streaming, guest authentication, native accessibility bridge, installer GUI testing, and agent MCP box tools. The settings switch does **not** grant any agent tools until backend authorization is implemented.
+## Internal hypervisor implementation
 
-## Runtime
+The host VM engine is **QEMU**. The VM manager uses KVM on compatible Linux,
+HVF on compatible macOS, WHPX on compatible Windows and software acceleration
+as fallback. ARM64 guests use the AArch64 virt machine and a 64-bit CPU
+definition.
 
-The host VM engine is **QEMU**. Support should be implemented through a platform adapter:
-- Windows: WHPX, with explicit OS feature enablement approval.
-- macOS: HVF, with Virtualization.framework available for compatible Apple guest use cases.
-- Linux: KVM, with permission/availability checks.
+Guest files are stored under the backend's server data directory in
+`microboxes/images/<image-id>/`; per-box copied disks live under
+`microboxes/boxes/<box-uuid>/`.
 
-The first setup implementation uses known package managers rather than unsafe unverified executable downloads. It verifies the installed binary before reporting its core components present. A built-in, signed distribution and true per-stage download progress will be added before the feature is presented as fully ready.
+The guest image format is `image.json` with an `id`, `name`, `kind`,
+`architecture`, `file`, and `kernel` for direct Linux boot. Files are
+copied from a chosen folder after validating identifiers, realpaths and size.
 
-## Guest OS and GUI
+The VM process gets a reduced host environment, excluding provider keys and
+authorization tokens. The backend refuses host paths outside the selected
+thread workspace for installer mounts, and each process uses its own
+working directory. No guest remote display port or SSH port is opened.
 
-Build the default **SparkyOS Micro** image from the Linux kernel plus a Buildroot-produced userspace (musl, BusyBox, a minimal init, Wayland/Weston with pixman rendering, and a small authenticated `sparky-boxd` agent). The default image is neither Ubuntu nor Alpine. Keep the root filesystem immutable and use per-box overlays.
+## Still required before production
 
-Expose a live desktop display in the existing right-hand tab strip, reusing Browser's dimensions, maximize behavior, focus and cursor semantics, but **not** treating it as a browser page. Input should support mouse, keyboard and scrolling; guest-native semantic accessibility should be preferred where available. Windows installer testing requires a licensed Windows guest, not the Linux guest.
+- **Boot verification:** CI compilation is in progress; a successful Buildroot
+  build does not prove its GUI comes up on every host, and the image must be
+  tested under real Windows, macOS and Linux hosts.
+- **Automatic, signed guest-image installation:** currently users select an
+  image folder. Production should retrieve an authenticated, checksum-pinned
+  release artifact directly through Sparky, showing exact stages and errors.
+- **Better computer-use semantics:** current controls are screenshot/pixel and
+  keyboard based, not a semantic native accessibility tree. Implement the
+  guest `sparky-boxd` authentication and accessibility bridge for stable
+  element IDs and native app actions.
+- **Network isolation:** user-mode networking is only a basic boundary.
+  Apply host/private-network destination restrictions before enabling internet
+  in production; do not assume NAT blocks host networks.
+- **Windows/macOS guest integration:** their installers need licensed,
+  compatible guest OS images and the relevant firmware/platform support. A
+  Linux guest cannot run native Windows or macOS installers.
+- **Release-test automation:** clean snapshots, reliable installer launch,
+  structured GUI assertions, screenshot/crash evidence and final reports.
+- **Lifecycle hardening:** thread-deletion cleanup, persisted stopped-box
+  recovery and boot exit/timeout logging for diagnostics.
+- **Performance:** avoid unbounded screenshot buffering or constant polling
+  for invisible views; benchmark memory usage on representative hosts.
+- **Permission UX:** tool discovery filtering for disabled sessions and
+  per-user opt-ins if the backend hosts multiple users.
 
-## Agent tool boundary
+**Do not merge or describe this draft as a production-ready VM solution
+until these are complete and verified.**
 
-A future MCP toolkit will expose `box_create`, `box_status`, `box_snapshot`, `box_click`, `box_type`, `box_press`, `box_transfer`, `box_stop` and `box_destroy`.
+## Image build
 
-Tools must be absent or inaccessible when `microboxesEnabled` is false, and **every execution** must check current server settings rather than only a stale MCP token captured at connection time. Tool capability scopes are bound to environment, thread and user authorization. Disabling the setting revokes permission and stops active boxes according to the documented shutdown policy.
+From `sparky-desktop/source` on Linux:
 
-Do not expose host private networks, host credentials or arbitrary mount points to guests by default. Apply network policy at the VM boundary, not just inside the guest. No reusable guest image may contain user secrets.
+```bash
+bash microboxes/os/build-x86_64.sh
+bash microboxes/os/build-aarch64.sh
+```
 
-## Release testing
+Both scripts use pinned Buildroot tag `2026.08.1`. The workflow
+`.github/workflows/microboxes-guest-image.yml` at the repository root runs
+the two builds as matrix jobs and uploads non-publication test artifacts.
+The settings image-folder picker can import the generated directories.
 
-Agents can pass `artifactRelativePath` in `box_create` for an installer built inside their authenticated thread workspace. The backend verifies the resolved real path is strictly within that workspace, copies the artifact before VM boot, and mounts it as a **read-only virtual FAT USB disk**. The user or agent can then open that device inside the VM and click through the installer GUI. There is intentionally no arbitrary host-path artifact attachment agent tool.
+## Installer testing
 
-Current constraints: only supported installer file types are mountable; Windows 11 UEFI/TPM guest provisioning, automatic installer execution, clean restore snapshots, and post-run test reports require separate guest integration. User-supplied licensed Windows guest images are required to test native Windows installers; the Micro Linux guest is not a Windows installer test environment.
+An agent can build a release artifact inside its authenticated thread workspace,
+create a box from the matching installed guest image, pass the artifact's
+workspace-relative path to `box_create`, and then inspect/operate the installer
+using snapshots and input. The mounted artifact is read-only and is copied into
+the per-box staging directory before VM boot.
 
-A future release test plan should select a guest OS matching the installer artifact, restore a clean snapshot, transfer the artifact, run the installer through the GUI, validate app startup/interactions and preserve logs/screenshots as evidence. Windows and macOS guest licensing and host compatibility requirements are separate from whether the Sparky desktop application can itself run on the host platform.
+This is currently a **manual agent-driven GUI test path**, not a certified
+release test suite. Require an OS-matched guest for native installation
+packages, and preserve appropriate license and platform constraints.

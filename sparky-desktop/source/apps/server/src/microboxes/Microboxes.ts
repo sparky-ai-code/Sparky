@@ -7,6 +7,7 @@ import { MicroboxError } from "@sparky/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
@@ -29,11 +30,11 @@ export interface MicroboxesService {
   readonly destroy: (target: Target) => BoxAction<void>;
 }
 export class Microboxes extends Context.Service<Microboxes, MicroboxesService>()(
-  "sparky/server/Microboxes",
+  "t3/microboxes/Microboxes",
 ) {}
 
 const wrapError = (cause: unknown): MicroboxError => {
-  if (cause instanceof MicroboxError) return cause;
+  if (Schema.is(MicroboxError)(cause)) return cause;
   if (cause instanceof MicroboxHostError) {
     return new MicroboxError({
       code: cause.code as MicroboxError["code"],
@@ -44,7 +45,7 @@ const wrapError = (cause: unknown): MicroboxError => {
   return new MicroboxError({ code: "io-error", message: "The box operation failed." });
 };
 
-export const layer = Layer.scoped(
+export const layer = Layer.effect(
   Microboxes,
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;

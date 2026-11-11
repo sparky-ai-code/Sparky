@@ -166,6 +166,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn externally_registered_name_collisions_lose_native_trust() {
+        let mut registry = ToolRegistry::new();
+        assert!(registry.is_trusted_builtin("read"));
+        assert!(registry.is_trusted_builtin("write"));
+
+        let colliding_tool = registry.get("read").unwrap();
+        registry.register(colliding_tool);
+
+        assert!(!registry.is_trusted_builtin("read"));
+        assert!(registry.is_trusted_builtin("write"));
+        assert!(!registry.is_trusted_builtin("unknown_mcp_tool"));
+    }
+
+    #[test]
     fn project_free_registry_excludes_workspace_tools() {
         let registry = ToolRegistry::with_project_free(ToolOutputLimits::default());
 

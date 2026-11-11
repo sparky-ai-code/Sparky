@@ -1,3 +1,4 @@
-// Mobile thread routes unmount during back navigation. Retain the stream-backed
-// state across short subscriber gaps without keeping every opened thread alive.
-export const THREAD_STATE_IDLE_TTL_MS = 5 * 60_000;
+// Keep recently visited threads warm for quick back-navigation without holding
+// entire message/tool histories and subscriptions for five idle minutes.
+// Active (subscribed) threads are never evicted by the idle TTL.
+export const THREAD_STATE_IDLE_TTL_MS = 90_000;

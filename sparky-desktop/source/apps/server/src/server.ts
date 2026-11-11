@@ -358,14 +358,14 @@ export const makeRoutesLayer = Layer.mergeAll(
     sparkyCodexAuthRouteLayer,
     assetRouteLayer,
     staticAndDevRouteLayer,
-    websocketRpcRouteLayer,
+    websocketRpcRouteLayer.pipe(Layer.provide(Microboxes.layer)),
   ),
   McpHttpServer.layer.pipe(
+    Layer.provide(Microboxes.layer),
     Layer.provide(McpSessionRegistry.layer),
     Layer.provide(McpProcessRunnerLayerLive),
   ),
 ).pipe(
-  Layer.provide(Microboxes.layer),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(browserApiCorsLayer),
 );

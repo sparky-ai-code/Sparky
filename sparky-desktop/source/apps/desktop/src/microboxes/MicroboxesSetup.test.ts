@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { selectMicroboxesInstallPlan } from "./MicroboxesSetup.ts";
+import { describe, expect, it } from "vite-plus/test";
+import { selectMicroboxesInstallPlan } from "./MicroboxesInstallPlan.ts";
 
 const available = (...names: string[]) => async (name: string) => names.includes(name);
 

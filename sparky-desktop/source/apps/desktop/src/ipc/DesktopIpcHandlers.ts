@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
+import * as SecretVaultIpc from "./methods/secrets.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
 import {
   getAccountSessionToken,
@@ -66,6 +67,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(setAccountSessionToken);
   yield* ipc.handle(getOrCreatePluginInstallationId);
 
+  for (const method of SecretVaultIpc.methods) yield* ipc.handle(method);
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);
   yield* ipc.handle(getConnectionCatalog);

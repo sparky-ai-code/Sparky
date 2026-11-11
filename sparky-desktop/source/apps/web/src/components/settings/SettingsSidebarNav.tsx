@@ -9,6 +9,7 @@ import {
   GaugeIcon,
   KeyboardIcon,
   PlugZapIcon,
+  KeyRoundIcon,
   SearchIcon,
   Settings2Icon,
 } from "lucide-react";
@@ -35,6 +36,7 @@ export type SettingsSectionPath =
   | "/settings/models"
   | "/settings/plugins"
   | "/settings/mcp"
+  | "/settings/passkeys"
   | "/settings/memory"
   | "/settings/analytics"
   | "/settings/archived";
@@ -61,6 +63,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   { label: "Models", section: "AI & tools", to: "/settings/models", icon: BoxesIcon },
   { label: "Plugins", section: "AI & tools", to: "/settings/plugins", icon: PlugZapIcon },
   { label: "MCP", section: "AI & tools", to: "/settings/mcp", icon: McpIcon },
+  { label: "Passkeys", section: "AI & tools", to: "/settings/passkeys", icon: KeyRoundIcon },
   { label: "Memory", section: "AI & tools", to: "/settings/memory", icon: BrainIcon },
   {
     label: "Usage",

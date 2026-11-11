@@ -103,6 +103,7 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { EditorId } from "./editor.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import type { ClientSettings, ServerSettings, ServerSettingsPatch } from "./settings.ts";
+import type { SecretVaultEntry, SecretVaultWriteInput, SecretVaultFillInput, SecretVaultUseResult } from "./secrets.ts";
 import type {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
@@ -972,6 +973,12 @@ export interface DesktopBridge {
   getAccountSessionToken: () => Promise<string | null>;
   setAccountSessionToken: (token: string | null) => Promise<boolean>;
   getOrCreatePluginInstallationId?: (candidate: string | null) => Promise<string>;
+  secrets?: {
+    list: () => Promise<readonly SecretVaultEntry[]>;
+    save: (input: SecretVaultWriteInput) => Promise<SecretVaultEntry>;
+    remove: (id: string) => Promise<void>;
+    use: (tabId: string, input: SecretVaultFillInput) => Promise<SecretVaultUseResult>;
+  };
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
   getConnectionCatalog?: () => Promise<string | null>;

@@ -1,0 +1,63 @@
+import {
+  SecretVaultEntrySchema,
+  SecretVaultWriteInputSchema,
+  SecretVaultFillInputSchema,
+  SecretVaultUseResultSchema,
+} from "@sparky/contracts";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as IpcChannels from "../channels.ts";
+import * as DesktopIpc from "../DesktopIpc.ts";
+import * as Vault from "../../secrets/SecretVault.ts";
+import * as PreviewManager from "../../preview/Manager.ts";
+
+// Renderer receives only public metadata. Decryption happens in the privileged desktop process.
+const attempt = <T>(work: () => Promise<T>) => Effect.tryPromise({
+  try: work,
+  catch: (cause) => cause instanceof Error ? cause : new Error("Credential vault operation failed."),
+});
+
+export const list = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SECRET_VAULT_LIST_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.Array(SecretVaultEntrySchema),
+  handler: () => attempt(() => Vault.listSecrets()),
+});
+
+export const save = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SECRET_VAULT_SAVE_CHANNEL,
+  payload: SecretVaultWriteInputSchema,
+  result: SecretVaultEntrySchema,
+  handler: (input) => attempt(() => Vault.saveSecret(input)),
+});
+
+export const remove = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SECRET_VAULT_REMOVE_CHANNEL,
+  payload: Schema.Struct({ id: Schema.String }),
+  result: Schema.Void,
+  handler: ({ id }) => attempt(() => Vault.removeSecret(id)),
+});
+
+export const use = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SECRET_VAULT_USE_CHANNEL,
+  payload: Schema.Struct({ tabId: Schema.String, input: SecretVaultFillInputSchema }),
+  result: SecretVaultUseResultSchema,
+  handler: Effect.fn("desktop.ipc.secrets.use")(function* ({ tabId, input }) {
+    const manager = yield* PreviewManager.PreviewManager;
+    const status = yield* manager.automationStatus(tabId);
+    if (!status.url) return yield* Effect.fail(new Error("Open the saved site in the browser first."));
+    const secret = yield* attempt(() => Vault.getSecretForOrigin(input.id, status.url!));
+    // A second origin check runs inside the browser control session, preventing navigation races.
+    return yield* manager.automationUseSecret(tabId, {
+      origin: secret.metadata.origin,
+      kind: secret.metadata.kind,
+      email: secret.metadata.email,
+      password: secret.password,
+      emailLocator: input.emailLocator,
+      passwordLocator: input.passwordLocator,
+      passkeyLocator: input.passkeyLocator,
+    });
+  }),
+});
+
+export const methods = [list, save, remove, use] as const;

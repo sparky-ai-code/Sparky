@@ -440,7 +440,7 @@ struct PersistentTurnRequest {
 /// access tokens, URLs with credentials, and fragments of user prompts.
 fn classify_persistent_turn_error(error: &anyhow::Error) -> (&'static str, &'static str) {
     let text = format!("{error:#}").to_ascii_lowercase();
-    let has = |terms: &[&str]| terms.iter().any(|term| text.contains(term));
+    let has = |terms: &[&str]| terms.iter().any(|term| text.contains(*term));
 
     if has(&["freeusagelimit", "free usage limit", "insufficient_quota", "quota exhausted"]) {
         return ("quota_exhausted", "The selected model has reached its usage quota. Choose another model or check your provider account.");

@@ -10,6 +10,7 @@ import { McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
 import * as McpHttpServer from "./McpHttpServer.ts";
+import * as Microboxes from "../microboxes/Microboxes.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
@@ -41,6 +42,55 @@ const client = McpSchema.McpServerClient.of({
 const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provideMerge(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+);
+
+
+it.effect("registers Microboxes tools for the authenticated agent MCP session", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      const names = server.tools.map(({ tool }) => tool.name);
+      expect(names).toContain("box_images");
+      expect(names).toContain("box_create");
+      expect(names).toContain("box_snapshot");
+      expect(names).toContain("box_drag");
+      // The same tools that the Rust agent discovers must have serializable,
+      // object-root input schemas accepted by the MCP tools/list response.
+      for (const { tool } of server.tools) {
+        expect(tool.inputSchema).toHaveProperty("type", "object");
+        expect(() => JSON.stringify(tool.inputSchema)).not.toThrow();
+      }
+      const result = yield* server.callTool({ name: "box_images", arguments: {} }).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+      expect(result.isError).toBe(false);
+      expect(result.structuredContent).toEqual([
+        {
+          imageId: "sparky-micro-x86_64",
+          name: "Sparky Micro Linux",
+          kind: "linux-kernel",
+          architecture: "x86_64",
+        },
+      ]);
+    }).pipe(
+      Effect.provide(
+        McpHttpServer.MicroboxesToolkitRegistrationLive.pipe(
+          Layer.provide(
+            Layer.mock(Microboxes.Microboxes)({
+              images: Effect.succeed([{
+                imageId: "sparky-micro-x86_64",
+                name: "Sparky Micro Linux",
+                kind: "linux-kernel",
+                architecture: "x86_64",
+              }]),
+            }),
+          ),
+          Layer.provideMerge(McpServer.McpServer.layer),
+        ),
+      ),
+    ),
+  ),
 );
 
 it("normalizes empty successful notification responses to accepted", () => {

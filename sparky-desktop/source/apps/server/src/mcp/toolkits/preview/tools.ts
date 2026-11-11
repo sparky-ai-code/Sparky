@@ -191,7 +191,7 @@ export const PreviewRecordingStopTool = safeBrowserTool(
 export const SecretsListTool = readonlyBrowserTool(
   Tool.make("secrets_list", {
     description: "List named logins saved in the local Sparky Passkeys settings. Returns only names, descriptions, sites, and credential types; never passwords or private keys.",
-    parameters: Schema.Struct({}),
+    parameters: PreviewAutomationTabTargetInput,
     success: Schema.Array(SecretVaultEntrySchema),
     failure: PreviewAutomationError,
     dependencies,
@@ -202,11 +202,11 @@ export const SecretsUseTool = browserTool(
   Tool.make("secrets_use", {
     description: "Use a named saved login in the collaborative browser, without returning credentials. The browser must be at the exact saved site. For passwords, the desktop fills the login fields; for device passkeys, supply passkeyLocator for the website sign-in button and the user must authorize the native prompt. Optionally pass tabId, emailLocator, and passwordLocator as Playwright locators. Never request or print the password.",
     parameters: Schema.Struct({
-      tabId: Schema.optional(PreviewTabId),
-      id: Schema.String,
-      emailLocator: Schema.optional(Schema.String),
-      passwordLocator: Schema.optional(Schema.String),
-      passkeyLocator: Schema.optional(Schema.String),
+      tabId: Schema.optional(PreviewTabId).annotate({ description: "Optional collaborative browser tab identifier. Defaults to the current tab." }),
+      id: Schema.String.annotate({ description: "Credential ID returned by secrets_list." }),
+      emailLocator: Schema.optional(Schema.String).annotate({ description: "Optional Playwright locator for the site's email or username field." }),
+      passwordLocator: Schema.optional(Schema.String).annotate({ description: "Optional Playwright locator for the site's password field." }),
+      passkeyLocator: Schema.optional(Schema.String).annotate({ description: "Playwright locator of the site's passkey sign-in button; native approval remains with the user." }),
     }),
     success: SecretVaultUseResultSchema,
     failure: PreviewAutomationError,

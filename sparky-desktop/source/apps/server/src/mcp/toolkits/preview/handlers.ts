@@ -49,7 +49,7 @@ const invokeTargeted = <A>(
 };
 
 const handlers = {
-  secrets_list: () => invoke<readonly SecretVaultEntry[]>("secretsList", {}),
+  secrets_list: (input) => invokeTargeted<readonly SecretVaultEntry[]>("secretsList", input ?? {}),
   secrets_use: (input) => invokeTargeted<SecretVaultUseResult>("secretsUse", input),
   preview_status: (input) => invokeTargeted<PreviewAutomationStatus>("status", input ?? {}),
   preview_open: (input) =>

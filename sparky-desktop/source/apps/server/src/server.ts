@@ -38,6 +38,7 @@ import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
+import * as Microboxes from "./microboxes/Microboxes.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import * as GitManager from "./git/GitManager.ts";
@@ -363,7 +364,11 @@ export const makeRoutesLayer = Layer.mergeAll(
     Layer.provide(McpSessionRegistry.layer),
     Layer.provide(McpProcessRunnerLayerLive),
   ),
-).pipe(Layer.provide(PreviewAutomationBroker.layer), Layer.provide(browserApiCorsLayer));
+).pipe(
+  Layer.provideMerge(Microboxes.layer),
+  Layer.provide(PreviewAutomationBroker.layer),
+  Layer.provide(browserApiCorsLayer),
+);
 
 export const makeServerLayer = Layer.unwrap(
   Effect.gen(function* () {

@@ -159,6 +159,18 @@ import {
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
+import {
+  MicroboxCreateInput,
+  MicroboxListInput,
+  MicroboxTarget,
+  MicroboxClickInput,
+  MicroboxTypeInput,
+  MicroboxKeyInput,
+  MicroboxStatus,
+  MicroboxImage,
+  MicroboxSnapshot,
+  MicroboxError,
+} from "./microboxes.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -204,6 +216,18 @@ export const WS_METHODS = {
   terminalClear: "terminal.clear",
   terminalRestart: "terminal.restart",
   terminalClose: "terminal.close",
+
+  // Graphical virtual machines
+  microboxImages: "microbox.images",
+  microboxList: "microbox.list",
+  microboxCreate: "microbox.create",
+  microboxStatus: "microbox.status",
+  microboxSnapshot: "microbox.snapshot",
+  microboxClick: "microbox.click",
+  microboxType: "microbox.type",
+  microboxPress: "microbox.press",
+  microboxStop: "microbox.stop",
+  microboxDestroy: "microbox.destroy",
 
   // Preview methods
   previewOpen: "preview.open",
@@ -582,6 +606,52 @@ export const WsTerminalCloseRpc = Rpc.make(WS_METHODS.terminalClose, {
   error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
 });
 
+export const WsMicroboxImagesRpc = Rpc.make(WS_METHODS.microboxImages, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(MicroboxImage),
+  error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
+});
+export const WsMicroboxListRpc = Rpc.make(WS_METHODS.microboxList, {
+  payload: MicroboxListInput,
+  success: Schema.Array(MicroboxStatus),
+  error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
+});
+export const WsMicroboxCreateRpc = Rpc.make(WS_METHODS.microboxCreate, {
+  payload: MicroboxCreateInput,
+  success: MicroboxStatus,
+  error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
+});
+export const WsMicroboxStatusRpc = Rpc.make(WS_METHODS.microboxStatus, {
+  payload: MicroboxTarget,
+  success: MicroboxStatus,
+  error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
+});
+export const WsMicroboxSnapshotRpc = Rpc.make(WS_METHODS.microboxSnapshot, {
+  payload: MicroboxTarget,
+  success: MicroboxSnapshot,
+  error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
+});
+export const WsMicroboxClickRpc = Rpc.make(WS_METHODS.microboxClick, {
+  payload: MicroboxClickInput,
+  error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
+});
+export const WsMicroboxTypeRpc = Rpc.make(WS_METHODS.microboxType, {
+  payload: MicroboxTypeInput,
+  error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
+});
+export const WsMicroboxPressRpc = Rpc.make(WS_METHODS.microboxPress, {
+  payload: MicroboxKeyInput,
+  error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
+});
+export const WsMicroboxStopRpc = Rpc.make(WS_METHODS.microboxStop, {
+  payload: MicroboxTarget,
+  error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
+});
+export const WsMicroboxDestroyRpc = Rpc.make(WS_METHODS.microboxDestroy, {
+  payload: MicroboxTarget,
+  error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
+});
+
 export const WsPreviewOpenRpc = Rpc.make(WS_METHODS.previewOpen, {
   payload: PreviewOpenInput,
   success: PreviewSessionSnapshot,
@@ -800,6 +870,16 @@ export const WsRpcGroup = RpcGroup.make(
   WsTerminalCloseRpc,
   WsSubscribeTerminalEventsRpc,
   WsSubscribeTerminalMetadataRpc,
+  WsMicroboxImagesRpc,
+  WsMicroboxListRpc,
+  WsMicroboxCreateRpc,
+  WsMicroboxStatusRpc,
+  WsMicroboxSnapshotRpc,
+  WsMicroboxClickRpc,
+  WsMicroboxTypeRpc,
+  WsMicroboxPressRpc,
+  WsMicroboxStopRpc,
+  WsMicroboxDestroyRpc,
   WsPreviewOpenRpc,
   WsPreviewNavigateRpc,
   WsPreviewResizeRpc,

@@ -83,6 +83,7 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as Microboxes from "./microboxes/Microboxes.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import { listExternalMcpTools } from "./mcp/ExternalMcp.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -410,6 +411,16 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.terminalClose, AuthTerminalOperateScope],
   [WS_METHODS.subscribeTerminalEvents, AuthTerminalOperateScope],
   [WS_METHODS.subscribeTerminalMetadata, AuthTerminalOperateScope],
+  [WS_METHODS.microboxImages, AuthOrchestrationReadScope],
+  [WS_METHODS.microboxList, AuthOrchestrationReadScope],
+  [WS_METHODS.microboxCreate, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxStatus, AuthOrchestrationReadScope],
+  [WS_METHODS.microboxSnapshot, AuthOrchestrationReadScope],
+  [WS_METHODS.microboxClick, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxType, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxPress, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxStop, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxDestroy, AuthOrchestrationOperateScope],
   [WS_METHODS.previewOpen, AuthOrchestrationOperateScope],
   [WS_METHODS.previewNavigate, AuthOrchestrationOperateScope],
   [WS_METHODS.previewResize, AuthOrchestrationOperateScope],
@@ -486,6 +497,7 @@ const makeWsRpcLayer = (
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
       const previewManager = yield* PreviewManager.PreviewManager;
+      const microboxes = yield* Microboxes.Microboxes;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
@@ -2085,6 +2097,26 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "terminal" },
           ),
+        [WS_METHODS.microboxImages]: () =>
+          observeRpcEffect(WS_METHODS.microboxImages, microboxes.images),
+        [WS_METHODS.microboxList]: ({ threadId }) =>
+          observeRpcEffect(WS_METHODS.microboxList, microboxes.list(threadId)),
+        [WS_METHODS.microboxCreate]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxCreate, microboxes.create(input)),
+        [WS_METHODS.microboxStatus]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxStatus, microboxes.status(input)),
+        [WS_METHODS.microboxSnapshot]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxSnapshot, microboxes.snapshot(input)),
+        [WS_METHODS.microboxClick]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxClick, microboxes.click(input)),
+        [WS_METHODS.microboxType]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxType, microboxes.type(input)),
+        [WS_METHODS.microboxPress]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxPress, microboxes.press(input)),
+        [WS_METHODS.microboxStop]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxStop, microboxes.stop(input)),
+        [WS_METHODS.microboxDestroy]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxDestroy, microboxes.destroy(input)),
         [WS_METHODS.previewOpen]: (input) =>
           observeRpcEffect(WS_METHODS.previewOpen, previewManager.open(input), {
             "rpc.aggregate": "preview",

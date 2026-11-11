@@ -257,6 +257,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.invoke(IpcChannels.GITHUB_CLI_UPDATE_PULL_REQUEST_CHANNEL, input),
   postGitHubPullRequestReview: (input) =>
     ipcRenderer.invoke(IpcChannels.GITHUB_CLI_POST_PULL_REQUEST_REVIEW_CHANNEL, input),
+  microboxes: {
+    getSetupState: () => ipcRenderer.invoke(IpcChannels.MICROBOXES_GET_SETUP_STATE_CHANNEL),
+    setup: () => ipcRenderer.invoke(IpcChannels.MICROBOXES_SETUP_CHANNEL),
+  },
   getWslState: () => ipcRenderer.invoke(IpcChannels.GET_WSL_STATE_CHANNEL),
   setWslBackendEnabled: (enabled) =>
     ipcRenderer.invoke(IpcChannels.SET_WSL_BACKEND_ENABLED_CHANNEL, enabled),

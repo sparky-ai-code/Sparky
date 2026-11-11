@@ -464,6 +464,8 @@ export const ServerSettings = Schema.Struct({
   // user interrupts or the provider emits turn.completed.
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sparkyProcessPrewarming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  // Opt-in and server-authoritative. No agent VM tools are available by default.
+  microboxesEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   checkpoints: CheckpointSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   enableProviderUpdateChecks: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
@@ -623,6 +625,7 @@ export const ServerSettingsPatch = Schema.Struct({
   sparkyPersonality: Schema.optionalKey(SparkyPersonality),
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
   sparkyProcessPrewarming: Schema.optionalKey(Schema.Boolean),
+  microboxesEnabled: Schema.optionalKey(Schema.Boolean),
   checkpoints: Schema.optionalKey(CheckpointSettingsPatch),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   automaticGitFetchInterval: Schema.optionalKey(Schema.DurationFromMillis),

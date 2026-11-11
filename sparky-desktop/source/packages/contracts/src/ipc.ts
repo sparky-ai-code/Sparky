@@ -458,6 +458,26 @@ export const PickFolderOptionsSchema = Schema.Struct({
   targetEnvironmentId: Schema.optionalKey(Schema.String),
 });
 
+/** Status of the host-side components for Sparky Microboxes.
+ * A ready host runtime does not imply a guest image has been installed.
+ */
+export interface DesktopMicroboxesSetupState {
+  readonly status: "not-installed" | "installing" | "engine-ready" | "unsupported" | "error";
+  readonly platform: "windows" | "macos" | "linux" | "unsupported";
+  readonly detail: string | null;
+}
+export const DesktopMicroboxesSetupStateSchema: Schema.Codec<DesktopMicroboxesSetupState> =
+  Schema.Struct({
+    status: Schema.Literals(["not-installed", "installing", "engine-ready", "unsupported", "error"]),
+    platform: Schema.Literals(["windows", "macos", "linux", "unsupported"]),
+    detail: Schema.NullOr(Schema.String),
+  });
+
+export interface DesktopMicroboxesBridge {
+  getSetupState: () => Promise<DesktopMicroboxesSetupState>;
+  setup: () => Promise<DesktopMicroboxesSetupState>;
+}
+
 export interface DesktopWslDistro {
   name: string;
   isDefault: boolean;
@@ -1030,6 +1050,8 @@ export interface DesktopBridge {
    * Electron desktop build; web builds have `preview === undefined`.
    */
   preview?: DesktopPreviewBridge;
+  /** Local-only host provisioning. Agent VM access is gated independently by server settings. */
+  microboxes?: DesktopMicroboxesBridge;
 }
 
 export interface DesktopPreviewBridge {

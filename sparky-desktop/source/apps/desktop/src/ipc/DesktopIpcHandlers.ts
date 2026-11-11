@@ -13,6 +13,7 @@ import {
   setConnectionCatalog,
 } from "./methods/connectionCatalog.ts";
 import * as GitHubCliIpc from "./methods/githubCli.ts";
+import * as MicroboxesIpc from "./methods/microboxes.ts";
 import { getPullRequestDiffMethod } from "./methods/githubPullRequestDiff.ts";
 import { syncGitHubPluginConnectionMethod } from "./methods/githubPluginSync.ts";
 import {
@@ -86,6 +87,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(setTailscaleServeEnabled);
   yield* ipc.handle(getAdvertisedEndpoints);
 
+  yield* ipc.handle(MicroboxesIpc.getSetupState);
+  yield* ipc.handle(MicroboxesIpc.setup);
   yield* ipc.handle(getWslState);
   yield* ipc.handle(setWslBackendEnabled);
   yield* ipc.handle(setWslDistro);

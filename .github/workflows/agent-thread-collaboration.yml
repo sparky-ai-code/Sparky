@@ -55,7 +55,7 @@ jobs:
             cat /tmp/web-typecheck.log
             grep 'error TS' /tmp/web-typecheck.log > /tmp/web-typecheck-errors.log || true
             if [ ! -s /tmp/web-typecheck-errors.log ]; then exit 1; fi
-            if grep -Ev '^src/components/(DesktopUpdateBanner\\.tsx|settings/McpSettingsPanel\\.tsx|settings/UserAnalyticsSettingsPanel\\.tsx)\\(' /tmp/web-typecheck-errors.log; then
+            if grep -Ev '^src/components/(DesktopUpdateBanner[.]tsx|settings/McpSettingsPanel[.]tsx|settings/UserAnalyticsSettingsPanel[.]tsx)[(]' /tmp/web-typecheck-errors.log; then
               echo "::error::Web typecheck introduced errors outside known baseline sources."
               exit 1
             fi
@@ -70,7 +70,7 @@ jobs:
             cat /tmp/server-typecheck.log
             grep 'error TS' /tmp/server-typecheck.log > /tmp/server-typecheck-errors.log || true
             if [ ! -s /tmp/server-typecheck-errors.log ]; then exit 1; fi
-            if grep -Ev '^src/(git/PullRequestReview(\\.test)?\\.ts|mcp/ExternalMcp\\.ts|mcp/toolkits/externalMcpHandlers\\.ts|mcp/toolkits/plugins/handlers\\.ts|provider/Drivers/SparkyModelCatalog\\.ts|provider/Layers/ProviderSessionReaper(\\.test)?\\.ts|provider/Layers/SparkyAdapter\\.ts|provider/ProviderExecutionContext\\.ts|ws\\.ts)\\(' /tmp/server-typecheck-errors.log; then
+            if grep -Ev '^src/(git/PullRequestReview([.]test)?[.]ts|mcp/ExternalMcp[.]ts|mcp/toolkits/externalMcpHandlers[.]ts|mcp/toolkits/plugins/handlers[.]ts|provider/Drivers/SparkyModelCatalog[.]ts|provider/Layers/ProviderSessionReaper([.]test)?[.]ts|provider/Layers/SparkyAdapter[.]ts|provider/ProviderExecutionContext[.]ts|ws[.]ts)[(]' /tmp/server-typecheck-errors.log; then
               echo "::error::Server typecheck introduced errors outside known baseline sources."
               exit 1
             fi

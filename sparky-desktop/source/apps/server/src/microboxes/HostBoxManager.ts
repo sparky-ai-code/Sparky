@@ -2,6 +2,7 @@
 import { spawn, execFile as execFileCallback, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as Fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import * as Path from "node:path";
 import { promisify } from "node:util";
 
@@ -60,17 +61,40 @@ function accelerator(guestArch: string): string[] {
 }
 
 function imageTool(name: string): string {
-  return process.platform === "win32"
-    ? Path.join(process.env.ProgramFiles ?? "C:\\Program Files", "qemu", `${name}.exe`)
-    : name;
+  const binary = process.platform === "win32" ? `${name}.exe` : name;
+  const candidates = process.platform === "win32"
+    ? [
+        Path.join(process.env.ProgramFiles ?? "C:\\Program Files", "qemu", binary),
+        Path.join(process.env.LOCALAPPDATA ?? "", "Programs", "QEMU", binary),
+      ]
+    : process.platform === "darwin"
+      ? [`/opt/homebrew/bin/${binary}`, `/usr/local/bin/${binary}`]
+      : [];
+  return candidates.find((candidate) => existsSync(candidate)) ?? binary;
 }
 
 function imageBinary(architecture: string): string {
-  const bin = `qemu-system-${architecture}${process.platform === "win32" ? ".exe" : ""}`;
-  if (process.platform === "win32") {
-    return Path.join(process.env.ProgramFiles ?? "C:\\Program Files", "qemu", bin);
+  return imageTool(`qemu-system-${architecture}`);
+}
+
+function guestRuntimeEnv(): NodeJS.ProcessEnv {
+  // Do not pass provider credentials, session tokens or arbitrary host secrets
+  // to guest-hypervisor processes.
+  const allowed = [
+    "PATH", "Path", "HOME", "USERPROFILE", "SYSTEMROOT", "SystemRoot", "WINDIR",
+    "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL",
+  ];
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of allowed) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
   }
-  return bin;
+  return env;
+}
+
+function guestDrivePath(path: string): string {
+  // QEMU's -drive grammar separates properties at commas. Escape host paths.
+  return path.replaceAll(",", ",,");
 }
 
 /**
@@ -127,13 +151,15 @@ export class HostBoxManager {
     if (exists) throw new MicroboxHostError("invalid-input", "This guest image is already installed.");
     const temporary = Path.join(imagesDir, `.install-${randomUUID()}`);
     await Fs.mkdir(temporary);
+    let installed = false;
     try {
       for (const file of files) await Fs.copyFile(Path.join(source, file), Path.join(temporary, file));
       await Fs.rename(temporary, target);
+      installed = true;
       await this.image(manifest.id);
     } catch (cause) {
       await Fs.rm(temporary, { recursive: true, force: true });
-      await Fs.rm(target, { recursive: true, force: true });
+      if (installed) await Fs.rm(target, { recursive: true, force: true });
       if (cause instanceof MicroboxHostError) throw cause;
       throw new MicroboxHostError("io-error", "Couldn't install this guest image.");
     }
@@ -267,7 +293,7 @@ export class HostBoxManager {
         await Fs.copyFile(resolved, Path.join(mountDirectory, artifactName));
         // QEMU snapshots a virtual FAT directory at boot; never mutate while guest is running.
         args.push(
-          "-drive", `file=fat:${mountDirectory},format=raw,if=none,id=installer`,
+          "-drive", `file=fat:ro:${guestDrivePath(mountDirectory)},format=raw,if=none,id=installer`,
           "-device", "usb-storage,drive=installer",
         );
       }
@@ -277,22 +303,22 @@ export class HostBoxManager {
         args.push(
           "-kernel", Path.join(imageDir, manifest.kernel!),
           "-append", manifest.append ?? "root=/dev/vda rw console=ttyS0",
-          "-drive", `file=${overlay},format=raw,if=virtio`,
+          "-drive", `file=${guestDrivePath(overlay)},format=raw,if=virtio`,
         );
       } else if (manifest.kind === "disk") {
         const overlay = Path.join(directory, "disk.qcow2");
         await execFile(imageTool("qemu-img"), [
           "create", "-f", "qcow2", "-F", "qcow2", "-b", guestFile, overlay,
         ], { timeout: 60_000, windowsHide: true });
-        args.push("-drive", `file=${overlay},format=qcow2,if=virtio`);
+        args.push("-drive", `file=${guestDrivePath(overlay)},format=qcow2,if=virtio`);
       } else {
         const overlay = Path.join(directory, "disk.qcow2");
         await execFile(imageTool("qemu-img"), ["create", "-f", "qcow2", overlay, "32G"], {
           timeout: 60_000, windowsHide: true,
         });
         args.push(
-          "-drive", `file=${overlay},format=qcow2,if=virtio`,
-          "-drive", `file=${guestFile},media=cdrom,readonly=on`,
+          "-drive", `file=${guestDrivePath(overlay)},format=qcow2,if=virtio`,
+          "-drive", `file=${guestDrivePath(guestFile)},media=cdrom,readonly=on`,
           "-boot", "order=d",
         );
       }
@@ -300,7 +326,7 @@ export class HostBoxManager {
         cwd: directory,
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
-        env: { ...process.env },
+        env: guestRuntimeEnv(),
       });
       const qmp = new QmpClient(child);
       const status: MutableStatus = {
@@ -319,18 +345,23 @@ export class HostBoxManager {
         const current = this.boxes.get(boxId);
         if (current) current.status.state = "stopped";
       });
+      let startupTimeout: ReturnType<typeof setTimeout> | undefined;
       try {
+        if (this.stopping) throw new Error("Box setup was disabled.");
         await Promise.race([
           qmp.ready,
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("VM startup timed out.")), 20_000),
-          ),
+          new Promise<never>((_, reject) => {
+            startupTimeout = setTimeout(() => reject(new Error("VM startup timed out.")), 20_000);
+          }),
         ]);
+        if (this.stopping || status.state === "stopped") throw new Error("Box setup was disabled.");
         status.state = "running";
       } catch {
         await qmp.stop();
         this.boxes.delete(boxId);
         throw new MicroboxHostError("launch-failed", "Sparky could not start this guest image.");
+      } finally {
+        if (startupTimeout) clearTimeout(startupTimeout);
       }
       return { ...status };
     } catch (cause) {
@@ -357,9 +388,14 @@ export class HostBoxManager {
 
   async snapshot(threadId: string, boxId: string): Promise<MicroboxSnapshot> {
     const box = this.running(threadId, boxId);
-    const image = Path.join(box.directory, "screen.png");
-    await box.qmp.command("screendump", { filename: image, format: "png" });
-    const bytes = await Fs.readFile(image);
+    const image = Path.join(box.directory, `screen-${randomUUID()}.png`);
+    let bytes: Buffer;
+    try {
+      await box.qmp.command("screendump", { filename: image, format: "png" });
+      bytes = await Fs.readFile(image);
+    } finally {
+      await Fs.rm(image, { force: true }).catch(() => undefined);
+    }
     if (bytes.length > MAX_SNAPSHOT_BYTES || bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") {
       throw new MicroboxHostError("protocol-error", "The box could not provide a valid screenshot.");
     }
@@ -416,7 +452,7 @@ export class HostBoxManager {
 
   async stop(threadId: string, boxId: string, destroy = false): Promise<void> {
     const box = this.owned(threadId, boxId);
-    if (box.status.state === "running") {
+    if (box.status.state !== "stopped") {
       box.status.state = "stopping";
       await box.qmp.stop().catch(() => undefined);
       box.status.state = "stopped";

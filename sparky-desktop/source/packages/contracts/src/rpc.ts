@@ -161,6 +161,7 @@ import {
 import { VcsError } from "./vcs.ts";
 import {
   MicroboxCreateInput,
+  MicroboxImportImageInput,
   MicroboxListInput,
   MicroboxTarget,
   MicroboxClickInput,
@@ -219,6 +220,7 @@ export const WS_METHODS = {
 
   // Graphical virtual machines
   microboxImages: "microbox.images",
+  microboxImportImage: "microbox.importImage",
   microboxList: "microbox.list",
   microboxCreate: "microbox.create",
   microboxStatus: "microbox.status",
@@ -606,6 +608,12 @@ export const WsTerminalCloseRpc = Rpc.make(WS_METHODS.terminalClose, {
   error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
 });
 
+export const WsMicroboxImportImageRpc = Rpc.make(WS_METHODS.microboxImportImage, {
+  payload: MicroboxImportImageInput,
+  success: MicroboxImage,
+  error: Schema.Union([MicroboxError, EnvironmentAuthorizationError]),
+});
+
 export const WsMicroboxImagesRpc = Rpc.make(WS_METHODS.microboxImages, {
   payload: Schema.Struct({}),
   success: Schema.Array(MicroboxImage),
@@ -870,6 +878,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsTerminalCloseRpc,
   WsSubscribeTerminalEventsRpc,
   WsSubscribeTerminalMetadataRpc,
+  WsMicroboxImportImageRpc,
   WsMicroboxImagesRpc,
   WsMicroboxListRpc,
   WsMicroboxCreateRpc,

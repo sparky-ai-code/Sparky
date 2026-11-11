@@ -18,6 +18,11 @@ export function createMicroboxesEnvironmentAtoms<R, E>(
       JSON.stringify([environmentId, input.boxId]),
   };
   return {
+    importImage: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:microboxes:import-image",
+      tag: WS_METHODS.microboxImportImage,
+      scheduler: lifecycle,
+    }),
     images: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:microboxes:images",
       tag: WS_METHODS.microboxImages,

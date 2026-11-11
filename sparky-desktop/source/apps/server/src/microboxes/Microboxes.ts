@@ -17,6 +17,7 @@ type Target = MicroboxTarget;
 type BoxAction<A> = Effect.Effect<A, MicroboxError>;
 export interface MicroboxesService {
   readonly images: BoxAction<MicroboxImage[]>;
+  readonly importImage: (path: string) => BoxAction<MicroboxImage>;
   readonly list: (threadId: string) => BoxAction<MicroboxStatus[]>;
   readonly create: (input: MicroboxCreateInput) => BoxAction<MicroboxStatus>;
   readonly status: (target: Target) => BoxAction<MicroboxStatus>;
@@ -80,6 +81,7 @@ export const layer = Layer.scoped(
 
     return Microboxes.of({
       images: guarded(() => manager.images()),
+      importImage: (path) => guarded(() => manager.importImage(path)),
       list,
       create: (input) =>
         enabled.pipe(

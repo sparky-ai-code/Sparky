@@ -412,6 +412,7 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.subscribeTerminalEvents, AuthTerminalOperateScope],
   [WS_METHODS.subscribeTerminalMetadata, AuthTerminalOperateScope],
   [WS_METHODS.microboxImages, AuthOrchestrationReadScope],
+  [WS_METHODS.microboxImportImage, AuthOrchestrationOperateScope],
   [WS_METHODS.microboxList, AuthOrchestrationReadScope],
   [WS_METHODS.microboxCreate, AuthOrchestrationOperateScope],
   [WS_METHODS.microboxStatus, AuthOrchestrationReadScope],
@@ -2097,6 +2098,8 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "terminal" },
           ),
+        [WS_METHODS.microboxImportImage]: ({ sourceDirectory }) =>
+          observeRpcEffect(WS_METHODS.microboxImportImage, microboxes.importImage(sourceDirectory)),
         [WS_METHODS.microboxImages]: () =>
           observeRpcEffect(WS_METHODS.microboxImages, microboxes.images),
         [WS_METHODS.microboxList]: ({ threadId }) =>

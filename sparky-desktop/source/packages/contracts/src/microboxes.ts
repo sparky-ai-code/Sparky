@@ -4,6 +4,10 @@ import { ThreadId } from "./baseSchemas.ts";
 /** User-facing VM API. Never expose host commands, paths, or QMP to clients. */
 const BoxId = Schema.String.check(Schema.isPattern(/^[a-z0-9-]{8,64}$/u));
 const ImageId = Schema.String.check(Schema.isPattern(/^[a-z0-9-]{1,48}$/u));
+export const MicroboxImportImageInput = Schema.Struct({
+  sourceDirectory: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096)),
+});
+
 export const MicroboxCreateInput = Schema.Struct({
   threadId: ThreadId,
   imageId: ImageId,

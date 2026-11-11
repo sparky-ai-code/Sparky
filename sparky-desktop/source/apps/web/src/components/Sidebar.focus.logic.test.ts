@@ -12,6 +12,7 @@ function thread(id: string, overrides: Record<string, unknown> = {}): SidebarThr
     session: { status: "idle", activeTurnId: null },
     hasPendingUserInput: false,
     hasPendingApprovals: false,
+    hasActionableProposedPlan: false,
     ...overrides,
   } as unknown as SidebarThreadSummary;
 }
@@ -41,6 +42,42 @@ describe("Focus sidebar partitions", () => {
     expect(result.working.map((t) => t.id)).toEqual(["running"]);
     expect(result.active.map((t) => t.id)).toEqual(["input", "approval", "finished"]);
     expect(isFocusWorkingThread(thread("starting", { session: { status: "starting" } }))).toBe(true);
+  });
+
+  it("keeps the open running conversation visible until the user switches away", () => {
+    const open = partitionFocusThreads({
+      threads: [running, finished],
+      focusMode: true,
+      pinnedThreadKeys: [],
+      parkedThreadKeys: [],
+      activeThreadKey: key(running),
+    });
+    expect(open.active).toEqual([running, finished]);
+    expect(open.working).toEqual([]);
+
+    const afterSwitch = partitionFocusThreads({
+      threads: [running, finished],
+      focusMode: true,
+      pinnedThreadKeys: [],
+      parkedThreadKeys: [],
+      activeThreadKey: key(finished),
+    });
+    expect(afterSwitch.active).toEqual([finished]);
+    expect(afterSwitch.working).toEqual([running]);
+  });
+
+  it("never hides a thread waiting for its proposed plan to be reviewed", () => {
+    const needsPlan = thread("plan", {
+      session: { status: "running", activeTurnId: "turn-plan" },
+      hasActionableProposedPlan: true,
+    });
+    expect(isFocusWorkingThread(needsPlan)).toBe(false);
+    expect(partitionFocusThreads({
+      threads: [needsPlan],
+      focusMode: true,
+      pinnedThreadKeys: [],
+      parkedThreadKeys: [],
+    }).active).toEqual([needsPlan]);
   });
 
   it("never hides pinned work and restores completed work to the main list", () => {

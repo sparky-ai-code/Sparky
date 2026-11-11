@@ -466,7 +466,7 @@ fn classify_persistent_turn_error(error: &anyhow::Error) -> (&'static str, &'sta
     if has(&["no space left", "permission denied", "access is denied"]) {
         return ("storage_access", "Sparky couldn't save or access its conversation files. Check free disk space and file permissions.");
     }
-    ("turn_failed", "Sparky could not complete this turn. Try another model or check the provider connection.");
+    ("turn_failed", "Sparky could not complete this turn. Try another model or check the provider connection.")
 }
 
 async fn run_persistent_json_stream(

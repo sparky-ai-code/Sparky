@@ -1,0 +1,22 @@
+#!/bin/sh
+# Minimal graphical desktop brought up once device initialization completes.
+case "$1" in
+  start)
+    mkdir -p /run/user/0 /var/log
+    chmod 0700 /run/user/0
+    export XDG_RUNTIME_DIR=/run/user/0
+    export LIBSEAT_BACKEND=seatd
+    export WLR_RENDERER=pixman
+    # No remote desktop listener; the host reads the QEMU framebuffer directly.
+    /usr/bin/seatd -g video >/var/log/seatd.log 2>&1 &
+    sleep 1
+    /usr/bin/weston --backend=drm-backend.so --renderer=pixman --tty=1 \
+      --log=/var/log/sparky-micro-desktop.log >/dev/null 2>&1 &
+    ;;
+  stop)
+    killall weston seatd 2>/dev/null || true
+    ;;
+  *)
+    exit 1
+    ;;
+esac

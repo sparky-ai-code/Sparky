@@ -15,13 +15,14 @@ panel tab label is **"Boxes"**.
   WinGet on Windows, Homebrew on macOS and selected Linux package managers.
   Host setup checks binaries but does **not** imply a guest image exists.
 - Server-managed VM processes, bounded RAM/CPU, maximum four live boxes,
-  per-thread ownership and cleanup on server shutdown or opt-out.
+  sparse copy-on-write guest disks rather than full disk copies,
+  per-thread ownership and cleanup on server shutdown, opt-out or thread deletion.
 - VM monitor protocol for PNG screenshots and pointer, keyboard and scroll
   inputs. Each screenshot is collected into a unique temporary file and deleted
   after it is read. The browser-like Boxes tab polls only while shown.
 - Agent MCP tools: `box_images`, `box_list`, `box_create`, `box_status`,
   `box_snapshot`, `box_click`, `box_scroll`, `box_type`, `box_press`,
-  `box_stop`, `box_destroy`. The agent's authenticated thread identity is
+  `box_drag`, `box_stop`, `box_destroy`. The agent's authenticated thread identity is
   used; a tool caller cannot select a different thread. Tools may be visible
   in discovery while disabled, but every action is denied server-side.
 - WebSocket RPC methods and typed client atoms for the same operations. Users
@@ -30,7 +31,9 @@ panel tab label is **"Boxes"**.
   installer under 2 GiB and attaches it as a read-only virtual FAT USB device.
 - Buildroot image scripts and CI workflow for independent x86-64 and ARM64
   artifacts, containing the Linux kernel, musl, BusyBox, eudev, seatd,
-  Weston/Wayland and Pixman rendering plus a GUI terminal. This is neither
+  Weston/Wayland and Pixman rendering plus a GUI terminal. A separate smoke
+  job attempts to boot each image and capture its virtual framebuffer for
+  inspection, without claiming a complete GUI acceptance test. This is neither
   Ubuntu nor Alpine.
 - A protocol unit test suite verifies the VM monitor handshake, command
   correlation, keyboard events and unsupported character handling.
@@ -75,8 +78,8 @@ working directory. No guest remote display port or SSH port is opened.
   Linux guest cannot run native Windows or macOS installers.
 - **Release-test automation:** clean snapshots, reliable installer launch,
   structured GUI assertions, screenshot/crash evidence and final reports.
-- **Lifecycle hardening:** thread-deletion cleanup, persisted stopped-box
-  recovery and boot exit/timeout logging for diagnostics.
+- **Lifecycle hardening:** persisted stopped-box recovery and boot
+  exit/timeout logging for diagnostics (thread-deletion cleanup is implemented).
 - **Performance:** avoid unbounded screenshot buffering or constant polling
   for invisible views; benchmark memory usage on representative hosts.
 - **Permission UX:** tool discovery filtering for disabled sessions and
@@ -98,6 +101,9 @@ Both scripts use pinned Buildroot tag `2026.08.1`. The workflow
 `.github/workflows/microboxes-guest-image.yml` at the repository root runs
 the two builds as matrix jobs and uploads non-publication test artifacts.
 The settings image-folder picker can import the generated directories.
+A separate CI job attempts a real guest boot using the same sparse disk overlay
+format as the server and uploads a PNG screenshot as evidence. An image build
+passing alone is not proof of a functioning graphical desktop.
 
 ## Installer testing
 

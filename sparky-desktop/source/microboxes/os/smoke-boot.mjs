@@ -5,7 +5,7 @@
  */
 import { spawn, execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, copyFile, rm, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, copyFile, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -148,7 +148,35 @@ async function main(directory, screenshotDirectory) {
     if (machine) {
       machine.removeAllListeners("exit");
       machine.removeAllListeners("error");
-      machine.kill();
+      if (machine.exitCode === null && machine.signalCode === null) {
+        const exited = new Promise((resolveExit) => machine.once("close", resolveExit));
+        machine.kill();
+        await Promise.race([exited, new Promise((resolveWait) => setTimeout(resolveWait, 7_000))]);
+      }
+    }
+    if (process.env.SPARKY_MICRO_CAPTURE_GUEST_LOGS === "1") {
+      // The CI diagnostic is opt-in. Examine the guest filesystem after VM
+      // shutdown so Weston and seatd failures aren't lost when the scratch
+      // directory is removed. Never use this on untrusted user images.
+      await mkdir(screenshotDirectory, { recursive: true });
+      const merged = join(scratch, "merged.raw");
+      try {
+        await runFile("qemu-img", ["convert", "-O", "raw", target, merged], { timeout: 120_000 });
+        for (const name of ["sparky-micro-desktop.log", "seatd.log", "desktop-terminal.log"]) {
+          const output = join(screenshotDirectory, `sparky-micro-${arch}-${name}.txt`);
+          try {
+            const { stdout, stderr } = await runFile(
+              "debugfs", ["-R", `cat /var/log/${name}`, merged],
+              { timeout: 20_000, maxBuffer: 1_000_000 },
+            );
+            await writeFile(output, stdout || stderr);
+          } catch (error) {
+            await writeFile(output, `Could not read guest log: ${error.message}\n`);
+          }
+        }
+      } catch (error) {
+        await writeFile(join(screenshotDirectory, "guest-disk-diagnostics.txt"), `Guest log extraction failed: ${error.message}\n`);
+      }
     }
     await rm(scratch, { recursive: true, force: true });
   }

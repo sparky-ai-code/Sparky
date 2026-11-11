@@ -22,6 +22,20 @@ export function MicroboxesSettingsPanel() {
           }
         />
         <SettingsRow
+          title="Allow guest internet"
+          description="Disabled by default. Networked boxes can contact websites and other reachable networks; only enable this for test environments you trust."
+          control={
+            <Switch
+              checked={settings.microboxesInternetEnabled}
+              disabled={!settings.microboxesEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ microboxesInternetEnabled: Boolean(checked) })
+              }
+              aria-label="Allow Microboxes guest internet access"
+            />
+          }
+        />
+        <SettingsRow
           title="Host setup"
           description="Install the components needed to run Microboxes. Sparky handles setup after you approve it. Your operating system may request permission."
         >

@@ -1214,7 +1214,7 @@ export function derivePendingApprovals(
       payload?.requestKind === "command" ||
       payload?.requestKind === "file-read" ||
       payload?.requestKind === "file-change" ||
-    payload?.requestKind === "tool"
+      payload?.requestKind === "tool"
         ? payload.requestKind
         : requestKindFromRequestType(payload?.requestType);
     const detail = typeof payload?.detail === "string" ? payload.detail : undefined;

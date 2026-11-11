@@ -1263,8 +1263,11 @@ impl AgentLoop {
             return false;
         };
         let (reply, receiver) = oneshot::channel();
+        // The desktop hosts several native agent processes at once. Include
+        // the process id so approval IDs cannot collide across threads.
         let request_id = format!(
-            "sparky-approval-{}",
+            "sparky-approval-{}-{}",
+            std::process::id(),
             self.next_approval_id.fetch_add(1, Ordering::Relaxed),
         );
         if sender.send(ToolApprovalRequest {

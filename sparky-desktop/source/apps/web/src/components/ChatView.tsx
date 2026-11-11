@@ -5479,6 +5479,8 @@ function ChatViewContent(props: ChatViewProps) {
     ) : activeRightPanelSurface?.kind === "box" ? (
       <MicroboxesPanel
         enabled={settings.microboxesEnabled}
+        internetAllowed={settings.microboxesInternetEnabled}
+        threadRef={activeThreadRef}
         boxId={activeRightPanelSurface.resourceId}
       />
     ) : activeRightPanelSurface?.kind === "terminal" ? (

@@ -1,0 +1,47 @@
+# Temporary regression diagnosis against the exact legacy guest image that
+# displayed only "Booting the kernel". This workflow does not ship images.
+name: Diagnose legacy Microboxes boot
+on:
+  push:
+    paths:
+      - ".github/workflows/microboxes-boot-diagnostics.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose-legacy-x86:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download originally published test image
+        run: |
+          mkdir -p dist/microboxes/sparky-micro-x86_64
+          gh run download 43059881074 --repo sparky-ai-code/Sparky \
+            --name sparky-micro-x86_64 \
+            --dir dist/microboxes/sparky-micro-x86_64
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Install guest test runtime
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y qemu-system-x86 qemu-utils
+      - name: Record real boot status and serial diagnostics
+        run: |
+          node microboxes/os/smoke-boot.mjs \
+            dist/microboxes/sparky-micro-x86_64 \
+            dist/microboxes/screenshots
+      - name: Upload boot evidence even if Linux fails to start
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: microboxes-legacy-boot-diagnostics
+          path: sparky-desktop/source/dist/microboxes/screenshots/
+          if-no-files-found: ignore
+          retention-days: 7

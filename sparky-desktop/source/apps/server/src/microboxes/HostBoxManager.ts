@@ -54,6 +54,12 @@ function accelerator(guestArch: string): string[] {
         : ["-accel", "tcg"];
 }
 
+function imageTool(name: string): string {
+  return process.platform === "win32"
+    ? Path.join(process.env.ProgramFiles ?? "C:\\Program Files", "qemu", `${name}.exe`)
+    : name;
+}
+
 function imageBinary(architecture: string): string {
   const bin = `qemu-system-${architecture}${process.platform === "win32" ? ".exe" : ""}`;
   if (process.platform === "win32") {
@@ -69,8 +75,66 @@ function imageBinary(architecture: string): string {
 export class HostBoxManager {
   private readonly boxes = new Map<string, RunningBox>();
   private stopping = false;
+  private creating = 0;
 
   constructor(private readonly root: string) {}
+
+  async importImage(sourceDirectory: string): Promise<MicroboxImage> {
+    if (!Path.isAbsolute(sourceDirectory)) {
+      throw new MicroboxHostError("invalid-input", "Choose an image folder on this computer.");
+    }
+    const source = await Fs.realpath(sourceDirectory).catch(() => {
+      throw new MicroboxHostError("image-missing", "The selected image folder cannot be opened.");
+    });
+    let manifest: GuestManifest;
+    try {
+      manifest = JSON.parse(await Fs.readFile(Path.join(source, "image.json"), "utf8")) as GuestManifest;
+    } catch {
+      throw new MicroboxHostError("image-missing", "The folder does not contain a valid Microboxes image.");
+    }
+    if (
+      !manifest || !SAFE_IMAGE_ID.test(manifest.id) || !SAFE_IMAGE_FILE.test(manifest.file) ||
+      !["linux-kernel", "disk", "installer-iso"].includes(manifest.kind) ||
+      !["x86_64", "aarch64"].includes(manifest.architecture) ||
+      (manifest.kind === "linux-kernel" && (!manifest.kernel || !SAFE_IMAGE_FILE.test(manifest.kernel))) ||
+      typeof manifest.name !== "string" || manifest.name.length < 1 || manifest.name.length > 80
+    ) {
+      throw new MicroboxHostError("invalid-input", "The image manifest is invalid.");
+    }
+    const files = ["image.json", manifest.file, ...(manifest.kernel ? [manifest.kernel] : [])];
+    for (const name of files) {
+      const real = await Fs.realpath(Path.join(source, name)).catch(() => {
+        throw new MicroboxHostError("image-missing", "A guest image component is missing.");
+      });
+      if (!real.startsWith(source + Path.sep)) {
+        throw new MicroboxHostError("invalid-input", "Guest image files must be inside their selected folder.");
+      }
+      const stat = await Fs.stat(real);
+      if (!stat.isFile() || stat.size > 20 * 1024 * 1024 * 1024) {
+        throw new MicroboxHostError("invalid-input", "Guest image is not a supported file.");
+      }
+    }
+    const imagesDir = Path.join(this.root, "images");
+    const target = Path.join(imagesDir, manifest.id);
+    await Fs.mkdir(imagesDir, { recursive: true });
+    const exists = await Fs.stat(target).then(() => true, () => false);
+    if (exists) throw new MicroboxHostError("invalid-input", "This guest image is already installed.");
+    const temporary = Path.join(imagesDir, `.install-${randomUUID()}`);
+    await Fs.mkdir(temporary);
+    try {
+      for (const file of files) await Fs.copyFile(Path.join(source, file), Path.join(temporary, file));
+      await Fs.rename(temporary, target);
+      await this.image(manifest.id);
+    } catch (cause) {
+      await Fs.rm(temporary, { recursive: true, force: true });
+      if (cause instanceof MicroboxHostError) throw cause;
+      throw new MicroboxHostError("io-error", "Couldn't install this guest image.");
+    }
+    return {
+      imageId: manifest.id, name: manifest.name,
+      kind: manifest.kind, architecture: manifest.architecture,
+    };
+  }
 
   private async image(id: string): Promise<{ manifest: GuestManifest; directory: string }> {
     if (!SAFE_IMAGE_ID.test(id)) throw new MicroboxHostError("invalid-input", "Invalid image selection.");
@@ -139,7 +203,11 @@ export class HostBoxManager {
 
   async create(input: MicroboxCreateInput): Promise<MicroboxStatus> {
     if (this.stopping) throw new MicroboxHostError("busy", "Microboxes are shutting down.");
-    if (this.boxes.size >= MAX_BOXES) throw new MicroboxHostError("limit", "Stop an existing box first (maximum four).");
+    if (this.boxes.size + this.creating >= MAX_BOXES) {
+      throw new MicroboxHostError("limit", "Stop an existing box first (maximum four).");
+    }
+    this.creating += 1;
+    try {
     const { manifest, directory: imageDir } = await this.image(input.imageId);
     const boxId = randomUUID();
     const directory = Path.join(this.root, "boxes", boxId);
@@ -155,7 +223,7 @@ export class HostBoxManager {
       "-m", String(memoryMiB), "-smp", String(cpus),
       "-machine", manifest.architecture === "aarch64" ? "virt" : "pc",
       ...accelerator(manifest.architecture),
-      "-device", manifest.architecture === "aarch64" ? "virtio-gpu-pci" : "VGA",
+      "-device", manifest.architecture === "aarch64" ? "virtio-gpu-pci" : "virtio-vga",
       "-device", "qemu-xhci",
       "-device", "usb-tablet",
       ...(input.internet ? ["-netdev", "user,id=net0", "-device", "virtio-net-pci,netdev=net0"] : ["-nic", "none"]),
@@ -172,7 +240,7 @@ export class HostBoxManager {
         );
       } else if (manifest.kind === "disk") {
         const overlay = Path.join(directory, "disk.qcow2");
-        await execFile("qemu-img", [
+        await execFile(imageTool("qemu-img"), [
           "create", "-f", "qcow2", "-F", "qcow2", "-b", guestFile, overlay,
         ], { timeout: 60_000, windowsHide: true });
         args.push("-drive", `file=${overlay},format=qcow2,if=virtio`);
@@ -227,6 +295,9 @@ export class HostBoxManager {
       if (!this.boxes.has(boxId)) await Fs.rm(directory, { recursive: true, force: true });
       if (cause instanceof MicroboxHostError) throw cause;
       throw new MicroboxHostError("launch-failed", "Sparky could not create the box.");
+    }
+    } finally {
+      this.creating -= 1;
     }
   }
 

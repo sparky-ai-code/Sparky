@@ -159,7 +159,6 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
       const projects = snapshot.projects.filter(
         (project) => !input.projectId || project.id === input.projectId,
       );
-      const projectIds = new Set(projects.map((project) => project.id));
       return {
         environmentId: scope.environmentId,
         projects: projects.map((project) => ({
@@ -169,7 +168,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
           defaultModelSelection: project.defaultModelSelection,
         })),
         threads: snapshot.threads
-          .filter((thread) => projectIds.has(thread.projectId))
+          .filter((thread) => !input.projectId || thread.projectId === input.projectId)
           .map((thread) => ({
             threadId: thread.id,
             projectId: thread.projectId,

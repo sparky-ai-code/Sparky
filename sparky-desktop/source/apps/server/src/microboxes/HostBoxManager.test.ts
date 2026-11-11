@@ -6,7 +6,7 @@ import { MicroboxImage } from "@sparky/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { HostBoxManager } from "./HostBoxManager.ts";
+import { HostBoxManager, microLinuxBootState, visibleLinuxKernelArguments } from "./HostBoxManager.ts";
 
 describe("Microboxes image import", () => {
   it("imports the existing Sparky Micro Linux x86_64 release folder", async () => {
@@ -59,5 +59,21 @@ describe("Microboxes image import", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("Sparky Micro Linux desktop readiness", () => {
+  it("does not mistake a connected VM monitor or kernel boot output for a desktop", () => {
+    expect(microLinuxBootState("Booting the kernel\n")).toBe("booting");
+    expect(microLinuxBootState("[0.0] Linux version\nStarting syslogd")).toBe("booting");
+    expect(microLinuxBootState("SPARKY_MICRO_DESKTOP_READY\n")).toBe("ready");
+    expect(microLinuxBootState("Kernel panic - not syncing: VFS: Unable to mount root fs")).toBe("failed");
+    expect(microLinuxBootState("SPARKY_MICRO_DESKTOP_ERROR")).toBe("failed");
+  });
+  it("keeps graphical kernel boot messages visible without dropping the serial console", () => {
+    expect(visibleLinuxKernelArguments("root=/dev/vda rw console=ttyS0"))
+      .toBe("root=/dev/vda rw console=ttyS0 console=tty0");
+    expect(visibleLinuxKernelArguments("root=/dev/vda console=tty0"))
+      .toBe("root=/dev/vda console=tty0");
   });
 });

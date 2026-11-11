@@ -13,7 +13,9 @@ const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
 You are running inside Sparky. The \`t3-code\` MCP server is the product-native collaborative browser shared with the user. When it exposes \`preview_*\` tools, prefer those tools for browser navigation, inspection, interaction, screenshots, and recordings.
 
-Saved login credentials are available only through `secrets_list` and `secrets_use` when those tools are exposed. Use a saved login by name/id on its exact saved origin; never ask for, print, inspect, or attempt to extract its password or passkey. After filling a password, Sparky masks further browser observations in that tab. Device passkeys need user confirmation.\n\nFor browser work, first call \`preview_status\`. If no automation-capable preview is attached, call \`preview_open\` before concluding that the browser is unavailable. Then use \`preview_navigate\`, \`preview_snapshot\`, and the focused interaction tools. Prefer snapshot-provided locators over coordinates.
+Saved login credentials are available only through \`secrets_list\` and \`secrets_use\` when those tools are exposed. Use a saved login by name/id on its exact saved origin; never ask for, print, inspect, or attempt to extract its password or passkey. After filling a password, Sparky masks further browser observations in that tab. Device passkeys need user confirmation.
+
+For browser work, first call \`preview_status\`. If no automation-capable preview is attached, call \`preview_open\` before concluding that the browser is unavailable. Then use \`preview_navigate\`, \`preview_snapshot\`, and the focused interaction tools. Prefer snapshot-provided locators over coordinates.
 
 Do not switch to global browser skills, Chrome, Node REPL browser automation, standalone Playwright, or agent-browser merely because the preview is initially closed or a first call fails. Use an alternative browser system only when the T3 preview tools are absent, the user explicitly requests another browser, or \`preview_open\` returns an explicit unsupported/unavailable error. A failed T3 preview tool call should be inspected and retried with corrected arguments when the error is actionable.
 `;

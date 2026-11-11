@@ -11,6 +11,7 @@ import {
   createEnvironmentRpcCommand,
 } from "@sparky/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
+import * as Data from "effect/Data";
 import * as Option from "effect/Option";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
@@ -21,12 +22,15 @@ import { connectionAtomRuntime } from "~/connection/runtime";
  * connections; the model never receives any backend credential or URL.
  * Require an active connection and fresh HTTP data, never an offline cache.
  */
+class ThreadRelayError extends Data.TaggedError("ThreadRelayError")<{ readonly message: string }> {}
+const invalid = (message: string) => new ThreadRelayError({ message });
+
 const requirePreparedConnection = Effect.gen(function* () {
   const supervisor = yield* EnvironmentSupervisor;
   const connection = yield* SubscriptionRef.get(supervisor.state);
   const prepared = yield* SubscriptionRef.get(supervisor.prepared);
   if (connection.phase !== "connected" || Option.isNone(prepared)) {
-    return yield* Effect.fail(new Error("The requested environment is not connected."));
+    return yield* Effect.fail(invalid("The requested environment is not connected."));
   }
   return prepared.value;
 });
@@ -39,7 +43,7 @@ export const threadRelayShell = createEnvironmentCommand(connectionAtomRuntime, 
       const loader = yield* ShellSnapshotLoader;
       const snapshot = yield* loader.load(prepared);
       if (Option.isNone(snapshot)) {
-        return yield* Effect.fail(new Error("Could not fetch live projects and threads."));
+        return yield* Effect.fail(invalid("Could not fetch live projects and threads."));
       }
       return snapshot.value;
     }),
@@ -53,7 +57,7 @@ export const threadRelayRead = createEnvironmentCommand(connectionAtomRuntime, {
       const loader = yield* ThreadSnapshotLoader;
       const snapshot = yield* loader.load(prepared, ThreadId.make(input.threadId));
       if (Option.isNone(snapshot)) {
-        return yield* Effect.fail(new Error("Thread not found or detail unavailable."));
+        return yield* Effect.fail(invalid("Thread not found or detail unavailable."));
       }
       return snapshot.value.thread;
     }),

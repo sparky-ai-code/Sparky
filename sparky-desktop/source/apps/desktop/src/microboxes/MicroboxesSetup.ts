@@ -114,9 +114,8 @@ async function executeSetup(): Promise<DesktopMicroboxesSetupState> {
       "engine-ready",
       "Core components are installed. A Microboxes guest image is still required before you can start a box.",
     );
-  } catch (error) {
-    // Keep underlying executable names and internal installation details out of the UI.
-    console.error("[microboxes] host runtime setup failed", error);
+  } catch {
+    // Never return internal package-manager details to the renderer.
     return publicState(
       "error",
       "Couldn't finish setting up Sparky Microboxes. Check your system permissions and try again.",

@@ -521,7 +521,7 @@ export function sparkyToolPresentation(
       ? rawInput.pluginId.trim().toLowerCase()
       : undefined;
   const isBrowserTool = normalizedName.startsWith("preview_");
-  const isMcpTool = isBrowserTool || normalizedName === "getpullrequestcomments";
+  const isMcpTool = isBrowserTool || normalizedName.startsWith("box_") || normalizedName === "getpullrequestcomments";
   const itemType: ToolLifecycleItemType =
     normalizedName === "bash" || normalizedName === "bash_monitor"
       ? "command_execution"
@@ -568,6 +568,18 @@ export function sparkyToolPresentation(
     preview_wait_for: "Wait for browser",
     preview_recording_start: "Start browser recording",
     preview_recording_stop: "Stop browser recording",
+    box_images: "List box images",
+    box_list: "List boxes",
+    box_create: "Create box",
+    box_status: "Inspect box",
+    box_snapshot: "View box screen",
+    box_click: "Click box",
+    box_drag: "Drag in box",
+    box_scroll: "Scroll box",
+    box_type: "Type in box",
+    box_press: "Press box key",
+    box_stop: "Stop box",
+    box_destroy: "Delete box",
     getpullrequestcomments: "Get pull request comments",
   };
   return {

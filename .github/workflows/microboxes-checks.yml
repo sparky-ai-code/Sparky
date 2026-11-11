@@ -48,6 +48,8 @@ jobs:
       - name: Typecheck web
         continue-on-error: true # Inspect all packages in one run.
         run: pnpm --filter @sparky/web typecheck
+      - name: Exercise VM monitor control tests
+        run: pnpm --filter t3 exec vp test run src/microboxes/QmpClient.test.ts
       - name: Run contracts tests
         run: pnpm --filter @sparky/contracts test
       - name: Run focused client tests

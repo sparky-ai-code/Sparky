@@ -278,6 +278,36 @@ it.layer(PreviewManager.layer)("PreviewManager", (it) => {
     }),
   );
 
+  it.effect("coalesces concurrent replays of one agent open request into a single tab", () =>
+    Effect.gen(function* () {
+      const threadId = freshThreadId();
+      const manager = yield* PreviewManager.PreviewManager;
+      const collector = yield* collectEvents;
+
+      const [first, second, third] = yield* Effect.all(
+        [
+          manager.open({ threadId, requestId: "agent-request-1", url: "example.com" }),
+          manager.open({ threadId, requestId: "agent-request-1", url: "example.com" }),
+          manager.open({ threadId, requestId: "agent-request-1", url: "example.com" }),
+        ],
+        { concurrency: "unbounded" },
+      );
+
+      expect(second.tabId).toBe(first.tabId);
+      expect(third.tabId).toBe(first.tabId);
+      expect((yield* manager.list({ threadId })).sessions).toHaveLength(1);
+      expect((yield* collector.drain).map((event) => event.type)).toEqual(["opened"]);
+
+      const anotherCall = yield* manager.open({
+        threadId,
+        requestId: "agent-request-2",
+        url: "example.com",
+      });
+      expect(anotherCall.tabId).not.toBe(first.tabId);
+      expect((yield* manager.list({ threadId })).sessions).toHaveLength(2);
+    }),
+  );
+
   it.effect("open creates an independent tab on every call", () =>
     Effect.gen(function* () {
       const threadId = freshThreadId();

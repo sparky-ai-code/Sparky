@@ -152,6 +152,78 @@ describe("previewAutomationRequestConsumer", () => {
     registry.dispose();
   });
 
+  it("runs a repeated automation request only once while its first attempt is pending", async () => {
+    const requestsAtom = Atom.make<AsyncResult.AsyncResult<PreviewAutomationStreamEvent, Error>>(
+      AsyncResult.initial<PreviewAutomationStreamEvent, Error>(false),
+    );
+    let resolveRequest: (() => void) | undefined;
+    const handleRequest = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    const respond = vi.fn(async (_response: PreviewAutomationResponse) => undefined);
+    const state = consumerState(handleRequest);
+    const consumerAtom = createPreviewAutomationRequestConsumerAtom({
+      requestsAtom,
+      clientId,
+      connectionAtom: state.connectionAtom,
+      environmentId,
+      requestHandlerAtom: state.requestHandlerAtom,
+      respond,
+      label: "test:preview-automation-deduplicate",
+    });
+    const registry = AtomRegistry.make();
+    registry.mount(consumerAtom);
+
+    for (let i = 0; i < 3; i++) {
+      registry.set(requestsAtom, AsyncResult.success(requestEvent("request-open", {
+        operation: "open",
+      })));
+    }
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    resolveRequest?.();
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
+
+    registry.set(requestsAtom, AsyncResult.success(requestEvent("request-next", {
+      operation: "open",
+    })));
+    expect(handleRequest).toHaveBeenCalledTimes(2);
+    resolveRequest?.();
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledTimes(2));
+    registry.dispose();
+  });
+
+  it("keeps request deduplication across consumer remounts", async () => {
+    const event = requestEvent("request-once", { operation: "open" });
+    const requestsAtom = Atom.make(
+      AsyncResult.success<PreviewAutomationStreamEvent, Error>(event),
+    );
+    const handled = new Set<string>();
+    const handleRequest = vi.fn(async () => undefined);
+    const respond = vi.fn(async (_response: PreviewAutomationResponse) => undefined);
+
+    for (let i = 0; i < 3; i++) {
+      const state = consumerState(handleRequest);
+      const consumerAtom = createPreviewAutomationRequestConsumerAtom({
+        requestsAtom,
+        clientId,
+        connectionAtom: state.connectionAtom,
+        environmentId,
+        requestHandlerAtom: state.requestHandlerAtom,
+        processedRequestIds: handled,
+        respond,
+        label: `test:preview-automation-remount-${i}`,
+      });
+      const registry = AtomRegistry.make();
+      registry.mount(consumerAtom);
+      await vi.waitFor(() => expect(handleRequest).toHaveBeenCalledTimes(1));
+      registry.dispose();
+    }
+    expect(respond).toHaveBeenCalledTimes(1);
+  });
+
   it("uses the latest request handler without rebuilding the stream consumer", async () => {
     const requestsAtom = Atom.make<AsyncResult.AsyncResult<PreviewAutomationStreamEvent, Error>>(
       AsyncResult.initial<PreviewAutomationStreamEvent, Error>(false),

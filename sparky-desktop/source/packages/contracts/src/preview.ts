@@ -146,6 +146,8 @@ export const PreviewOpenInput = Schema.Struct({
   threadId: ThreadId,
   /** Omit to create an empty (Idle) tab the user can type into. */
   url: Schema.optional(Url),
+  /** Stable request ID for agent-driven opens; retries must reuse the original tab. */
+  requestId: Schema.optional(Schema.String),
 });
 export type PreviewOpenInput = typeof PreviewOpenInput.Type;
 

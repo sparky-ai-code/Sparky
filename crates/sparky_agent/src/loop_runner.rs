@@ -79,6 +79,96 @@ pub struct AgentLoopOptions {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn supervised_file_write_waits_for_approval_and_denies_without_a_host() {
+        let workspace = temporary_workspace();
+        tokio::fs::create_dir_all(&workspace).await.unwrap();
+        let cwd = workspace.to_string_lossy().to_string();
+        let file = workspace.join("mode-permission-check.txt");
+        let mut agent = AgentLoop::new(
+            Arc::new(StreamingProvider),
+            ToolRegistry::new(),
+            EventBus::new(),
+            AgentLoopOptions {
+                cwd,
+                ..AgentLoopOptions::default()
+            },
+        );
+        agent.set_access_mode(AccessMode::ApprovalRequired);
+        let call = ToolCall {
+            id: "supervised-write".to_string(),
+            name: "write".to_string(),
+            arguments: serde_json::json!({
+                "path": "mode-permission-check.txt",
+                "content": "explicitly approved",
+            }),
+        };
+
+        // Missing/closed approval host cannot silently grant Full Access.
+        let denied = agent.execute_tool_call_result_with_events(&call, true).await;
+        assert!(denied.is_error);
+        assert!(!file.exists());
+
+        let (sender, mut requests) = mpsc::unbounded_channel();
+        agent.set_approval_sender(sender);
+        let (allowed, ()) = tokio::join!(
+            agent.execute_tool_call_result_with_events(&call, true),
+            async {
+                let request = requests.recv().await.expect("approval event");
+                assert_eq!(request.tool_name, "write");
+                assert_eq!(request.tool_call_id, "supervised-write");
+                assert_eq!(request.arguments["path"], "mode-permission-check.txt");
+                request.reply.send(ToolApprovalDecision::Accept).unwrap();
+            }
+        );
+        assert!(!allowed.is_error, "{}", allowed.output);
+        assert_eq!(
+            tokio::fs::read_to_string(&file).await.unwrap(),
+            "explicitly approved"
+        );
+
+        drop(agent);
+        remove_temporary_workspace(workspace).await;
+    }
+
+    #[tokio::test]
+    async fn auto_accept_edits_allows_writes_without_an_approval_host() {
+        let workspace = temporary_workspace();
+        tokio::fs::create_dir_all(&workspace).await.unwrap();
+        let cwd = workspace.to_string_lossy().to_string();
+        let mut agent = AgentLoop::new(
+            Arc::new(StreamingProvider),
+            ToolRegistry::new(),
+            EventBus::new(),
+            AgentLoopOptions {
+                cwd,
+                ..AgentLoopOptions::default()
+            },
+        );
+        agent.set_access_mode(AccessMode::AutoAcceptEdits);
+        let result = agent.execute_tool_call_result_with_events(
+            &ToolCall {
+                id: "auto-accepted-write".to_string(),
+                name: "write".to_string(),
+                arguments: serde_json::json!({
+                    "path": "auto-accepted.txt",
+                    "content": "works",
+                }),
+            },
+            true,
+        ).await;
+        assert!(!result.is_error, "{}", result.output);
+        assert_eq!(
+            tokio::fs::read_to_string(workspace.join("auto-accepted.txt"))
+                .await
+                .unwrap(),
+            "works"
+        );
+
+        drop(agent);
+        remove_temporary_workspace(workspace).await;
+    }
+
     #[test]
     fn runtime_access_modes_gate_side_effects_and_unknown_tools() {
         for tool in ["bash", "write", "edit", "memory_add", "memory_update", "memory_delete", "preview_click", "plugin_tool"] {

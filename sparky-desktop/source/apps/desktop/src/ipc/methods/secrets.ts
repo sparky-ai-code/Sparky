@@ -54,7 +54,11 @@ export const use = DesktopIpc.makeIpcMethod({
     const manager = yield* PreviewManager.PreviewManager;
     const url = yield* manager.automationPageUrl(tabId);
     if (!url) return yield* Effect.fail(new SecretVaultOperationError({ cause: "Browser site is unavailable." }));
-    const secret = yield* attempt(() => Vault.getSecretForOrigin(input.id, url));
+    const identifier = input.id?.trim() || input.name?.trim();
+    if (!identifier || (input.id && input.name)) {
+      return yield* Effect.fail(new SecretVaultOperationError({ cause: "Choose exactly one saved credential ID or name." }));
+    }
+    const secret = yield* attempt(() => Vault.getSecretForOrigin(identifier, url));
     // A second origin check runs inside the browser control session, preventing navigation races.
     return yield* manager.automationUseSecret(tabId, {
       origin: secret.metadata.origin,

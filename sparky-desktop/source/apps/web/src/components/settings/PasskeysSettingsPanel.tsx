@@ -64,9 +64,9 @@ export function PasskeysSettingsPanel() {
   return (
     <SettingsPageContainer>
       <div className="space-y-1">
-        <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight"><KeyRoundIcon className="size-5" />Passkeys</h1>
+        <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight"><KeyRoundIcon className="size-5" />Password vault &amp; Passkeys</h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          Save site credentials locally for the Sparky browser. The agent can select a named login and fill it without receiving its password.
+          Keep a reusable vault of named logins. Sparky can sign in to saved sites in its browser without receiving the underlying passwords.
         </p>
       </div>
       {!bridge ? (
@@ -75,7 +75,7 @@ export function PasskeysSettingsPanel() {
         </SettingsSection>
       ) : (
         <>
-          <SettingsSection title="Saved logins" icon={<LockKeyholeIcon className="size-3.5" />}>
+          <SettingsSection title="Your saved password vault" icon={<LockKeyholeIcon className="size-3.5" />}>
             {items.length === 0 ? (
               <SettingsRow title="No saved logins" description="Add a login below. Sparky will only use it on the exact site you specify." />
             ) : items.map((entry) => (

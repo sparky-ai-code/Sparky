@@ -113,14 +113,23 @@ export function removeSecret(id: string): Promise<void> {
 }
 
 /** Privileged desktop-only read. NEVER expose this return type through IPC, MCP, logs, or chat. */
-export function getSecretForOrigin(id: string, pageUrl: string): Promise<{
+export function getSecretForOrigin(identifier: string, pageUrl: string): Promise<{
   readonly metadata: SecretVaultEntry;
   readonly password: string | null;
 }> {
   return serialized(async () => {
-    const record = (await readFile()).entries.find((entry) => entry.metadata.id === id);
-    if (!record) throw new Error("Credential not found.");
-    if (normalizedOrigin(pageUrl) !== record.metadata.origin) {
+    const origin = normalizedOrigin(pageUrl);
+    const entries = (await readFile()).entries;
+    // Names can be selected directly by the agent, but only for this exact origin.
+    const byId = entries.find((entry) => entry.metadata.id === identifier);
+    const byName = entries.filter(
+      (entry) => entry.metadata.name.toLowerCase() === identifier.trim().toLowerCase() &&
+        entry.metadata.origin === origin,
+    );
+    if (!byId && byName.length > 1) throw new Error("Multiple logins share this name on the site; use a credential ID.");
+    const record = byId ?? byName[0];
+    if (!record) throw new Error("Credential not found for this site.");
+    if (origin !== record.metadata.origin) {
       throw new Error("Credential site does not match the browser tab. Navigate to the saved site first.");
     }
     return {

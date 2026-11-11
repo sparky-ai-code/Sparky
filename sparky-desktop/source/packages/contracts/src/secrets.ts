@@ -26,7 +26,9 @@ export const SecretVaultWriteInputSchema = Schema.Struct({
 export type SecretVaultWriteInput = typeof SecretVaultWriteInputSchema.Type;
 
 export const SecretVaultFillInputSchema = Schema.Struct({
-  id: Schema.String,
+  /** Credential ID or friendly name; never plaintext. */
+  id: Schema.optional(Schema.String),
+  name: Schema.optional(Schema.String),
   emailLocator: Schema.optional(Schema.String),
   passwordLocator: Schema.optional(Schema.String),
   passkeyLocator: Schema.optional(Schema.String),

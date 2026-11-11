@@ -51,6 +51,18 @@ describe("local encrypted credential vault", () => {
     expect(retrieved.metadata.name).toBe("Example");
   });
 
+  it("selects a saved login by friendly name only for the exact site", async () => {
+    await Vault.saveSecret(example);
+    expect((await Vault.getSecretForOrigin("example", "https://example.com/signin")).password).toBe(example.password);
+    await expect(Vault.getSecretForOrigin("example", "https://attacker.example")).rejects.toThrow();
+  });
+
+  it("rejects ambiguous credential names", async () => {
+    await Vault.saveSecret(example);
+    await Vault.saveSecret({ ...example, email: "other@example.com" });
+    await expect(Vault.getSecretForOrigin("Example", "https://example.com")).rejects.toThrow("Multiple logins");
+  });
+
   it("never reveals a saved credential to another site", async () => {
     const entry = await Vault.saveSecret(example);
     await expect(Vault.getSecretForOrigin(entry.id, "https://attacker.example")).rejects.toThrow(

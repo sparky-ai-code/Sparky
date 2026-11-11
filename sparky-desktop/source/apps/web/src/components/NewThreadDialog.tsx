@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  DEFAULT_SERVER_SETTINGS,
   type ModelSelection,
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
@@ -12,7 +13,7 @@ import {
 } from "@sparky/shared/model";
 
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { usePrimarySettings } from "../hooks/useSettings";
+import { mergeEnvironmentSettings, useClientSettings } from "../hooks/useSettings";
 import { useProjects, useServerConfigs } from "../state/entities";
 import { usePaginatedBranches } from "../state/queries";
 import { useEnvironmentQuery } from "../state/query";
@@ -70,7 +71,7 @@ function currentDescriptorValue(descriptor: SelectDescriptor): string {
 function buildModelSelection(
   choice: ModelChoice,
   projectDefaultSelection: ModelSelection | null | undefined,
-  selectedTraits: Readonly<Record<string, string>>,
+  selectedTraits: Readonly<Record<string, string | boolean>>,
 ): ModelSelection {
   const options: ProviderOptionSelection[] =
     projectDefaultSelection?.instanceId === choice.entry.instanceId &&
@@ -101,7 +102,7 @@ export function NewThreadDialog({
 }) {
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
-  const settings = usePrimarySettings();
+  const clientSettings = useClientSettings();
   const createDraftThread = useNewThreadHandler();
 
   const [projectKey, setProjectKey] = useState("");
@@ -109,7 +110,7 @@ export function NewThreadDialog({
   const [baseBranch, setBaseBranch] = useState("");
   const [existingWorktreePath, setExistingWorktreePath] = useState("");
   const [modelKey, setModelKey] = useState("");
-  const [selectedTraits, setSelectedTraits] = useState<Record<string, string>>({});
+  const [selectedTraits, setSelectedTraits] = useState<Record<string, string | boolean>>({});
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -156,6 +157,10 @@ export function NewThreadDialog({
     [branchState.refs, selectedProject?.workspaceRoot],
   );
   const serverConfig = selectedProject ? serverConfigs.get(selectedProject.environmentId) : null;
+  const settings = useMemo(
+    () => mergeEnvironmentSettings(serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS, clientSettings),
+    [serverConfig?.settings, clientSettings],
+  );
   const providerEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
@@ -184,7 +189,7 @@ export function NewThreadDialog({
     modelChoices.find(
       (choice) =>
         choice.entry.instanceId === defaultModel?.instanceId &&
-        choice.slug === defaultModel.model,
+        choice.slug === defaultModel?.model,
     ) ??
     modelChoices[0] ??
     null;
@@ -211,6 +216,10 @@ export function NewThreadDialog({
     (descriptor): descriptor is SelectDescriptor =>
       descriptor.type === "select" &&
       /reason|effort|thinking|thought/iu.test(`${descriptor.id} ${descriptor.label}`),
+  );
+  const thinkingDescriptor = descriptors.find(
+    (descriptor) => descriptor.type === "boolean" &&
+      /thinking|reason/iu.test(`${descriptor.id} ${descriptor.label}`),
   );
   const contextDescriptor = descriptors.find(
     (descriptor): descriptor is SelectDescriptor =>
@@ -427,7 +436,17 @@ export function NewThreadDialog({
             </select>
           </label>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {renderTrait("Reasoning", reasoningDescriptor)}
+            {reasoningDescriptor ? renderTrait("Reasoning", reasoningDescriptor) : thinkingDescriptor ? (
+              <label className="flex items-center gap-2 text-xs font-medium text-foreground">
+                <input
+                  type="checkbox"
+                  checked={Boolean(selectedTraits[thinkingDescriptor.id] ?? thinkingDescriptor.currentValue ?? false)}
+                  disabled={busy}
+                  onChange={(event) => setSelectedTraits((prev) => ({ ...prev, [thinkingDescriptor.id]: event.target.checked }))}
+                />
+                Reasoning / thinking
+              </label>
+            ) : renderTrait("Reasoning", undefined)}
             {renderTrait("Context window", contextDescriptor)}
           </div>
           <p className="text-xs text-muted-foreground">

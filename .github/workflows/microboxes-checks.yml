@@ -8,6 +8,10 @@ on:
       - "sparky-desktop/source/apps/server/src/microboxes/**"
       - "sparky-desktop/source/apps/server/src/mcp/toolkits/microboxes/**"
       - "sparky-desktop/source/apps/web/src/components/microboxes/**"
+      - "sparky-desktop/source/apps/web/src/components/chat/MessagesTimeline.tsx"
+      - "sparky-desktop/source/apps/web/src/components/chat/MessagesTimeline.test.tsx"
+      - "sparky-desktop/source/apps/server/src/provider/Layers/SparkyAdapter.ts"
+      - "sparky-desktop/source/apps/server/src/provider/Layers/SparkyAdapter.test.ts"
       - "sparky-desktop/source/apps/web/src/components/settings/MicroboxesSettingsPanel.tsx"
       - "sparky-desktop/source/packages/client-runtime/src/state/microboxes.ts"
       - ".github/workflows/microboxes-checks.yml"
@@ -57,6 +61,10 @@ jobs:
         run: |
           cd ../..
           cargo test -p sparky_tools mcp::tests:: --locked
+      - name: Verify Sparky Boxes agent tool presentation
+        run: pnpm --filter t3 exec vp test run src/provider/Layers/SparkyAdapter.test.ts
+      - name: Verify Sparky Boxes custom tool icon
+        run: pnpm --filter @sparky/web exec vp test run src/components/chat/MessagesTimeline.test.tsx
       - name: Run contracts tests
         run: pnpm --filter @sparky/contracts test
       - name: Run focused client tests

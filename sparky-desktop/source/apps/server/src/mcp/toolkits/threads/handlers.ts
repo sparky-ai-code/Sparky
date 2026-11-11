@@ -276,6 +276,13 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
         totalMessages: thread.messages.length,
         returnedMessages: end - start,
         nextOffsetFromLatest: start === 0 ? null : offset + (end - start),
+        recentActivities: thread.activities.slice(-20).map((activity) => ({
+          kind: activity.kind,
+          summary: activity.summary,
+          tone: activity.tone,
+          turnId: activity.turnId,
+          createdAt: activity.createdAt,
+        })),
         messages: thread.messages.slice(start, end).map((message) => ({
           messageId: message.id,
           role: message.role,

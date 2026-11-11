@@ -60,6 +60,8 @@ describe("local encrypted credential vault", () => {
   });
 
   it("refuses the insecure Linux basic_text backend", async () => {
+    // Electron only exposes the backend selector on Linux.
+    if (process.platform !== "linux") return;
     mock.backend = "basic_text";
     await expect(Vault.saveSecret(example)).rejects.toThrow("Secure credential storage is unavailable");
   });

@@ -467,7 +467,10 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
         modelSelection,
         runtimeMode: source.runtimeMode,
         interactionMode: source.interactionMode,
-        started: Boolean(input.initialMessage),
+        turnRequested: Boolean(input.initialMessage),
+        note: input.initialMessage
+          ? "The first turn was accepted for asynchronous execution; use sparky_thread_read to check its result."
+          : "The thread is idle until a message is sent.",
       };
     });
 

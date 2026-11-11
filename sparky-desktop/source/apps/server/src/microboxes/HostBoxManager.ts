@@ -314,6 +314,10 @@ export class HostBoxManager {
     }
   }
 
+  resume(): void {
+    this.stopping = false;
+  }
+
   async stopAll(): Promise<void> {
     this.stopping = true;
     const entries = [...this.boxes.values()];

@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { ThreadId } from "./orchestration.ts";
+import { ThreadId } from "./baseSchemas.ts";
 
 /** User-facing VM API. Never expose host commands, paths, or QMP to clients. */
 const BoxId = Schema.String.check(Schema.isPattern(/^[a-z0-9-]{8,64}$/u));

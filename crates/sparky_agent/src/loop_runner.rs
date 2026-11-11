@@ -1252,7 +1252,10 @@ impl AgentLoop {
     }
 
     async fn tool_is_authorized(&self, tool_call: &ToolCall) -> bool {
-        if !requires_tool_approval(self.access_mode, &tool_call.name) {
+        if self.access_mode == AccessMode::FullAccess
+            || (self.tool_registry.is_trusted_builtin(&tool_call.name)
+                && !requires_tool_approval(self.access_mode, &tool_call.name))
+        {
             return true;
         }
         if self.session_approved_tools.lock().expect("approval mutex poisoned").contains(&tool_call.name) {

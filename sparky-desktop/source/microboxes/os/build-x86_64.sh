@@ -20,6 +20,7 @@ cat >> "$OUT_DIR/.config" <<EOF
 BR2_TOOLCHAIN_BUILDROOT_MUSL=y
 BR2_TOOLCHAIN_BUILDROOT_CXX=y
 BR2_ENABLE_LOCALE=y
+BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y
 BR2_PACKAGE_EUDEV=y
 BR2_PACKAGE_SEATD=y
 BR2_PACKAGE_PIXMAN=y
@@ -38,7 +39,9 @@ EOF
 make -C "$BUILDROOT_DIR" O="$OUT_DIR" olddefconfig
 for flag in BR2_PACKAGE_WESTON BR2_PACKAGE_WESTON_DEFAULT_DRM BR2_PACKAGE_EUDEV; do
   grep -q "^${flag}=y$" "$OUT_DIR/.config" || {
-    echo "Required setting ${flag} was not enabled by Buildroot." >&2; exit 1;
+    echo "Required setting ${flag} was not enabled by Buildroot." >&2
+    grep -E '^(BR2_ROOTFS_DEVICE_CREATION|BR2_PACKAGE_HAS_UDEV|BR2_PACKAGE_EUDEV|BR2_INSTALL_LIBSTDCPP|BR2_ENABLE_LOCALE|BR2_PACKAGE_WESTON|BR2_TOOLCHAIN_BUILDROOT)' "$OUT_DIR/.config" >&2 || true
+    exit 1;
   }
 done
 make -C "$BUILDROOT_DIR" O="$OUT_DIR" -j"${JOBS:-$(nproc)}"

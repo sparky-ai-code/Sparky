@@ -278,7 +278,8 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
           const newBranchName = "sparky/agent-" + String(threadId).slice(0, 12);
           const result = yield* git.createWorktree({
             cwd: project.workspaceRoot,
-            refName: newBranchName,
+            refName: ref.name,
+            newRefName: newBranchName,
             baseRefName: ref.name,
             path: null,
           });

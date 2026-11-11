@@ -23,7 +23,7 @@ function serialized<T>(callback: () => Promise<T>): Promise<T> {
 
 function requireSystemEncryption(): void {
   // Electron's Linux "basic_text" fallback is NOT encryption. Fail closed there.
-  if (!safeStorage.isEncryptionAvailable() || safeStorage.getSelectedStorageBackend() === "basic_text") {
+  if (!safeStorage.isEncryptionAvailable() || (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text")) {
     throw new Error("Secure credential storage is unavailable. Unlock or configure your operating system keychain.");
   }
 }

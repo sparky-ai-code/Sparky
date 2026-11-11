@@ -1,0 +1,325 @@
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off globalTimers:off - Local hypervisor process boundary.
+import { spawn, execFile as execFileCallback, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import * as Fs from "node:fs/promises";
+import * as Path from "node:path";
+import { promisify } from "node:util";
+
+import type {
+  MicroboxCreateInput,
+  MicroboxImage,
+  MicroboxStatus,
+  MicroboxSnapshot,
+} from "@sparky/contracts";
+import { QmpClient, keyEvent, textKeyEvents } from "./QmpClient.ts";
+
+const execFile = promisify(execFileCallback);
+
+type GuestManifest = {
+  id: string;
+  name: string;
+  kind: "linux-kernel" | "disk" | "installer-iso";
+  architecture: "x86_64" | "aarch64";
+  file: string;
+  kernel?: string;
+  append?: string;
+};
+type RunningBox = {
+  status: MicroboxStatus;
+  process: ChildProcessWithoutNullStreams;
+  qmp: QmpClient;
+  directory: string;
+  width: number;
+  height: number;
+};
+const MAX_BOXES = 4;
+const SAFE_IMAGE_ID = /^[a-z0-9-]{1,48}$/u;
+const SAFE_IMAGE_FILE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u;
+const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
+
+export class MicroboxHostError extends Error {
+  constructor(readonly code: string, message: string) { super(message); }
+}
+
+const nativeArch = process.arch === "arm64" ? "aarch64" : "x86_64";
+function accelerator(guestArch: string): string[] {
+  if (guestArch !== nativeArch) return ["-accel", "tcg"];
+  const host = process.platform;
+  return host === "linux"
+    ? ["-accel", "kvm", "-accel", "tcg"]
+    : host === "darwin"
+      ? ["-accel", "hvf", "-accel", "tcg"]
+      : host === "win32"
+        ? ["-accel", "whpx", "-accel", "tcg"]
+        : ["-accel", "tcg"];
+}
+
+function imageBinary(architecture: string): string {
+  const bin = `qemu-system-${architecture}${process.platform === "win32" ? ".exe" : ""}`;
+  if (process.platform === "win32") {
+    return Path.join(process.env.ProgramFiles ?? "C:\\Program Files", "qemu", bin);
+  }
+  return bin;
+}
+
+/**
+ * One image = one named directory with an immutable manifest and image files.
+ * Agent calls can only select installed IDs, never arbitrary host paths.
+ */
+export class HostBoxManager {
+  private readonly boxes = new Map<string, RunningBox>();
+  private stopping = false;
+
+  constructor(private readonly root: string) {}
+
+  private async image(id: string): Promise<{ manifest: GuestManifest; directory: string }> {
+    if (!SAFE_IMAGE_ID.test(id)) throw new MicroboxHostError("invalid-input", "Invalid image selection.");
+    const directory = Path.join(this.root, "images", id);
+    const raw = await Fs.readFile(Path.join(directory, "image.json"), "utf8").catch(() => {
+      throw new MicroboxHostError("image-missing", "Install a guest image before creating a box.");
+    });
+    let manifest: GuestManifest;
+    try { manifest = JSON.parse(raw) as GuestManifest; }
+    catch { throw new MicroboxHostError("image-missing", "Guest image metadata is invalid."); }
+    if (
+      manifest.id !== id ||
+      !["linux-kernel", "disk", "installer-iso"].includes(manifest.kind) ||
+      !["x86_64", "aarch64"].includes(manifest.architecture) ||
+      !SAFE_IMAGE_FILE.test(manifest.file) ||
+      (manifest.kind === "linux-kernel" && (!manifest.kernel || !SAFE_IMAGE_FILE.test(manifest.kernel)))
+    ) throw new MicroboxHostError("image-missing", "The selected guest image is invalid.");
+    const realDir = await Fs.realpath(directory);
+    const files = [manifest.file, ...(manifest.kernel ? [manifest.kernel] : [])];
+    for (const name of files) {
+      const target = await Fs.realpath(Path.join(realDir, name)).catch(() => {
+        throw new MicroboxHostError("image-missing", "A required guest image file is missing.");
+      });
+      if (!target.startsWith(realDir + Path.sep)) {
+        throw new MicroboxHostError("image-missing", "Unsafe image file location.");
+      }
+      const stat = await Fs.stat(target);
+      if (!stat.isFile()) throw new MicroboxHostError("image-missing", "Invalid guest image file.");
+    }
+    return { manifest, directory: realDir };
+  }
+
+  async images(): Promise<MicroboxImage[]> {
+    const directory = Path.join(this.root, "images");
+    const entries = await Fs.readdir(directory, { withFileTypes: true }).catch(() => []);
+    const output: MicroboxImage[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !SAFE_IMAGE_ID.test(entry.name)) continue;
+      try {
+        const { manifest } = await this.image(entry.name);
+        output.push({
+          imageId: manifest.id,
+          name: manifest.name,
+          kind: manifest.kind,
+          architecture: manifest.architecture,
+        });
+      } catch { /* Ignore incomplete images rather than advertising them. */ }
+    }
+    return output;
+  }
+
+  list(threadId: string): MicroboxStatus[] {
+    return [...this.boxes.values()]
+      .filter((entry) => entry.status.threadId === threadId)
+      .map((entry) => ({ ...entry.status }));
+  }
+
+  private owned(threadId: string, boxId: string): RunningBox {
+    const box = this.boxes.get(boxId);
+    if (!box) throw new MicroboxHostError("not-found", "The box no longer exists.");
+    if (box.status.threadId !== threadId) {
+      throw new MicroboxHostError("forbidden", "This box belongs to a different thread.");
+    }
+    return box;
+  }
+
+  async create(input: MicroboxCreateInput): Promise<MicroboxStatus> {
+    if (this.stopping) throw new MicroboxHostError("busy", "Microboxes are shutting down.");
+    if (this.boxes.size >= MAX_BOXES) throw new MicroboxHostError("limit", "Stop an existing box first (maximum four).");
+    const { manifest, directory: imageDir } = await this.image(input.imageId);
+    const boxId = randomUUID();
+    const directory = Path.join(this.root, "boxes", boxId);
+    const memoryMiB = input.memoryMiB ?? (manifest.kind === "linux-kernel" ? 512 : 2048);
+    const cpus = input.cpus ?? 2;
+    if (memoryMiB < 256 || memoryMiB > 8192 || cpus < 1 || cpus > 4) {
+      throw new MicroboxHostError("invalid-input", "Invalid box resource limits.");
+    }
+    await Fs.mkdir(directory, { recursive: true });
+    const args = [
+      "-nodefaults", "-no-user-config", "-display", "none",
+      "-monitor", "none", "-serial", "null", "-qmp", "stdio",
+      "-m", String(memoryMiB), "-smp", String(cpus),
+      "-machine", manifest.architecture === "aarch64" ? "virt" : "pc",
+      ...accelerator(manifest.architecture),
+      "-device", manifest.architecture === "aarch64" ? "virtio-gpu-pci" : "VGA",
+      "-device", "qemu-xhci",
+      "-device", "usb-tablet",
+      ...(input.internet ? ["-netdev", "user,id=net0", "-device", "virtio-net-pci,netdev=net0"] : ["-nic", "none"]),
+    ];
+    const guestFile = Path.join(imageDir, manifest.file);
+    try {
+      if (manifest.kind === "linux-kernel") {
+        const overlay = Path.join(directory, "rootfs.img");
+        await Fs.copyFile(guestFile, overlay);
+        args.push(
+          "-kernel", Path.join(imageDir, manifest.kernel!),
+          "-append", manifest.append ?? "root=/dev/vda rw console=ttyS0",
+          "-drive", `file=${overlay},format=raw,if=virtio`,
+        );
+      } else if (manifest.kind === "disk") {
+        const overlay = Path.join(directory, "disk.qcow2");
+        await execFile("qemu-img", [
+          "create", "-f", "qcow2", "-F", "qcow2", "-b", guestFile, overlay,
+        ], { timeout: 60_000, windowsHide: true });
+        args.push("-drive", `file=${overlay},format=qcow2,if=virtio`);
+      } else {
+        const overlay = Path.join(directory, "disk.qcow2");
+        await execFile("qemu-img", ["create", "-f", "qcow2", overlay, "32G"], {
+          timeout: 60_000, windowsHide: true,
+        });
+        args.push(
+          "-drive", `file=${overlay},format=qcow2,if=virtio`,
+          "-drive", `file=${guestFile},media=cdrom,readonly=on`,
+          "-boot", "order=d",
+        );
+      }
+      const process = spawn(imageBinary(manifest.architecture), args, {
+        cwd: directory,
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+        env: { ...process.env },
+      });
+      const qmp = new QmpClient(process);
+      const status: MicroboxStatus = {
+        boxId,
+        threadId: input.threadId,
+        imageId: input.imageId,
+        name: input.name || manifest.name,
+        state: "starting",
+        memoryMiB, cpus,
+        internet: input.internet ?? false,
+        startedAt: new Date().toISOString(),
+      };
+      this.boxes.set(boxId, { status, process, qmp, directory, width: 1024, height: 768 });
+      process.on("exit", () => {
+        const current = this.boxes.get(boxId);
+        if (current) current.status.state = "stopped";
+      });
+      try {
+        await Promise.race([
+          qmp.ready,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("VM startup timed out.")), 20_000),
+          ),
+        ]);
+        status.state = "running";
+      } catch {
+        await qmp.stop();
+        this.boxes.delete(boxId);
+        throw new MicroboxHostError("launch-failed", "Sparky could not start this guest image.");
+      }
+      return { ...status };
+    } catch (cause) {
+      if (!this.boxes.has(boxId)) await Fs.rm(directory, { recursive: true, force: true });
+      if (cause instanceof MicroboxHostError) throw cause;
+      throw new MicroboxHostError("launch-failed", "Sparky could not create the box.");
+    }
+  }
+
+  status(threadId: string, boxId: string): MicroboxStatus {
+    return { ...this.owned(threadId, boxId).status };
+  }
+
+  private running(threadId: string, boxId: string): RunningBox {
+    const box = this.owned(threadId, boxId);
+    if (box.status.state !== "running") {
+      throw new MicroboxHostError("busy", "This box isn't running.");
+    }
+    return box;
+  }
+
+  async snapshot(threadId: string, boxId: string): Promise<MicroboxSnapshot> {
+    const box = this.running(threadId, boxId);
+    const image = Path.join(box.directory, "screen.png");
+    await box.qmp.command("screendump", { filename: image, format: "png" });
+    const bytes = await Fs.readFile(image);
+    if (bytes.length > MAX_SNAPSHOT_BYTES || bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") {
+      throw new MicroboxHostError("protocol-error", "The box could not provide a valid screenshot.");
+    }
+    const width = bytes.readUInt32BE(16);
+    const height = bytes.readUInt32BE(20);
+    if (width < 1 || height < 1 || width > 8192 || height > 8192) {
+      throw new MicroboxHostError("protocol-error", "Invalid VM screen size.");
+    }
+    box.width = width; box.height = height;
+    return { mimeType: "image/png", data: bytes.toString("base64"), width, height };
+  }
+
+  async click(threadId: string, boxId: string, x: number, y: number, button: "left" | "right" | "middle"): Promise<void> {
+    const box = this.running(threadId, boxId);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= box.width || y >= box.height) {
+      throw new MicroboxHostError("invalid-input", "Click coordinates are outside the VM display.");
+    }
+    const value = (n: number, extent: number) => Math.round((n * 32767) / Math.max(extent - 1, 1));
+    await box.qmp.command("input-send-event", { events: [
+      { type: "abs", data: { axis: "x", value: value(x, box.width) } },
+      { type: "abs", data: { axis: "y", value: value(y, box.height) } },
+      { type: "btn", data: { button, down: true } },
+      { type: "btn", data: { button, down: false } },
+    ] });
+  }
+
+  async press(threadId: string, boxId: string, key: string): Promise<void> {
+    const box = this.running(threadId, boxId);
+    const aliases: Record<string, string> = {
+      control: "ctrl", ctrl: "ctrl", alt: "alt", shift: "shift", meta: "meta_l",
+      enter: "ret", return: "ret", escape: "esc", esc: "esc", tab: "tab",
+      backspace: "backspace", delete: "delete", space: "spc",
+      arrowup: "up", arrowdown: "down", arrowleft: "left", arrowright: "right",
+      home: "home", end: "end", pageup: "pgup", pagedown: "pgdn",
+    };
+    const keys = key.split("+").map((part) => aliases[part.trim().toLowerCase()] ?? part.trim().toLowerCase());
+    if (keys.length > 4 || keys.some((part) => !/^(?:[a-z0-9_]{1,20})$/u.test(part))) {
+      throw new MicroboxHostError("invalid-input", "Unsupported keyboard shortcut.");
+    }
+    await box.qmp.command("input-send-event", { events: [
+      ...keys.map((k) => keyEvent(k, true)),
+      ...[...keys].reverse().map((k) => keyEvent(k, false)),
+    ] });
+  }
+
+  async type(threadId: string, boxId: string, text: string): Promise<void> {
+    const box = this.running(threadId, boxId);
+    if (text.length > 4096) throw new MicroboxHostError("invalid-input", "Text is too long.");
+    const events = [...text].flatMap(textKeyEvents);
+    for (let index = 0; index < events.length; index += 64) {
+      await box.qmp.command("input-send-event", { events: events.slice(index, index + 64) });
+    }
+  }
+
+  async stop(threadId: string, boxId: string, destroy = false): Promise<void> {
+    const box = this.owned(threadId, boxId);
+    if (box.status.state === "running") {
+      box.status.state = "stopping";
+      await box.qmp.stop().catch(() => undefined);
+      box.status.state = "stopped";
+    }
+    if (destroy) {
+      this.boxes.delete(boxId);
+      await Fs.rm(box.directory, { recursive: true, force: true });
+    }
+  }
+
+  async stopAll(): Promise<void> {
+    this.stopping = true;
+    const entries = [...this.boxes.values()];
+    await Promise.all(entries.map(async (box) => {
+      await box.qmp.stop().catch(() => undefined);
+      box.status.state = "stopped";
+    }));
+  }
+}

@@ -2084,6 +2084,18 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
               detail: `Unknown pending approval request '${requestId}'.`,
             });
           }
+          if (decision === "cancel") {
+            pendingApprovals.delete(String(requestId));
+            yield* publish({
+              type: "request.resolved",
+              ...stamp(threadId, pending.turnId),
+              requestId: RuntimeRequestId.make(String(requestId)),
+              payload: { requestType: pending.requestType, decision },
+            });
+            // Cancel turn must interrupt the entire native turn, not just
+            // decline the tool and let subsequent commands continue.
+            return yield* adapter.interruptTurn(threadId, pending.turnId);
+          }
           const child = activeChildren.get(pending.childKey);
           if (!child || !child.stdin.writable) {
             pendingApprovals.delete(String(requestId));

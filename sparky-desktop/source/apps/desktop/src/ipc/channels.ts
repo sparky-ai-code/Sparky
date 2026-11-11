@@ -27,6 +27,7 @@ export const SECRET_VAULT_LIST_CHANNEL = "desktop:secret-vault-list";
 export const SECRET_VAULT_SAVE_CHANNEL = "desktop:secret-vault-save";
 export const SECRET_VAULT_REMOVE_CHANNEL = "desktop:secret-vault-remove";
 export const SECRET_VAULT_USE_CHANNEL = "desktop:secret-vault-use";
+export const SECRET_VAULT_IS_PROTECTED_CHANNEL = "desktop:secret-vault-is-protected";
 export const GET_CLIENT_SETTINGS_CHANNEL = "desktop:get-client-settings";
 export const SET_CLIENT_SETTINGS_CHANNEL = "desktop:set-client-settings";
 export const GET_CONNECTION_CATALOG_CHANNEL = "desktop:get-connection-catalog";

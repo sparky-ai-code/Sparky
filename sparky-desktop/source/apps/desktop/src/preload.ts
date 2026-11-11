@@ -195,6 +195,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     save: (input) => ipcRenderer.invoke(IpcChannels.SECRET_VAULT_SAVE_CHANNEL, input),
     remove: (id) => ipcRenderer.invoke(IpcChannels.SECRET_VAULT_REMOVE_CHANNEL, { id }),
     use: (tabId, input) => ipcRenderer.invoke(IpcChannels.SECRET_VAULT_USE_CHANNEL, { tabId, input }),
+    isProtected: (tabId) => ipcRenderer.invoke(IpcChannels.SECRET_VAULT_IS_PROTECTED_CHANNEL, { tabId }),
   },
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>

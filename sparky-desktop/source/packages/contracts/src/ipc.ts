@@ -978,6 +978,7 @@ export interface DesktopBridge {
     save: (input: SecretVaultWriteInput) => Promise<SecretVaultEntry>;
     remove: (id: string) => Promise<void>;
     use: (tabId: string, input: SecretVaultFillInput) => Promise<SecretVaultUseResult>;
+    isProtected: (tabId: string) => Promise<boolean>;
   };
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;

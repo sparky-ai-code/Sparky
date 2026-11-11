@@ -1,5 +1,8 @@
 import {
   PreviewAutomationClickInput,
+  PreviewTabId,
+  SecretVaultEntrySchema,
+  SecretVaultUseResultSchema,
   PreviewAutomationError,
   PreviewAutomationEvaluateInput,
   PreviewAutomationNavigateInput,
@@ -184,7 +187,36 @@ export const PreviewRecordingStopTool = safeBrowserTool(
   }).annotate(Tool.Title, "Stop browser recording"),
 );
 
+/** Lists only public metadata. No password or passkey private key ever crosses MCP. */
+export const SecretsListTool = readonlyBrowserTool(
+  Tool.make("secrets_list", {
+    description: "List named logins saved in the local Sparky Passkeys settings. Returns only names, descriptions, sites, and credential types; never passwords or private keys.",
+    parameters: Schema.Struct({}),
+    success: Schema.Array(SecretVaultEntrySchema),
+    failure: PreviewAutomationError,
+    dependencies,
+  }).annotate(Tool.Title, "Find saved logins"),
+);
+
+export const SecretsUseTool = browserTool(
+  Tool.make("secrets_use", {
+    description: "Use a named saved login in the collaborative browser, without returning credentials. The browser must be at the exact saved site. For passwords, the desktop fills the login fields; for device passkeys, supply passkeyLocator for the website sign-in button and the user must authorize the native prompt. Optionally pass tabId, emailLocator, and passwordLocator as Playwright locators. Never request or print the password.",
+    parameters: Schema.Struct({
+      tabId: Schema.optional(PreviewTabId),
+      id: Schema.String,
+      emailLocator: Schema.optional(Schema.String),
+      passwordLocator: Schema.optional(Schema.String),
+      passkeyLocator: Schema.optional(Schema.String),
+    }),
+    success: SecretVaultUseResultSchema,
+    failure: PreviewAutomationError,
+    dependencies,
+  }).annotate(Tool.Title, "Use saved login"),
+);
+
 export const PreviewToolkit = Toolkit.make(
+  SecretsListTool,
+  SecretsUseTool,
   PreviewStatusTool,
   PreviewOpenTool,
   PreviewNavigateTool,
@@ -201,6 +233,8 @@ export const PreviewToolkit = Toolkit.make(
 );
 
 export const PreviewStandardToolkit = Toolkit.make(
+  SecretsListTool,
+  SecretsUseTool,
   PreviewStatusTool,
   PreviewOpenTool,
   PreviewNavigateTool,

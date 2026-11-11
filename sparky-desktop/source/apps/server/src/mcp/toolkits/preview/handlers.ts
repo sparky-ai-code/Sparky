@@ -1,6 +1,8 @@
 import * as Effect from "effect/Effect";
 import type {
   PreviewAutomationOperation,
+  SecretVaultEntry,
+  SecretVaultUseResult,
   PreviewAutomationRecordingArtifact,
   PreviewAutomationRecordingStatus,
   PreviewAutomationResizeResult,
@@ -47,6 +49,8 @@ const invokeTargeted = <A>(
 };
 
 const handlers = {
+  secrets_list: () => invoke<readonly SecretVaultEntry[]>("secretsList", {}),
+  secrets_use: (input) => invokeTargeted<SecretVaultUseResult>("secretsUse", input),
   preview_status: (input) => invokeTargeted<PreviewAutomationStatus>("status", input ?? {}),
   preview_open: (input) =>
     invokeTargeted<PreviewAutomationStatus>("open", {

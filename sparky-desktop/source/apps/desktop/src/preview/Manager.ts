@@ -14,6 +14,7 @@ import type {
   DesktopPreviewRecordingFrame,
   DesktopPreviewScreenshotArtifact,
   PreviewAutomationClickInput,
+  type SecretVaultUseResult,
   PreviewAutomationActionEvent,
   PreviewAutomationConsoleEntry,
   PreviewAutomationEvaluateInput,
@@ -97,6 +98,8 @@ const DEFAULT_ZOOM_FACTOR = 1.0;
 const ZOOM_EPSILON = 0.001;
 const MAX_EVALUATION_BYTES = 64_000;
 const MAX_VISIBLE_TEXT_LENGTH = 20_000;
+// Fully opaque one-pixel PNG: a fail-closed screenshot when saved credentials are present.
+const PROTECTED_SCREENSHOT_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRz8AAAAASUVORK5CYII=";
 const MAX_INTERACTIVE_ELEMENTS = 200;
 const MAX_SCREENSHOT_WIDTH = 1280;
 const DIAGNOSTIC_BUFFER_LIMIT = 200;
@@ -414,6 +417,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const actionSequenceRef = yield* Ref.make(0);
   const pointerSequenceRef = yield* Ref.make(0);
   const recordingTabIdRef = yield* Ref.make<Option.Option<string>>(Option.none());
+  // A tab remains protected until it is closed. Even navigation cannot re-enable raw inspection.
+  const protectedTabsRef = yield* Ref.make<ReadonlySet<string>>(new Set());
+  const isProtected = (tabId: string) => Ref.get(protectedTabsRef).pipe(Effect.map((tabs) => tabs.has(tabId)));
 
   const attempt = <A>(errorContext: PreviewOperationContext, evaluate: () => A) =>
     Effect.try({
@@ -1314,6 +1320,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
     if (!tab) return;
     yield* cancelPickElement(tabId);
+    yield* Ref.update(protectedTabsRef, (tabs) => { const next = new Set(tabs); next.delete(tabId); return next; });
     if (tab.webContentsId != null) {
       yield* Effect.all(
         [detachControlSession(tab.webContentsId), detachListeners(tab.webContentsId)],
@@ -1695,6 +1702,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const captureScreenshot = Effect.fn("PreviewManager.captureScreenshot")(function* (
     tabId: string,
   ) {
+    if (yield* isProtected(tabId)) {
+      return yield* new PreviewOperationError({ operation: "captureScreenshot.protected", tabId, cause: "Screenshots are disabled for protected tabs." });
+    }
     const wc = yield* requireWebContents(tabId);
     const [createdAt, millis, image] = yield* Effect.all([
       currentIso,
@@ -1759,6 +1769,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   });
 
   const startRecording = Effect.fn("PreviewManager.startRecording")(function* (tabId: string) {
+    if (yield* isProtected(tabId)) {
+      return yield* new PreviewOperationError({ operation: "recording.protected", tabId, cause: "Recording is disabled for protected tabs." });
+    }
     const recordingTabId = yield* Ref.get(recordingTabIdRef);
     if (Option.isSome(recordingTabId) && recordingTabId.value !== tabId) {
       return yield* new PreviewRecordingAlreadyActiveError({
@@ -1823,7 +1836,18 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     };
   });
 
+  // This privileged method is ONLY used by the desktop vault origin check, not exposed to agents.
+  const automationPageUrl = Effect.fn("PreviewManager.automationPageUrl")(function* (tabId: string) {
+    const wc = yield* requireWebContents(tabId);
+    return wc.getURL();
+  });
+  const automationIsProtected = Effect.fn("PreviewManager.automationIsProtected")(function* (tabId: string) {
+    return yield* isProtected(tabId);
+  });
   const automationStatus = Effect.fn("PreviewManager.automationStatus")(function* (tabId: string) {
+    if (yield* isProtected(tabId)) {
+      return { available: true, visible: true, tabId, url: null, title: null, loading: false };
+    }
     const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
     if (!tab || tab.webContentsId == null) {
       const navStatus = tab?.navStatus;
@@ -1964,6 +1988,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
   ) {
     const wc = yield* requireWebContents(tabId);
+    if (yield* isProtected(tabId)) {
+      return {
+        url: "[protected]", title: "[protected]", loading: wc.isLoading(),
+        visibleText: "[Sparky has hidden the page because a saved credential was used. Close this tab to resume inspection.]",
+        interactiveElements: [], accessibilityTree: { nodes: [] }, consoleEntries: [], networkEntries: [], actionTimeline: [],
+        screenshot: { mimeType: "image/png" as const, data: PROTECTED_SCREENSHOT_PNG, width: 1, height: 1 },
+      };
+    }
     return yield* withControlSession(tabId, wc, "snapshot", (send) =>
       captureAutomationSnapshot(tabId, wc, send),
     );
@@ -2395,6 +2427,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     input: PreviewAutomationEvaluateInput,
   ) {
+    if (yield* isProtected(tabId)) {
+      return yield* new PreviewOperationError({ operation: "evaluate.protected", tabId, cause: "JavaScript inspection is disabled after a saved credential is used." });
+    }
     const wc = yield* requireWebContents(tabId);
     return yield* withControlSession(tabId, wc, "evaluate", (send) =>
       performAutomationEvaluate(tabId, input, send),
@@ -2472,6 +2507,66 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
+  /** Secret values only enter the isolated Chromium tab via this privileged desktop operation. */
+  const automationUseSecret = Effect.fn("PreviewManager.automationUseSecret")(function* (
+    tabId: string,
+    input: {
+      readonly origin: string;
+      readonly kind: "password" | "passkey";
+      readonly email: string;
+      readonly password: string | null;
+      readonly emailLocator?: string;
+      readonly passwordLocator?: string;
+      readonly passkeyLocator?: string;
+    },
+  ) {
+    const wc = yield* requireWebContents(tabId);
+    return yield* withControlSession(tabId, wc, "saved-login", (send, sendCleanup) =>
+      Effect.gen(function* () {
+        if (new URL(wc.getURL()).origin !== input.origin) {
+          return yield* new PreviewOperationError({ operation: "saved-login.origin", tabId, cause: "The browser navigated away from the saved site." });
+        }
+        if (input.kind === "passkey") {
+          if (!input.passkeyLocator) {
+            return yield* new PreviewOperationError({ operation: "saved-login.passkey", tabId, cause: "Provide the site passkey sign-in button locator. The user must authorize the system prompt." });
+          }
+          yield* performAutomationClick(tabId, { locator: input.passkeyLocator }, send, sendCleanup);
+          return { kind: "passkey" as const, status: "awaiting-user" as const } satisfies SecretVaultUseResult;
+        }
+        if (!input.password) {
+          return yield* new PreviewOperationError({ operation: "saved-login.empty", tabId, cause: "Saved password is missing." });
+        }
+        // Protect BEFORE injecting. All later snapshots/evaluation/recordings fail closed.
+        yield* Ref.update(protectedTabsRef, (tabs) => new Set([...tabs, tabId]));
+        if (input.email) {
+          yield* typeIntoAutomationTarget(tabId, send, {
+            locator: input.emailLocator ?? "css=input[type=email]",
+            text: input.email,
+            clear: true,
+          });
+        }
+        const locator = input.passwordLocator ?? "css=input[type=password]";
+        yield* typeIntoAutomationTarget(tabId, send, { locator, text: input.password, clear: true }).pipe(
+          Effect.mapError(() => new PreviewOperationError({ operation: "saved-login.fill", tabId, cause: "Unable to fill this site’s password field." })),
+        );
+        // Blur the field in the visible collaborative browser, including sites with reveal-password buttons.
+        yield* ensurePlaywrightInjected(tabId, send);
+        const locatorJson = yield* encodeJson({ operation: "saved-login.locator", tabId }, locator);
+        yield* evaluateWithDebugger(tabId, send, `(() => {
+          const injected = globalThis.__t3PlaywrightInjected;
+          const node = injected.querySelector(injected.parseSelector(${locatorJson}), document, true);
+          if (node) node.setAttribute("data-sparky-protected-credential", "");
+          return true;
+        })()`, true).pipe(Effect.ignore);
+        yield* attemptPromise({ operation: "saved-login.blur", tabId }, () => wc.insertCSS(
+          "input[type=password], [data-sparky-protected-credential] { filter: blur(14px) !important; -webkit-text-security: disc !important; }",
+          { cssOrigin: "user" },
+        )).pipe(Effect.ignore);
+        return { kind: "password" as const, status: "filled" as const } satisfies SecretVaultUseResult;
+      }),
+    );
+  });
+
   const revealArtifact = Effect.fn("PreviewManager.revealArtifact")(function* (
     artifactPath: string,
   ) {
@@ -2528,6 +2623,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   yield* Effect.addFinalizer(() => destroy().pipe(Effect.ignore));
 
   return {
+    automationIsProtected,
+    automationPageUrl,
+    automationUseSecret,
     automationClick,
     automationEvaluate,
     automationPress,

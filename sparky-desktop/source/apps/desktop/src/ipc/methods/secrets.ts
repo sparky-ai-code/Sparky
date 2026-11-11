@@ -44,9 +44,9 @@ export const use = DesktopIpc.makeIpcMethod({
   result: SecretVaultUseResultSchema,
   handler: Effect.fn("desktop.ipc.secrets.use")(function* ({ tabId, input }) {
     const manager = yield* PreviewManager.PreviewManager;
-    const status = yield* manager.automationStatus(tabId);
-    if (!status.url) return yield* Effect.fail(new Error("Open the saved site in the browser first."));
-    const secret = yield* attempt(() => Vault.getSecretForOrigin(input.id, status.url!));
+    const url = yield* manager.automationPageUrl(tabId);
+    if (!url) return yield* Effect.fail(new Error("Open the saved site in the browser first."));
+    const secret = yield* attempt(() => Vault.getSecretForOrigin(input.id, url));
     // A second origin check runs inside the browser control session, preventing navigation races.
     return yield* manager.automationUseSecret(tabId, {
       origin: secret.metadata.origin,
@@ -60,4 +60,14 @@ export const use = DesktopIpc.makeIpcMethod({
   }),
 });
 
-export const methods = [list, save, remove, use] as const;
+export const isProtected = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SECRET_VAULT_IS_PROTECTED_CHANNEL,
+  payload: Schema.Struct({ tabId: Schema.String }),
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.secrets.isProtected")(function* ({ tabId }) {
+    const manager = yield* PreviewManager.PreviewManager;
+    return yield* manager.automationIsProtected(tabId);
+  }),
+});
+
+export const methods = [list, save, remove, use, isProtected] as const;

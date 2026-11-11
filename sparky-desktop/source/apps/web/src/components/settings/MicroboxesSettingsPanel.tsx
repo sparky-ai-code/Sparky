@@ -1,4 +1,9 @@
+import { useState } from "react";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import { usePrimaryEnvironment } from "../../state/environments";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { microboxesEnvironment } from "../../state/microboxes";
+import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { MicroboxesSetupControl } from "../microboxes/MicroboxesSetupControl";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
@@ -7,6 +12,28 @@ import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsL
 export function MicroboxesSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
+  const environmentId = usePrimaryEnvironment()?.environmentId;
+  const importGuestImage = useAtomCommand(microboxesEnvironment.importImage, { reportFailure: false });
+  const [installingImage, setInstallingImage] = useState(false);
+  const [imageMessage, setImageMessage] = useState<string | null>(null);
+
+  const handleImportImage = async () => {
+    if (!environmentId || !window.desktopBridge?.pickFolder) return;
+    const sourceDirectory = await window.desktopBridge.pickFolder();
+    if (!sourceDirectory) return;
+    setInstallingImage(true);
+    setImageMessage(null);
+    try {
+      const result = await importGuestImage({ environmentId, input: { sourceDirectory } });
+      setImageMessage(result._tag === "Success"
+        ? "Guest image installed. You can now create a box."
+        : "Couldn't install this image. Select a folder containing a supported Microboxes image.");
+    } catch {
+      setImageMessage("Couldn't install the guest image.");
+    } finally {
+      setInstallingImage(false);
+    }
+  };
   return (
     <SettingsPageContainer>
       <SettingsSection title="Sparky Microboxes">
@@ -45,8 +72,19 @@ export function MicroboxesSettingsPanel() {
         </SettingsRow>
         <SettingsRow
           title="Guest images"
-          description="The custom lightweight graphical Linux image and installer-test guest images are being built separately. Host setup alone does not create a usable VM."
-        />
+          description="Install the graphical Linux guest image or a compatible installer-test guest image. Each image is kept separately from host files."
+        >
+          <div className="flex flex-col items-end gap-2 pb-4">
+            <Button
+              size="sm"
+              disabled={!settings.microboxesEnabled || installingImage || !environmentId}
+              onClick={() => void handleImportImage()}
+            >
+              {installingImage ? "Installing guest image…" : "Install guest image from folder"}
+            </Button>
+            {imageMessage ? <p role="status" className="text-xs text-muted-foreground">{imageMessage}</p> : null}
+          </div>
+        </SettingsRow>
       </SettingsSection>
     </SettingsPageContainer>
   );

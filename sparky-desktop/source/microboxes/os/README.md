@@ -5,10 +5,15 @@ not fork an existing Linux distribution. The guest contains BusyBox, musl,
 the Weston Wayland compositor, seatd, input drivers and a small set of test
 client applications, with Pixman software rendering.
 
-Build on Linux: `bash microboxes/os/build-x86_64.sh`. The script uses the
-official Buildroot 2026.08.1 release and produces a `bzImage`, ext filesystem,
-`image.json` and `SHA256SUMS`. These files form one installed image directory
-under `microboxes/images/sparky-micro-x86_64` in the **server** data directory.
+Build on Linux with `bash microboxes/os/build-x86_64.sh` (x86-64) or
+`bash microboxes/os/build-aarch64.sh` (ARM64). Both scripts use the pinned
+Buildroot 2026.08.1 release and produce a kernel (`bzImage` or `Image`),
+ext filesystem, `image.json` and `SHA256SUMS`. The resulting guest image
+can be imported from Settings → Microboxes, or installed under
+`microboxes/images/sparky-micro-<architecture>` in the server data directory.
+
+ARM64 uses the virtual AArch64 machine with a 64-bit CPU definition, and
+initially requires software rasterization through Weston/Pixman.
 
 GitHub Actions can build and upload this image as an artifact without publishing
 a release. A separate signed distribution mechanism is required before the

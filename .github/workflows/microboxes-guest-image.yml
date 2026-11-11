@@ -8,6 +8,10 @@ on:
 
 jobs:
   build-micro-linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     defaults:
@@ -24,12 +28,12 @@ jobs:
             command -v "$bin" >/dev/null || { echo "Missing build dependency: $bin"; exit 1; }
           done
       - name: Build standalone Sparky Micro Linux image
-        run: bash microboxes/os/build-x86_64.sh
+        run: bash microboxes/os/build-${{ matrix.arch }}.sh
         env:
           JOBS: "4"
       - name: Upload guest image (no publication)
         uses: actions/upload-artifact@v4
         with:
-          name: sparky-micro-x86_64
-          path: sparky-desktop/source/dist/microboxes/sparky-micro-x86_64/
+          name: sparky-micro-${{ matrix.arch }}
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-${{ matrix.arch }}/
           retention-days: 14

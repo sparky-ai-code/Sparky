@@ -255,6 +255,7 @@ export class HostBoxManager {
       "-monitor", "none", "-serial", "null", "-qmp", "stdio",
       "-m", String(memoryMiB), "-smp", String(cpus),
       "-machine", manifest.architecture === "aarch64" ? "virt" : "pc",
+      ...(manifest.architecture === "aarch64" ? ["-cpu", "max"] : []),
       ...accelerator(manifest.architecture),
       "-device", manifest.architecture === "aarch64" ? "virtio-gpu-pci" : "virtio-vga",
       "-device", "qemu-xhci",

@@ -57,7 +57,12 @@ it.effect("registers Microboxes tools for the authenticated agent MCP session", 
       // The same tools that the Rust agent discovers must have serializable,
       // object-root input schemas accepted by the MCP tools/list response.
       for (const { tool } of server.tools) {
-        expect(tool.inputSchema).toHaveProperty("type", "object");
+        // Include exact offending schema details in CI, without dumping large tool metadata.
+        const schema = tool.inputSchema as Record<string, unknown>;
+        if (schema.type !== "object") {
+          console.error("Non-object Microboxes input schema", tool.name, JSON.stringify(schema));
+        }
+        expect(tool.inputSchema, tool.name).toHaveProperty("type", "object");
         expect(() => JSON.stringify(tool.inputSchema)).not.toThrow();
       }
       const result = yield* server.callTool({ name: "box_images", arguments: {} }).pipe(

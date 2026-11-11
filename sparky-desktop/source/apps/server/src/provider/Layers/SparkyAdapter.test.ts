@@ -96,6 +96,30 @@ describe("Sparky reconnect classification", () => {
 });
 
 describe("makeSparkyStreamDecoder", () => {
+  it("streams actionable permission requests to the chat without terminating the turn", () => {
+    const requests: unknown[] = [];
+    const decoder = makeSparkyStreamDecoder({
+      onApprovalRequested: (event) => requests.push(event),
+    });
+    decoder.push('{"type":"approval.requested","requestId":"req-1","toolCallId":"call-1",');
+    decoder.push('"toolName":"bash","arguments":{"command":"echo hello"}}\n');
+    expect(requests).toEqual([{
+      requestId: "req-1",
+      toolCallId: "call-1",
+      toolName: "bash",
+      arguments: { command: "echo hello" },
+    }]);
+    decoder.push('{"type":"result","response":"Denied"}\n');
+    expect(decoder.finish()).toEqual({ response: "Denied" });
+  });
+
+  it("rejects malformed permission request frames instead of silently ignoring them", () => {
+    const decoder = makeSparkyStreamDecoder();
+    decoder.push('{"type":"approval.requested","toolName":"bash"}\n');
+    decoder.push('{"type":"result","response":"Done"}\n');
+    expect(() => decoder.finish()).toThrow();
+  });
+
   it("allows the result callback to finish the decoder synchronously", () => {
     let finished: unknown;
     let decoder: ReturnType<typeof makeSparkyStreamDecoder>;
@@ -538,6 +562,18 @@ describe("Sparky session continuity", () => {
     expect(args).toContain("--prompt-stdin");
     expect(args).not.toContain(prompt);
     expect(args.at(args.indexOf("--effort") + 1)).toBe("xhigh");
+  });
+
+  it("passes the access policy independently of build/plan mode", () => {
+    const args = makeSparkyProcessArgs({
+      cwd: "C:\\workspace",
+      prompt: "Update the files",
+      model: "openai/gpt-4o",
+      interactionMode: "default",
+      runtimeMode: "approval-required",
+    });
+    expect(args.at(args.indexOf("--interaction-mode") + 1)).toBe("build");
+    expect(args.at(args.indexOf("--runtime-mode") + 1)).toBe("approval-required");
   });
 
   it("forwards provider-selected context windows and Plan mode", () => {

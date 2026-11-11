@@ -305,7 +305,7 @@ const HtmlRenderToolkitRegistrationLive = McpServer.toolkit(HtmlRenderToolkit).p
   Layer.provide(HtmlRenderToolkitHandlersLive),
 );
 
-const MicroboxesToolkitRegistrationLive = McpServer.toolkit(MicroboxesToolkit).pipe(
+export const MicroboxesToolkitRegistrationLive = McpServer.toolkit(MicroboxesToolkit).pipe(
   Layer.provide(MicroboxesToolkitHandlersLive),
 );
 

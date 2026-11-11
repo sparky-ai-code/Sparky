@@ -184,6 +184,7 @@ export class HostBoxManager {
       !["linux-kernel", "disk", "installer-iso"].includes(manifest.kind) ||
       !["x86_64", "aarch64"].includes(manifest.architecture) ||
       !SAFE_IMAGE_FILE.test(manifest.file) ||
+      (manifest.kind === "disk" && !manifest.file.toLowerCase().endsWith(".qcow2")) ||
       (manifest.kind === "linux-kernel" && (!manifest.kernel || !SAFE_IMAGE_FILE.test(manifest.kernel)))
     ) throw new MicroboxHostError("image-missing", "The selected guest image is invalid.");
     const realDir = await Fs.realpath(directory);
@@ -303,23 +304,27 @@ export class HostBoxManager {
         );
       }
       if (manifest.kind === "linux-kernel") {
-        const overlay = Path.join(directory, "rootfs.img");
-        await Fs.copyFile(guestFile, overlay);
+        const overlay = Path.join(directory, "rootfs.qcow2");
+        // A sparse copy-on-write layer starts quickly without duplicating the
+        // entire guest root filesystem for each concurrently running box.
+        await execFile(imageTool("qemu-img"), [
+          "create", "-f", "qcow2", "-F", "raw", "-b", guestFile, overlay,
+        ], { timeout: 60_000, windowsHide: true, env: guestRuntimeEnv() });
         args.push(
           "-kernel", Path.join(imageDir, manifest.kernel!),
           "-append", manifest.append ?? "root=/dev/vda rw console=ttyS0",
-          "-drive", `file=${guestDrivePath(overlay)},format=raw,if=virtio`,
+          "-drive", `file=${guestDrivePath(overlay)},format=qcow2,if=virtio`,
         );
       } else if (manifest.kind === "disk") {
         const overlay = Path.join(directory, "disk.qcow2");
         await execFile(imageTool("qemu-img"), [
           "create", "-f", "qcow2", "-F", "qcow2", "-b", guestFile, overlay,
-        ], { timeout: 60_000, windowsHide: true });
+        ], { timeout: 60_000, windowsHide: true, env: guestRuntimeEnv() });
         args.push("-drive", `file=${guestDrivePath(overlay)},format=qcow2,if=virtio`);
       } else {
         const overlay = Path.join(directory, "disk.qcow2");
         await execFile(imageTool("qemu-img"), ["create", "-f", "qcow2", overlay, "32G"], {
-          timeout: 60_000, windowsHide: true,
+          timeout: 60_000, windowsHide: true, env: guestRuntimeEnv(),
         });
         args.push(
           "-drive", `file=${guestDrivePath(overlay)},format=qcow2,if=virtio`,
@@ -333,6 +338,8 @@ export class HostBoxManager {
         windowsHide: true,
         env: guestRuntimeEnv(),
       });
+      // Drain diagnostic stderr; otherwise a full pipe could stall the VM.
+      child.stderr.resume();
       const qmp = new QmpClient(child);
       const status: MutableStatus = {
         boxId,

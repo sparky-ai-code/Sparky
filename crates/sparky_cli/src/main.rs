@@ -1,7 +1,10 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use clap::Parser;
 use futures::StreamExt;
-use sparky_agent::{AgentLoop, AgentLoopOptions, InteractionMode};
+use sparky_agent::{
+    AccessMode, AgentLoop, AgentLoopOptions, InteractionMode, ToolApprovalDecision,
+    ToolApprovalRequest,
+};
 use sparky_ai::{
     codex_auth_status, login_codex, logout_codex, AnthropicProvider, AssistantMessageEvent,
     CodexProvider, CompletionOptions, ContentPart, GeminiProvider, LlmProvider, Message,
@@ -13,6 +16,7 @@ use sparky_memory::MemoryStore;
 use sparky_session::SessionManager;
 use sparky_tools::{is_hidden_control_tool, register_http_mcp_tools_with_header, ToolRegistry};
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::env;
 use std::io::{self, Write};
 use std::path::Path;
@@ -72,6 +76,14 @@ struct Cli {
         help = "Interaction policy: build may modify the workspace, plan is read-only"
     )]
     interaction_mode: String,
+
+    #[arg(
+        long,
+        value_parser = ["full-access", "approval-required", "auto-accept-edits"],
+        default_value = "full-access",
+        help = "Tool access policy (separate from build/plan interaction mode)"
+    )]
+    runtime_mode: String,
 
     #[arg(
         long,
@@ -411,6 +423,8 @@ struct PersistentTurnRequest {
     image_mime_types: Vec<String>,
     #[serde(default, rename = "interactionMode")]
     interaction_mode: Option<String>,
+    #[serde(default, rename = "runtimeMode")]
+    runtime_mode: Option<String>,
     #[serde(default)]
     provider: Option<String>,
     #[serde(default)]
@@ -442,13 +456,64 @@ async fn run_persistent_json_stream(
     memory_store: &Arc<tokio::sync::Mutex<MemoryStore>>,
     initial_request: Option<PersistentTurnRequest>,
 ) -> anyhow::Result<()> {
-    let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+    // Read stdin independently of run_prompt: the agent may be blocked waiting
+    // for an approval while a turn is still running. A sequential line reader
+    // here would deadlock the approval UI.
+    let pending_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::<
+        String,
+        tokio::sync::oneshot::Sender<ToolApprovalDecision>,
+    >::new()));
+    let (turn_sender, mut turns) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let approvals_for_reader = pending_approvals.clone();
+    tokio::spawn(async move {
+        let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
+                if value.get("type").and_then(|v| v.as_str()) == Some("approval.respond") {
+                    if let Some(request_id) = value.get("requestId").and_then(|v| v.as_str()) {
+                        let decision = match value.get("decision").and_then(|v| v.as_str()) {
+                            Some("accept") => ToolApprovalDecision::Accept,
+                            Some("acceptForSession") => ToolApprovalDecision::AcceptForSession,
+                            _ => ToolApprovalDecision::Deny,
+                        };
+                        if let Some(reply) = approvals_for_reader.lock().await.remove(request_id) {
+                            let _ = reply.send(decision);
+                        }
+                    }
+                    continue;
+                }
+            }
+            if turn_sender.send(line).is_err() {
+                break;
+            }
+        }
+        // If the host disconnects, every outstanding request is denied.
+        approvals_for_reader.lock().await.clear();
+    });
+
+    let (approval_sender, mut approval_requests) =
+        tokio::sync::mpsc::unbounded_channel::<ToolApprovalRequest>();
+    agent_loop.set_approval_sender(approval_sender);
+    let approvals_for_writer = pending_approvals.clone();
+    tokio::spawn(async move {
+        while let Some(request) = approval_requests.recv().await {
+            approvals_for_writer.lock().await.insert(request.request_id.clone(), request.reply);
+            write_json_line(serde_json::json!({
+                "type": "approval.requested",
+                "requestId": request.request_id,
+                "toolCallId": request.tool_call_id,
+                "toolName": request.tool_name,
+                "arguments": request.arguments,
+            }));
+        }
+    });
+
     let mut pending_request = initial_request;
     loop {
         let request = if let Some(request) = pending_request.take() {
             request
         } else {
-            let Some(line) = lines.next_line().await? else {
+            let Some(line) = turns.recv().await else {
                 break;
             };
             if line.trim().is_empty() {
@@ -476,6 +541,19 @@ async fn run_persistent_json_stream(
             Some("plan") => InteractionMode::Plan,
             _ => InteractionMode::Build,
         };
+        let access_mode = match request.runtime_mode.as_deref() {
+            Some("approval-required") => AccessMode::ApprovalRequired,
+            Some("auto-accept-edits") => AccessMode::AutoAcceptEdits,
+            Some("full-access") | None => AccessMode::FullAccess,
+            _ => {
+                write_json_line(serde_json::json!({
+                    "type": "error",
+                    "message": "Invalid runtime access mode; refusing to start the turn.",
+                }));
+                continue;
+            }
+        };
+        agent_loop.set_access_mode(access_mode);
         let memory_context = if cli.no_workspace_context {
             None
         } else {
@@ -946,6 +1024,11 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let mut agent_loop = AgentLoop::new(provider, tool_registry, event_bus, loop_options);
+    agent_loop.set_access_mode(match cli.runtime_mode.as_str() {
+        "approval-required" => AccessMode::ApprovalRequired,
+        "auto-accept-edits" => AccessMode::AutoAcceptEdits,
+        _ => AccessMode::FullAccess,
+    });
 
     if cli.persistent_json_stream {
         run_persistent_json_stream(

@@ -27,6 +27,7 @@ async function main(directory, screenshotDirectory) {
   }
   const scratch = await mkdtemp(join(tmpdir(), "sparky-micro-smoke-"));
   const target = join(scratch, "rootfs.qcow2");
+  const serialLog = join(scratch, "boot-serial.log");
   let machine;
   let pending = new Map();
   let sequence = 0;
@@ -65,13 +66,13 @@ async function main(directory, screenshotDirectory) {
       ...(arch === "aarch64" ? ["-cpu", "max"] : []),
       "-accel", "tcg",
       "-m", "512", "-smp", "2",
-      "-display", "none", "-monitor", "none", "-serial", "null",
+      "-display", "none", "-monitor", "none", "-serial", `file:${serialLog}`,
       "-qmp", "stdio",
       "-device", arch === "aarch64" ? "virtio-gpu-pci" : "virtio-vga",
       "-device", "qemu-xhci", "-device", "usb-tablet",
       "-nic", "none",
       "-kernel", join(directory, manifest.kernel),
-      "-append", manifest.append ?? "root=/dev/vda rw",
+      "-append", `${manifest.append ?? "root=/dev/vda rw"} console=tty0`,
       "-drive", `file=${target.replaceAll(",", ",,")},format=qcow2,if=virtio`,
     ];
     machine = spawn(`qemu-system-${arch}`, args, {
@@ -106,8 +107,25 @@ async function main(directory, screenshotDirectory) {
     await request("qmp_capabilities");
     await mkdir(screenshotDirectory, { recursive: true });
     const capture = join(scratch, randomUUID() + ".png");
-    // Give Weston time to render. Capture is evidence for review, not a GUI assertion.
-    await new Promise((resolveWait) => setTimeout(resolveWait, 15_000));
+    // QMP becomes available long before Linux reaches userspace. Requiring an
+    // actual desktop-ready signal prevents a SeaBIOS kernel screen from passing.
+    // TCG emulation on ARM can be slower than native hardware acceleration.
+    const deadline = Date.now() + (arch === "aarch64" ? 180_000 : 120_000);
+    let log = "";
+    let ready = false;
+    while (Date.now() < deadline) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 1_500));
+      log = await readFile(serialLog, "utf8").catch(() => "");
+      if (log.includes("SPARKY_MICRO_DESKTOP_READY")) {
+        ready = true;
+        break;
+      }
+      if (/kernel panic|VFS: Unable to mount root fs|No working init found/iu.test(log)) {
+        break;
+      }
+    }
+    // Capture both framebuffer and bounded serial diagnostics even on failure.
+    // These are purpose-built test images with no user data.
     await request("screendump", { filename: capture, format: "png" });
     const screenshot = await readFile(capture);
     if (
@@ -119,7 +137,13 @@ async function main(directory, screenshotDirectory) {
       throw new Error("Guest did not expose a valid framebuffer screenshot.");
     }
     await copyFile(capture, join(screenshotDirectory, `sparky-micro-${arch}.png`));
-    process.stdout.write(`Sparky Micro Linux ${arch}: boot monitor and framebuffer passed.\n`);
+    log = await readFile(serialLog, "utf8").catch(() => "");
+    if (log) await copyFile(serialLog, join(screenshotDirectory, `sparky-micro-${arch}-serial.log`));
+    if (!ready) {
+      process.stderr.write(`Guest serial console tail (${arch}):\n${log.slice(-9_000)}\n`);
+      throw new Error("Sparky Micro Linux did not start its graphical desktop within the boot deadline.");
+    }
+    process.stdout.write(`Sparky Micro Linux ${arch}: desktop-ready signal and framebuffer passed.\n`);
   } finally {
     if (machine) {
       machine.removeAllListeners("exit");

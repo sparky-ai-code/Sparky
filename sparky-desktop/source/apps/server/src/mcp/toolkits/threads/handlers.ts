@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   CommandId,
   MessageId,
+  isProviderAvailable,
   ProjectId,
   ThreadId,
   type OrchestrationThread,
@@ -304,7 +305,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
         const availableProviders = yield* providerRegistry.getProviders;
         const requestedProvider = availableProviders.find(
           (provider) => provider.instanceId === input.modelSelection?.instanceId &&
-            provider.enabled && provider.availability === "available",
+            provider.enabled && isProviderAvailable(provider),
         );
         const requestedModel = requestedProvider?.models.find(
           (model) => model.slug === input.modelSelection?.model,

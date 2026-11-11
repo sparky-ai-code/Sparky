@@ -52,6 +52,10 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
           PUPPETEER_SKIP_DOWNLOAD: 'true'
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Validate thread creation and Focus Mode navigation
+        run: pnpm --dir apps/web exec vp test run --project unit src/components/Sidebar.focus.logic.test.ts src/components/Sidebar.logic.test.ts src/uiStateStore.test.ts
+        env:
+          NODE_ENV: test
       - name: Build Linux node-pty prebuild
         shell: bash
         run: |

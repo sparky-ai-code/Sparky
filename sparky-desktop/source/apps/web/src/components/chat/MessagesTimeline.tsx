@@ -1977,6 +1977,7 @@ type WorkEntryIconName =
   | "code-2"
   | "search-web"
   | "hammer"
+  | "microbox"
   | "keyboard"
   | "list-checks"
   | "brain"
@@ -2047,6 +2048,20 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       );
     case "code-2":
       return <Code2Icon className={className} aria-hidden />;
+    case "microbox":
+      // Purpose-built Boxes icon: a graphical window enclosing a cube.
+      // Consistent across the agent's Box tools instead of a generic hammer.
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden>
+          <rect x="2.8" y="3.8" width="18.4" height="16.4" rx="2.4"
+            stroke="currentColor" strokeWidth="1.65" />
+          <path d="M2.8 8.1h18.4" stroke="currentColor" strokeWidth="1.5" />
+          <path d="m12 10.6 4 2.2v4.2l-4 2.3-4-2.3v-4.2l4-2.2Z"
+            stroke="currentColor" strokeWidth="1.45" strokeLinejoin="round" />
+          <path d="m8.1 12.9 3.9 2.2 3.9-2.2M12 15.1v4"
+            stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
+      );
     case "hammer":
       return <HammerIcon className={className} aria-hidden />;
     case "keyboard":
@@ -2413,6 +2428,7 @@ function resolveWorkEntryPluginId(
 export function resolveWorkEntryToolIconName(
   toolName: string | undefined,
 ): WorkEntryIconName | undefined {
+  if (toolName?.trim().toLowerCase().startsWith("box_")) return "microbox";
   switch (toolName?.trim().toLowerCase()) {
     case "sparky_mcp_list_tools":
       return "list-checks";

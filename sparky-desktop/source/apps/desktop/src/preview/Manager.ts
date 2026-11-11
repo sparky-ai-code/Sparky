@@ -2501,6 +2501,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     input: PreviewAutomationWaitForInput,
   ) {
+    if (yield* isProtected(tabId)) {
+      return yield* new PreviewOperationError({
+        operation: "waitFor.protected",
+        tabId,
+        cause: "Text and URL queries are blocked after a saved credential is used.",
+      });
+    }
     const wc = yield* requireWebContents(tabId);
     yield* withControlSession(tabId, wc, "waitFor", (send) =>
       performAutomationWaitFor(tabId, input, send),

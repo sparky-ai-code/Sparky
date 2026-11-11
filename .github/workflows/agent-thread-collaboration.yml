@@ -38,14 +38,14 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       - name: Typecheck contracts
         run: pnpm --filter @sparky/contracts typecheck
-      - name: Typecheck server
-        run: pnpm --filter t3 typecheck
       - name: Typecheck web
         run: pnpm --filter @sparky/web typecheck
       - name: Test agent MCP tool schemas and permissions
         run: pnpm --filter t3 exec vp test run src/mcp/toolkits/threads/handlers.test.ts
       - name: Test cross-environment relay
         run: pnpm --filter @sparky/web exec vp test run --passWithNoTests --project unit src/components/preview/threadCollaborationRelay.test.ts
+      - name: Typecheck server
+        run: pnpm --filter t3 typecheck
 
   rust:
     name: Verify agent thread system prompt

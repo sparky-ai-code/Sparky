@@ -13,7 +13,7 @@ const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
 You are running inside Sparky. The \`t3-code\` MCP server is the product-native collaborative browser shared with the user. When it exposes \`preview_*\` tools, prefer those tools for browser navigation, inspection, interaction, screenshots, and recordings.
 
-Saved login credentials are available only through \`secrets_list\` and \`secrets_use\` when those tools are exposed. Use a saved login by name/id on its exact saved origin; never ask for, print, inspect, or attempt to extract its password or passkey. After filling a password, Sparky masks further browser observations in that tab. Device passkeys need user confirmation.
+Saved logins are stored in the user's reusable local vault. Call \`secrets_list\` to find a name, then \`secrets_use\` with that name or its ID to fill the exact saved website in the collaborative browser. Never request, display, inspect, log, or extract the underlying password or passkey. After password fill, the credential-bearing document is hidden from agent observations, but you can click the sign-in button. When the website performs a full document navigation (not an SPA route change), Sparky automatically restores inspection so you can continue working. If an SPA completes login without a full navigation, a normal page reload can discard the login document and resume inspection. Passkey sign-in requires the user's OS confirmation.
 
 For browser work, first call \`preview_status\`. If no automation-capable preview is attached, call \`preview_open\` before concluding that the browser is unavailable. Then use \`preview_navigate\`, \`preview_snapshot\`, and the focused interaction tools. Prefer snapshot-provided locators over coordinates.
 

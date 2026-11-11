@@ -417,7 +417,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const actionSequenceRef = yield* Ref.make(0);
   const pointerSequenceRef = yield* Ref.make(0);
   const recordingTabIdRef = yield* Ref.make<Option.Option<string>>(Option.none());
-  // A tab remains protected until it is closed. Even navigation cannot re-enable raw inspection.
+  // Protect the credential-bearing document until a full top-level navigation replaces it.
   const protectedTabsRef = yield* Ref.make<ReadonlySet<string>>(new Set());
   const isProtected = (tabId: string) => Ref.get(protectedTabsRef).pipe(Effect.map((tabs) => tabs.has(tabId)));
 
@@ -1171,6 +1171,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     });
     const sync = () => runFork(syncState(true));
     const syncNavigation = () => runFork(syncState(false));
+    // Only full-document navigation destroys the login page JavaScript context.
+    // did-navigate-in-page (SPA route changes) does NOT release protection.
+    const releaseProtectionAfterDocumentReplacement = () => {
+      runFork(Ref.update(protectedTabsRef, (tabs) => {
+        if (!tabs.has(tabId)) return tabs;
+        const next = new Set(tabs);
+        next.delete(tabId);
+        return next;
+      }));
+    };
     const failed = (
       _event: Event,
       code: number,
@@ -1239,6 +1249,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       scope,
       attempt({ operation: "detachListeners", tabId, webContentsId: wc.id }, () => {
         wc.off("did-navigate", syncNavigation);
+        wc.off("did-navigate", releaseProtectionAfterDocumentReplacement);
         wc.off("did-navigate-in-page", syncNavigation);
         wc.off("page-title-updated", sync);
         wc.off("did-start-loading", sync);
@@ -1251,6 +1262,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const install = Effect.fn("PreviewManager.installWebContentsListeners")(function* () {
       yield* attempt({ operation: "attachListeners", tabId, webContentsId: wc.id }, () => {
         wc.on("did-navigate", syncNavigation);
+        wc.on("did-navigate", releaseProtectionAfterDocumentReplacement);
         wc.on("did-navigate-in-page", syncNavigation);
         wc.on("page-title-updated", sync);
         wc.on("did-start-loading", sync);
@@ -1991,7 +2003,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     if (yield* isProtected(tabId)) {
       return {
         url: "[protected]", title: "[protected]", loading: wc.isLoading(),
-        visibleText: "[Sparky has hidden the page because a saved credential was used. Close this tab to resume inspection.]",
+        visibleText: "[Saved password filled securely. Inspection resumes after a full page navigation. Click the sign-in button to continue.]",
         interactiveElements: [], accessibilityTree: { nodes: [] }, consoleEntries: [], networkEntries: [], actionTimeline: [],
         screenshot: { mimeType: "image/png" as const, data: PROTECTED_SCREENSHOT_PNG, width: 1, height: 1 },
       };
@@ -2543,20 +2555,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         if (!input.password) {
           return yield* new PreviewOperationError({ operation: "saved-login.empty", tabId, cause: "Saved password is missing." });
         }
-        // Protect BEFORE injecting. All later snapshots/evaluation/recordings fail closed.
-        yield* Ref.update(protectedTabsRef, (tabs) => new Set([...tabs, tabId]));
         if (input.email) {
           yield* typeIntoAutomationTarget(tabId, send, {
-            locator: input.emailLocator ?? "css=input[type=email]",
+            locator: input.emailLocator ?? "css=input[type=email], input[autocomplete=username], input[name=email], input[name=username]",
             text: input.email,
             clear: true,
           });
         }
         const locator = input.passwordLocator ?? "css=input[type=password]";
-        yield* typeIntoAutomationTarget(tabId, send, { locator, text: input.password, clear: true }).pipe(
-          Effect.mapError(() => new PreviewOperationError({ operation: "saved-login.fill", tabId, cause: "Unable to fill this site’s password field." })),
-        );
-        // Blur the field in the visible collaborative browser, including sites with reveal-password buttons.
+        // Protect BEFORE injecting the secret, but let the agent correct username locators first.
+        yield* Ref.update(protectedTabsRef, (tabs) => new Set([...tabs, tabId]));
+        // Apply masking before the password appears in the page, including reveal-password controls.
         yield* ensurePlaywrightInjected(tabId, send);
         const locatorJson = yield* encodeJson({ operation: "saved-login.locator", tabId }, locator);
         yield* evaluateWithDebugger(tabId, send, `(() => {
@@ -2568,7 +2577,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         yield* attemptPromise({ operation: "saved-login.blur", tabId }, () => wc.insertCSS(
           "input[type=password], [data-sparky-protected-credential] { filter: blur(14px) !important; -webkit-text-security: disc !important; }",
           { cssOrigin: "user" },
-        )).pipe(Effect.ignore);
+        ));
+        yield* typeIntoAutomationTarget(tabId, send, { locator, text: input.password, clear: true }).pipe(
+          Effect.mapError(() => new PreviewOperationError({ operation: "saved-login.fill", tabId, cause: "Could not fill the password field." })),
+        );
         return { kind: "password" as const, status: "filled" as const } satisfies SecretVaultUseResult;
       }),
     );

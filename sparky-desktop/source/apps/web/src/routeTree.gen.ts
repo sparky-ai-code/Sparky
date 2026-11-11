@@ -21,6 +21,7 @@ import { Route as SettingsPluginsRouteImport } from './routes/settings.plugins'
 import { Route as SettingsPersonalizeRouteImport } from './routes/settings.personalize'
 import { Route as SettingsModelsRouteImport } from './routes/settings.models'
 import { Route as SettingsMemoryRouteImport } from './routes/settings.memory'
+import { Route as SettingsMicroboxesRouteImport } from './routes/settings.microboxes'
 import { Route as SettingsMcpRouteImport } from './routes/settings.mcp'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsInstructionsRouteImport } from './routes/settings.instructions'
@@ -84,6 +85,11 @@ const SettingsPersonalizeRoute = SettingsPersonalizeRouteImport.update({
 const SettingsModelsRoute = SettingsModelsRouteImport.update({
   id: '/models',
   path: '/models',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsMicroboxesRoute = SettingsMicroboxesRouteImport.update({
+  id: '/microboxes',
+  path: '/microboxes',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsMemoryRoute = SettingsMemoryRouteImport.update({
@@ -159,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
+  '/settings/microboxes': typeof SettingsMicroboxesRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/personalize': typeof SettingsPersonalizeRoute
   '/settings/plugins': typeof SettingsPluginsRoute
@@ -181,6 +188,7 @@ export interface FileRoutesByTo {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
+  '/settings/microboxes': typeof SettingsMicroboxesRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/personalize': typeof SettingsPersonalizeRoute
   '/settings/plugins': typeof SettingsPluginsRoute
@@ -206,6 +214,7 @@ export interface FileRoutesById {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
+  '/settings/microboxes': typeof SettingsMicroboxesRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/personalize': typeof SettingsPersonalizeRoute
   '/settings/plugins': typeof SettingsPluginsRoute
@@ -232,6 +241,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/mcp'
     | '/settings/memory'
+    | '/settings/microboxes'
     | '/settings/models'
     | '/settings/personalize'
     | '/settings/plugins'
@@ -254,6 +264,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/mcp'
     | '/settings/memory'
+    | '/settings/microboxes'
     | '/settings/models'
     | '/settings/personalize'
     | '/settings/plugins'
@@ -278,6 +289,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/mcp'
     | '/settings/memory'
+    | '/settings/microboxes'
     | '/settings/models'
     | '/settings/personalize'
     | '/settings/plugins'
@@ -382,6 +394,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsMemoryRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/microboxes': {
+      id: '/settings/microboxes'
+      path: '/microboxes'
+      fullPath: '/settings/microboxes'
+      preLoaderRoute: typeof SettingsMicroboxesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/mcp': {
       id: '/settings/mcp'
       path: '/mcp'
@@ -479,6 +498,7 @@ interface SettingsRouteChildren {
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsMcpRoute: typeof SettingsMcpRoute
   SettingsMemoryRoute: typeof SettingsMemoryRoute
+  SettingsMicroboxesRoute: typeof SettingsMicroboxesRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsPersonalizeRoute: typeof SettingsPersonalizeRoute
   SettingsPluginsRoute: typeof SettingsPluginsRoute
@@ -495,6 +515,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsMcpRoute: SettingsMcpRoute,
   SettingsMemoryRoute: SettingsMemoryRoute,
+  SettingsMicroboxesRoute: SettingsMicroboxesRoute,
   SettingsModelsRoute: SettingsModelsRoute,
   SettingsPersonalizeRoute: SettingsPersonalizeRoute,
   SettingsPluginsRoute: SettingsPluginsRoute,

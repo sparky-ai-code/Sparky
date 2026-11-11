@@ -362,6 +362,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   McpHttpServer.layer.pipe(
     Layer.provide(McpSessionRegistry.layer),
     Layer.provide(McpProcessRunnerLayerLive),
+    Layer.provide(SqlitePersistenceLayerLive),
   ),
 ).pipe(Layer.provide(PreviewAutomationBroker.layer), Layer.provide(browserApiCorsLayer));
 

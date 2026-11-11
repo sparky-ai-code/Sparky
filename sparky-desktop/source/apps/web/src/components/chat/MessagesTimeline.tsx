@@ -2433,6 +2433,10 @@ export function resolveWorkEntryToolIconName(
       return "folder-git";
     case "getpullrequestcomments":
       return "messages-square";
+    case "readthread":
+      return "messages-square";
+    case "searchthreads":
+      return "search";
     case "review_pull_request":
       return "git-pull-request";
     case "html_render":

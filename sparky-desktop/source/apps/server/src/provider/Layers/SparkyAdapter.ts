@@ -569,6 +569,8 @@ export function sparkyToolPresentation(
     preview_recording_start: "Start browser recording",
     preview_recording_stop: "Stop browser recording",
     getpullrequestcomments: "Get pull request comments",
+    readthread: "Read thread",
+    searchthreads: "Search threads",
   };
   return {
     itemType,

@@ -43,6 +43,35 @@ describe("Microboxes image import", () => {
     }
   });
 
+  it("allows replacing a downloaded guest image without changing its ID", async () => {
+    const root = await mkdtemp(Path.join(tmpdir(), "sparky-box-upgrade-"));
+    const download = Path.join(root, "download");
+    const manager = new HostBoxManager(Path.join(root, "installed"));
+    try {
+      await mkdir(download);
+      const manifest = {
+        id: "sparky-micro-x86_64", name: "Sparky Micro Linux",
+        kind: "linux-kernel", architecture: "x86_64",
+        file: "rootfs.ext2", kernel: "bzImage",
+      };
+      await writeFile(Path.join(download, "image.json"), JSON.stringify(manifest));
+      await writeFile(Path.join(download, "rootfs.ext2"), "version 1");
+      await writeFile(Path.join(download, "bzImage"), "kernel 1");
+      await manager.importImage(download);
+      await writeFile(Path.join(download, "rootfs.ext2"), "version 2");
+      await writeFile(Path.join(download, "bzImage"), "kernel 2");
+      await expect(manager.importImage(download)).resolves.toMatchObject({
+        imageId: "sparky-micro-x86_64",
+      });
+      expect(await readFile(Path.join(root, "installed", "images", manifest.id, "rootfs.ext2"), "utf8"))
+        .toBe("version 2");
+      expect(await readFile(Path.join(root, "installed", "images", manifest.id, "bzImage"), "utf8"))
+        .toBe("kernel 2");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("continues rejecting unsafe image IDs even though underscores are supported", async () => {
     const root = await mkdtemp(Path.join(tmpdir(), "sparky-box-import-"));
     const source = Path.join(root, "download");

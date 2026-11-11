@@ -16,6 +16,7 @@ export type MicroboxCreateInput = typeof MicroboxCreateInput.Type;
 export const MicroboxListInput = Schema.Struct({ threadId: ThreadId });
 export const MicroboxTarget = Schema.Struct({ threadId: ThreadId, boxId: BoxId });
 export type MicroboxTarget = typeof MicroboxTarget.Type;
+export type MicroboxTarget = typeof MicroboxTarget.Type;
 export const MicroboxClickInput = Schema.Struct({
   ...MicroboxTarget.fields,
   x: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8192 })),

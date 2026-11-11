@@ -95,7 +95,7 @@ export const layer = Layer.scoped(
           ),
         ),
       status: ({ threadId, boxId }) =>
-        enabled.pipe(Effect.map(() => manager.status(threadId, boxId)), Effect.mapError(wrapError)),
+        guarded(() => Promise.resolve().then(() => manager.status(threadId, boxId))),
       snapshot: ({ threadId, boxId }) =>
         guarded(() => manager.snapshot(threadId, boxId)),
       click: ({ threadId, boxId, x, y, button }) =>

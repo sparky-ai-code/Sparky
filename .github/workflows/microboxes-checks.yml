@@ -54,7 +54,9 @@ jobs:
       - name: Verify Microboxes agent MCP tool registration
         run: pnpm --filter t3 exec vp test run src/mcp/McpHttpServer.test.ts
       - name: Verify native agent MCP schema compatibility
-        run: cd ../.. && cargo test -p sparky_tools mcp::tests:: --locked
+        run: |
+          cd ../..
+          cargo test -p sparky_tools mcp::tests:: --locked
       - name: Run contracts tests
         run: pnpm --filter @sparky/contracts test
       - name: Run focused client tests

@@ -16,6 +16,7 @@ import {
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
   partitionSidebarThreadsByScope,
+  selectNewChatProjectThread,
   resolveProjectStatusIndicator,
   resolveSidebarNewThreadSeedContext,
   resolveSidebarNewThreadEnvMode,
@@ -62,6 +63,51 @@ describe("partitionSidebarThreadsByScope", () => {
       chatThreads: [chatThread],
       projectThreads: [projectThread],
     });
+  });
+});
+
+describe("selectNewChatProjectThread", () => {
+  const oldProject = { id: ProjectId.make("old"), environmentId: localEnvironmentId };
+  const workingProject = { id: ProjectId.make("working"), environmentId: localEnvironmentId };
+  const old = {
+    id: ThreadId.make("old-thread"),
+    projectId: oldProject.id,
+    environmentId: localEnvironmentId,
+    archivedAt: null,
+    latestUserMessageAt: "2026-11-01T12:00:00.000Z",
+    createdAt: "2026-11-01T12:00:00.000Z",
+    updatedAt: "2026-11-01T12:00:00.000Z",
+  } as SidebarThreadSummary;
+  const hiddenWorking = {
+    id: ThreadId.make("working-thread"),
+    projectId: workingProject.id,
+    environmentId: localEnvironmentId,
+    archivedAt: null,
+    latestUserMessageAt: "2026-11-10T12:00:00.000Z",
+    createdAt: "2026-11-10T12:00:00.000Z",
+    updatedAt: "2026-11-10T12:00:00.000Z",
+    session: { status: "running", activeTurnId: ThreadId.make("turn-1") },
+  } as SidebarThreadSummary;
+
+  it("preserves the most recent project even when Focus Mode shelves its running thread", () => {
+    expect(selectNewChatProjectThread({
+      activeThread: null,
+      projectThreads: [old, hiddenWorking],
+      projects: [oldProject, workingProject],
+    })).toBe(hiddenWorking);
+  });
+
+  it("prioritizes the open project and ignores archived threads", () => {
+    expect(selectNewChatProjectThread({
+      activeThread: old,
+      projectThreads: [hiddenWorking],
+      projects: [oldProject, workingProject],
+    })).toBe(old);
+    expect(selectNewChatProjectThread({
+      activeThread: null,
+      projectThreads: [{ ...hiddenWorking, archivedAt: "2026-11-11T00:00:00.000Z" }],
+      projects: [workingProject],
+    })).toBeNull();
   });
 });
 

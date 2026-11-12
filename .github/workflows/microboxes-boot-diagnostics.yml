@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/microboxes-boot-diagnostics.yml"
       - "sparky-desktop/source/microboxes/os/overlay/etc/init.d/S90sparky-micro"
+      - "sparky-desktop/source/microboxes/os/smoke-boot.mjs"
   workflow_dispatch:
 
 permissions:

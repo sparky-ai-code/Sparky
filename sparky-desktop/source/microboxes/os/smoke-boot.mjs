@@ -159,7 +159,9 @@ async function main(directory, screenshotDirectory) {
         { type: "btn", data: { button: "left", down: false } },
       ] });
       await new Promise((res) => setTimeout(res, 350));
-      const shellLine = "echo sparkyguiinputok >/dev/ttyS0\n";
+      // ARM's PL011 serial console is ttyAMA0; x86's 8250 is ttyS0.
+      const guestSerial = arch === "aarch64" ? "/dev/ttyAMA0" : "/dev/ttyS0";
+      const shellLine = `echo sparkyguiinputok >${guestSerial}\n`;
       for (const char of shellLine) {
         const shifted = char === ">" || /^[A-Z]$/u.test(char);
         const key = char === " " ? "spc"

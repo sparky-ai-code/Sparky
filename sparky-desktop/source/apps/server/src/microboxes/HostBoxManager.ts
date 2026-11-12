@@ -252,20 +252,26 @@ export class HostBoxManager {
     if (OFFICIAL_MICRO_IMAGE_ID.test(manifest.id)) {
       // Earlier imports used this same ID for a login-only root filesystem.
       // Verify the actual bytes, and install each revision into its own dir.
-      const checksums = parseMicroboxChecksums(await Fs.readFile(
-        Path.join(source, "SHA256SUMS"), "utf8",
-      ).catch(() => {
+      const sumsPath = await Fs.realpath(Path.join(source, "SHA256SUMS")).catch(() => {
         throw new MicroboxHostError("image-missing",
           "The Linux guest is missing SHA256SUMS. Download and extract the complete tested ZIP.");
-      }));
+      });
+      if (!sumsPath.startsWith(source + Path.sep)) {
+        throw new MicroboxHostError("invalid-input", "Guest image checksums cannot point outside the selected folder.");
+      }
+      const checksums = parseMicroboxChecksums(await Fs.readFile(sumsPath, "utf8"));
       for (const name of files) {
         const expected = checksums.get(name);
         if (!expected) {
           throw new MicroboxHostError("invalid-input", "The Linux guest checksum list is incomplete.");
         }
-        const actual = await sha256File(Path.join(source, name)).catch(() => {
+        const actualPath = await Fs.realpath(Path.join(source, name)).catch(() => {
           throw new MicroboxHostError("image-missing", "A Linux guest image file could not be read.");
         });
+        if (!actualPath.startsWith(source + Path.sep)) {
+          throw new MicroboxHostError("invalid-input", "Guest image files must stay inside their selected folder.");
+        }
+        const actual = await sha256File(actualPath);
         if (actual !== expected) {
           throw new MicroboxHostError("invalid-input",
             `The Linux guest file ${name} differs from its checksum. Re-extract the ZIP.`);

@@ -219,6 +219,9 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
           <Monitor className="size-4 shrink-0 text-muted-foreground" />
           <span className="truncate font-medium">{selectedBox?.name || "Sparky Microboxes"}</span>
           {selectedBox ? <span className="text-muted-foreground">· {selectedBox.state}</span> : null}
+          {selectedBox ? <span className="truncate text-[10px] text-muted-foreground" title={selectedBox.imageId}>
+            · image {selectedBox.imageId.slice(-12)}
+          </span> : null}
         </div>
         <div className="flex items-center gap-2">
           {boxId ? (

@@ -143,6 +143,56 @@ async function main(directory, screenshotDirectory) {
       process.stderr.write(`Guest serial console tail (${arch}):\n${log.slice(-9_000)}\n`);
       throw new Error("Sparky Micro Linux did not start its graphical desktop within the boot deadline.");
     }
+    // End-to-end computer-use acceptance test. A working graphical desktop
+    // must be able to receive a mouse click and keyboard input, not just paint
+    // a framebuffer. Foot starts in the upper-left part of the guest display.
+    if (process.env.SPARKY_MICRO_VERIFY_GUI_INPUT === "1") {
+      const width = screenshot.readUInt32BE(16);
+      const height = screenshot.readUInt32BE(20);
+      const inputPoint = (n) => Math.round(n * 32767);
+      const mx = inputPoint(0.20);
+      const my = inputPoint(0.26);
+      await request("input-send-event", { events: [
+        { type: "abs", data: { axis: "x", value: mx } },
+        { type: "abs", data: { axis: "y", value: my } },
+        { type: "btn", data: { button: "left", down: true } },
+        { type: "btn", data: { button: "left", down: false } },
+      ] });
+      await new Promise((res) => setTimeout(res, 350));
+      const shellLine = "echo sparkyguiinputok >/dev/ttyS0\n";
+      for (const char of shellLine) {
+        const shifted = char === ">" || /^[A-Z]$/u.test(char);
+        const key = char === " " ? "spc"
+          : char === ">" ? "dot"
+          : char === "/" ? "slash"
+          : char === "\n" ? "ret" : char.toLowerCase();
+        const event = (code, down) => ({
+          type: "key", data: { down, key: { type: "qcode", data: code } },
+        });
+        const events = [
+          ...(shifted ? [event("shift", true)] : []),
+          event(key, true), event(key, false),
+          ...(shifted ? [event("shift", false)] : []),
+        ];
+        await request("input-send-event", { events });
+        await new Promise((res) => setTimeout(res, 25));
+      }
+      let verified = false;
+      const inputDeadline = Date.now() + 15_000;
+      while (Date.now() < inputDeadline) {
+        log = await readFile(serialLog, "utf8").catch(() => "");
+        if (log.includes("sparkyguiinputok")) {
+          verified = true;
+          break;
+        }
+        await new Promise((res) => setTimeout(res, 250));
+      }
+      if (log) await copyFile(serialLog, join(screenshotDirectory, `sparky-micro-${arch}-serial.log`));
+      if (!verified) {
+        throw new Error("Guest GUI booted, but mouse/keyboard input did not reach its graphical terminal.");
+      }
+      process.stdout.write(`Sparky Micro Linux ${arch}: pointer and keyboard exercised in GUI.\n`);
+    }
     process.stdout.write(`Sparky Micro Linux ${arch}: desktop-ready signal and framebuffer passed.\n`);
   } finally {
     if (machine) {

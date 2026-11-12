@@ -64,6 +64,7 @@ jobs:
       - name: Record real boot status, Weston and seatd diagnostics
         env:
           SPARKY_MICRO_CAPTURE_GUEST_LOGS: "1"
+          SPARKY_MICRO_VERIFY_GUI_INPUT: "1"
         run: |
           node microboxes/os/smoke-boot.mjs \
             dist/microboxes/sparky-micro-x86_64 \

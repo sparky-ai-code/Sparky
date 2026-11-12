@@ -13,6 +13,10 @@ if [[ ! -f "$BUILDROOT_DIR/Makefile" ]]; then
     https://gitlab.com/buildroot.org/buildroot.git "$BUILDROOT_DIR"
 fi
 mkdir -p "$OUT_DIR" "$OUTPUT_DIR"
+# Make the Buildroot post-build hook executable before the expensive compile.
+# This is also robust to source archives that do not preserve POSIX modes.
+chmod 0755 "$SOURCE_DIR/post-build.sh"
+test -x "$SOURCE_DIR/post-build.sh"
 make -C "$BUILDROOT_DIR" O="$OUT_DIR" qemu_aarch64_virt_defconfig
 # Adjust the upstream Buildroot QEMU reference config into a dedicated Sparky
 # distro: musl + BusyBox, Weston desktop shell, Pixman software rendering.

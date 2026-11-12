@@ -64,7 +64,7 @@ jobs:
       - name: Verify Sparky Boxes agent tool presentation
         run: pnpm --filter t3 exec vp test run src/provider/Layers/SparkyAdapter.test.ts
       - name: Verify Sparky Boxes custom tool icon
-        run: pnpm --filter @sparky/web exec vp test run src/components/chat/MessagesTimeline.test.tsx
+        run: pnpm --filter @sparky/web exec vp test run src/components/chat/MessagesTimeline.test.tsx -t "renders Boxes tool actions"
       - name: Run contracts tests
         run: pnpm --filter @sparky/contracts test
       - name: Run focused client tests

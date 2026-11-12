@@ -120,7 +120,7 @@ async function main(directory, screenshotDirectory) {
         ready = true;
         break;
       }
-      if (/kernel panic|VFS: Unable to mount root fs|No working init found/iu.test(log)) {
+      if (log.includes("SPARKY_MICRO_DESKTOP_ERROR") || /kernel panic|VFS: Unable to mount root fs|No working init found/iu.test(log)) {
         break;
       }
     }

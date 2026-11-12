@@ -27,6 +27,14 @@ jobs:
           for bin in gcc g++ make git wget curl rsync cpio unzip file bc bison flex python3 sha256sum; do
             command -v "$bin" >/dev/null || { echo "Missing build dependency: $bin"; exit 1; }
           done
+      - name: Check image build hooks before compiling Linux
+        run: |
+          set -eu
+          test -x microboxes/os/post-build.sh
+          sh -n microboxes/os/post-build.sh
+          sh -n microboxes/os/overlay/etc/init.d/S90sparky-micro
+          sh -n microboxes/os/overlay/etc/init.d/S45sparky-network
+          bash -n microboxes/os/build-${{ matrix.arch }}.sh
       - name: Build standalone Sparky Micro Linux image
         run: bash microboxes/os/build-${{ matrix.arch }}.sh
         env:

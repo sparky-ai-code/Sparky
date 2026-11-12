@@ -409,6 +409,36 @@ describe("MessagesTimeline", () => {
     expect(resolveWorkEntryToolIconName("sparky_mcp_setup_server")).toBe("plug-zap");
   });
 
+  it("renders Boxes tool actions with the dedicated window-and-cube icon", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-box-create",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "work-box-create",
+              createdAt: MESSAGE_CREATED_AT,
+              label: "Box Create",
+              toolName: "box_create",
+              toolTitle: "Create box",
+              tone: "tool",
+              itemType: "mcp_tool_call",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(resolveWorkEntryToolIconName("box_create")).toBe("microbox");
+    expect(markup).toContain('x="2.8"');
+    expect(markup).toContain('y="3.8"');
+    expect(markup).toContain("Create box");
+    expect(markup).not.toContain("lucide-hammer");
+  });
+
   it("renders live file-change stats while the tool is running", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

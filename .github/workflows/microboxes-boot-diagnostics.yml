@@ -1,6 +1,6 @@
-# Temporary regression diagnosis against the exact legacy guest image that
-# displayed only "Booting the kernel". This workflow does not ship images.
-name: Diagnose legacy Microboxes boot
+# Short diagnostic against the already-built GUI guest to inspect why Weston
+# paints the screen but never emits a desktop-ready signal. No image rebuild.
+name: Diagnose Microboxes GUI readiness
 on:
   push:
     paths:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 jobs:
-  diagnose-legacy-x86:
+  diagnose-x86-gui:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     defaults:
@@ -20,10 +20,10 @@ jobs:
         working-directory: sparky-desktop/source
     steps:
       - uses: actions/checkout@v4
-      - name: Download originally published test image
+      - name: Download existing compiled GUI image #16
         run: |
           mkdir -p dist/microboxes/sparky-micro-x86_64
-          gh run download 43059881074 --repo sparky-ai-code/Sparky \
+          gh run download 43230362940 --repo sparky-ai-code/Sparky \
             --name sparky-micro-x86_64 \
             --dir dist/microboxes/sparky-micro-x86_64
         env:
@@ -43,7 +43,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: microboxes-legacy-boot-diagnostics
+          name: microboxes-gui-readiness-diagnostics
           path: sparky-desktop/source/dist/microboxes/screenshots/
           if-no-files-found: ignore
           retention-days: 7

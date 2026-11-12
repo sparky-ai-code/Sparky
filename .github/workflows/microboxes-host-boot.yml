@@ -1,0 +1,58 @@
+name: Microboxes actual host-manager GUI boot
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "sparky-desktop/source/apps/server/src/microboxes/HostBoxManager.ts"
+      - "sparky-desktop/source/apps/server/src/microboxes/HostBoxManager.test.ts"
+      - "sparky-desktop/source/apps/server/src/microboxes/QmpClient.ts"
+      - "sparky-desktop/source/packages/contracts/src/microboxes.ts"
+      - ".github/workflows/microboxes-host-boot.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  host-manager-boot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install focused workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Install actual QEMU host runtime
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y qemu-system-x86 qemu-utils
+      - name: Download verified guest with GUI and input
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist/microboxes/verified-x86_64
+          gh run download 43257039967 --repo sparky-ai-code/Sparky \
+            --name sparky-micro-tested-x86_64 --dir dist/microboxes/verified-x86_64
+          test -s dist/microboxes/verified-x86_64/image.json
+          cd dist/microboxes/verified-x86_64
+          sha256sum --check SHA256SUMS
+      - name: Boot, screenshot, click and type via HostBoxManager (not the smoke-test launcher)
+        env:
+          SPARKY_MICRO_REAL_GUEST_DIR: dist/microboxes/verified-x86_64
+        run: |
+          pnpm --filter t3 exec vp test run src/microboxes/HostBoxManager.test.ts \
+            -t "boots and controls the real graphical guest through HostBoxManager"

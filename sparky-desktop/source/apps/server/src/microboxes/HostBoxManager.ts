@@ -687,8 +687,16 @@ export class HostBoxManager {
       { type: "abs", data: { axis: "x", value: value(x, box.width) } },
       { type: "abs", data: { axis: "y", value: value(y, box.height) } },
       { type: "btn", data: { button, down: true } },
-      { type: "btn", data: { button, down: false } },
     ] });
+    // Down/up in a single QMP batch may be coalesced before the guest
+    // compositor processes input; hold the button across a frame.
+    try {
+      await new Promise<void>((resolve) => setTimeout(resolve, 45));
+    } finally {
+      await box.qmp.command("input-send-event", { events: [
+        { type: "btn", data: { button, down: false } },
+      ] });
+    }
   }
 
   async drag(
@@ -747,11 +755,14 @@ export class HostBoxManager {
       throw new MicroboxHostError("invalid-input", "Scroll steps must be between 1 and 16.");
     }
     const button = direction === "up" ? "wheel-up" : "wheel-down";
-    const events = Array.from({ length: steps }, () => [
-      { type: "btn", data: { button, down: true } },
-      { type: "btn", data: { button, down: false } },
-    ]).flat();
-    await box.qmp.command("input-send-event", { events });
+    // Give each wheel detent time to register in the guest event loop.
+    for (let step = 0; step < steps; step++) {
+      await box.qmp.command("input-send-event", { events: [
+        { type: "btn", data: { button, down: true } },
+        { type: "btn", data: { button, down: false } },
+      ] });
+      if (step + 1 < steps) await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
   }
 
   async press(threadId: string, boxId: string, key: string): Promise<void> {
@@ -767,18 +778,32 @@ export class HostBoxManager {
     if (keys.length > 4 || keys.some((part) => !/^(?:[a-z0-9_]{1,20})$/u.test(part))) {
       throw new MicroboxHostError("invalid-input", "Unsupported keyboard shortcut.");
     }
-    await box.qmp.command("input-send-event", { events: [
-      ...keys.map((k) => keyEvent(k, true)),
-      ...[...keys].reverse().map((k) => keyEvent(k, false)),
-    ] });
+    await box.qmp.command("input-send-event", {
+      events: keys.map((k) => keyEvent(k, true)),
+    });
+    try {
+      await new Promise<void>((resolve) => setTimeout(resolve, 45));
+    } finally {
+      await box.qmp.command("input-send-event", {
+        events: [...keys].reverse().map((k) => keyEvent(k, false)),
+      });
+    }
   }
 
   async type(threadId: string, boxId: string, text: string): Promise<void> {
     const box = this.running(threadId, boxId);
     if (text.length > 4096) throw new MicroboxHostError("invalid-input", "Text is too long.");
-    const events = [...text].flatMap(textKeyEvents);
-    for (let index = 0; index < events.length; index += 64) {
-      await box.qmp.command("input-send-event", { events: events.slice(index, index + 64) });
+    // The standalone QEMU GUI test sends one character per QMP command,
+    // with a short interval. Sending up to 64 press/release events as one
+    // batch silently loses text in Weston/Foot even when QMP returns success.
+    const characters = [...text];
+    for (let index = 0; index < characters.length; index++) {
+      await box.qmp.command("input-send-event", {
+        events: textKeyEvents(characters[index]!),
+      });
+      if (index + 1 < characters.length) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      }
     }
   }
 

@@ -33,9 +33,10 @@ describe("Microboxes image import", () => {
       }));
       await writeFile(Path.join(inner, "bzImage"), "kernel");
       await writeFile(Path.join(inner, "rootfs.ext2"), "filesystem");
+      await writeImageSums(inner, ["bzImage", "rootfs.ext2", "image.json"]);
       const manager = new HostBoxManager(Path.join(root, "data"));
       await expect(manager.importImage(outer)).resolves.toMatchObject({
-        imageId: "sparky-micro-x86_64",
+        imageId: expect.stringMatching(/^sparky-micro-x86_64-v2-[0-9a-f]{12}$/u),
       });
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -126,7 +127,7 @@ describe("Microboxes image import", () => {
         .toBe("version 1");
       expect(await readFile(Path.join(root, "installed", "images", secondImage.imageId, "rootfs.ext2"), "utf8"))
         .toBe("version 2");
-      expect(await readFile(Path.join(root, "installed", "images", manifest.id, "bzImage"), "utf8"))
+      expect(await readFile(Path.join(root, "installed", "images", secondImage.imageId, "bzImage"), "utf8"))
         .toBe("kernel 2");
     } finally {
       await rm(root, { recursive: true, force: true });

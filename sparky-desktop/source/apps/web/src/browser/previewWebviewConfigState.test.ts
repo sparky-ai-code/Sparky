@@ -41,6 +41,7 @@ describe("loadPreviewWebviewConfig", () => {
       let requestedEnvironmentId: EnvironmentId | null = null;
       const config = {
         partition: "persist:test-preview",
+        temporaryPartition: "test-preview-temporary",
         webPreferences: "sandbox=yes",
         preloadUrl: null,
       };

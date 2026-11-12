@@ -82,10 +82,10 @@ export function ElectronBrowserHost() {
     <div className="contents" data-electron-browser-host>
       {sessions.map(({ threadRef, snapshot, zoomFactor }) => {
         const url = snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;
+        // Electron cannot change a webview partition in place. Remount on
+        // profile changes to switch all tabs immediately.
         return (
           <HostedBrowserWebview
-            // Electron cannot change a webview partition in place. Remount on
-            // profile changes to switch all tabs immediately.
             key={`${snapshot.tabId}:${persistentBrowserProfileEnabled ? "persistent" : "temporary"}`}
             persistentBrowserProfileEnabled={persistentBrowserProfileEnabled}
             threadRef={threadRef}

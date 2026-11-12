@@ -405,6 +405,10 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Visible threads"]
         : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
+      ...(settings.persistentBrowserProfileEnabled !==
+      DEFAULT_UNIFIED_SETTINGS.persistentBrowserProfileEnabled
+        ? ["Persistent browser profile"]
+        : []),
       ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
         ? ["Diff whitespace changes"]
         : []),
@@ -434,6 +438,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarThreadPreviewCount,
       settings.timestampFormat,
       settings.wordWrap,
+      settings.persistentBrowserProfileEnabled,
       theme,
     ],
   );
@@ -452,6 +457,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     updateSettings({
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
+      persistentBrowserProfileEnabled: DEFAULT_UNIFIED_SETTINGS.persistentBrowserProfileEnabled,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
@@ -473,6 +479,9 @@ export function GeneralSettingsPanel() {
   const { theme, setTheme } = useTheme();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
+  const persistentBrowserProfileEnabled = useClientSettings(
+    (clientSettings) => clientSettings.persistentBrowserProfileEnabled,
+  );
   const sidebarThreadsGroupedByProject = useClientSettings(
     (clientSettings) => clientSettings.sidebarThreadsGroupedByProject,
   );
@@ -578,6 +587,22 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+
+        {typeof window !== "undefined" && window.desktopBridge?.preview ? (
+          <SettingsRow
+            title="Persistent browser profile"
+            description="Keep website sign-ins across Sparky restarts and share them across browser tabs. Turn off for temporary sessions."
+            control={
+              <Switch
+                checked={persistentBrowserProfileEnabled}
+                onCheckedChange={(checked) =>
+                  updateClientSettings({ persistentBrowserProfileEnabled: Boolean(checked) })
+                }
+                aria-label="Persistent browser profile"
+              />
+            }
+          />
+        ) : null}
 
         <SettingsRow
           title="Focus Mode"

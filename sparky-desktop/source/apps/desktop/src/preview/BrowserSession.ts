@@ -9,7 +9,14 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
+// Keep the existing partition prefix so previously saved browser data stays usable.
+// Electron persists partitions beginning with "persist:" to the app's user-data directory.
 const PREVIEW_PARTITION_PREFIX = "persist:t3code-preview-";
+// Without the persist: prefix, Chromium keeps this profile in memory only.
+const TEMPORARY_PREVIEW_PARTITION = "t3code-preview-temporary";
+
+/** The default browser profile is shared by every Sparky preview tab and environment. */
+export const DEFAULT_BROWSER_PROFILE_SCOPE = "shared";
 
 // Permissions granted to preview web content. `clipboard-sanitized-write` is the
 // Electron permission behind `navigator.clipboard.writeText()` — note it is NOT
@@ -98,6 +105,8 @@ export class BrowserSession extends Context.Service<
     ) => Effect.Effect<string, BrowserSessionPartitionDerivationError>;
     readonly isPartition: (partition: string) => boolean;
     readonly getSession: (scope?: string) => Effect.Effect<Session, BrowserSessionGetSessionError>;
+    readonly getTemporaryPartition: Effect.Effect<string>;
+    readonly getTemporarySession: Effect.Effect<Session, BrowserSessionCreationError>;
     readonly clearCookies: () => Effect.Effect<void, BrowserSessionStorageClearError>;
     readonly clearCache: () => Effect.Effect<void, BrowserSessionCacheClearError>;
   }
@@ -107,56 +116,69 @@ export const make = Effect.gen(function* BrowserSessionMake() {
   const crypto = yield* Crypto.Crypto;
   const sessionsRef = yield* SynchronizedRef.make<ReadonlyMap<string, Session>>(new Map());
 
-  const getPartition = Effect.fn("BrowserSession.getPartition")(function* (scope = "shared") {
-    const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(scope)).pipe(
-      Effect.mapError(
-        (cause) =>
-          new BrowserSessionPartitionDerivationError({
-            scope,
-            cause,
-          }),
-      ),
-    );
-    return `${PREVIEW_PARTITION_PREFIX}${Encoding.encodeHex(digest).slice(0, 20)}`;
-  });
+  const getPartition = Effect.fn("BrowserSession.getPartition")(
+    function* (scope = DEFAULT_BROWSER_PROFILE_SCOPE) {
+      const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(scope)).pipe(
+        Effect.mapError(
+          (cause) =>
+            new BrowserSessionPartitionDerivationError({
+              scope,
+              cause,
+            }),
+        ),
+      );
+      return `${PREVIEW_PARTITION_PREFIX}${Encoding.encodeHex(digest).slice(0, 20)}`;
+    },
+  );
 
-  const getSession = Effect.fn("BrowserSession.getSession")(function* (scope = "shared") {
-    const partition = yield* getPartition(scope);
-    return yield* SynchronizedRef.modifyEffect(sessionsRef, (sessions) => {
-      const existing = sessions.get(partition);
-      if (existing) return Effect.succeed([existing, sessions] as const);
-      return Effect.try({
-        try: () => {
-          const browserSession = session.fromPartition(partition);
-          const userAgent = browserSession
-            .getUserAgent()
-            .replace(/Electron\/[\d.]+ /, "")
-            .replace(/\s*t3code\/[\d.]+/, "");
-          browserSession.setUserAgent(userAgent);
-          browserSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-            callback(ALLOWED_PREVIEW_PERMISSIONS.has(permission));
-          });
-          browserSession.setPermissionCheckHandler((_webContents, permission) =>
-            ALLOWED_PREVIEW_PERMISSIONS.has(permission),
-          );
-          const next = new Map(sessions);
-          next.set(partition, browserSession);
-          return [browserSession, next] as const;
-        },
-        catch: (cause) =>
-          new BrowserSessionCreationError({
-            scope,
-            partition,
-            cause,
-          }),
+  const getSessionForPartition = Effect.fn("BrowserSession.getSessionForPartition")(
+    function* (scope: string, partition: string) {
+      return yield* SynchronizedRef.modifyEffect(sessionsRef, (sessions) => {
+        const existing = sessions.get(partition);
+        if (existing) return Effect.succeed([existing, sessions] as const);
+        return Effect.try({
+          try: () => {
+            const browserSession = session.fromPartition(partition);
+            const userAgent = browserSession
+              .getUserAgent()
+              .replace(/Electron\/[\d.]+ /, "")
+              .replace(/\s*t3code\/[\d.]+/, "");
+            browserSession.setUserAgent(userAgent);
+            browserSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+              callback(ALLOWED_PREVIEW_PERMISSIONS.has(permission));
+            });
+            browserSession.setPermissionCheckHandler((_webContents, permission) =>
+              ALLOWED_PREVIEW_PERMISSIONS.has(permission),
+            );
+            const next = new Map(sessions);
+            next.set(partition, browserSession);
+            return [browserSession, next] as const;
+          },
+          catch: (cause) =>
+            new BrowserSessionCreationError({
+              scope,
+              partition,
+              cause,
+            }),
+        });
       });
-    });
-  });
+    },
+  );
+
+  const getSession = Effect.fn("BrowserSession.getSession")(
+    function* (scope = DEFAULT_BROWSER_PROFILE_SCOPE) {
+      return yield* getSessionForPartition(scope, yield* getPartition(scope));
+    },
+  );
 
   return BrowserSession.of({
     getPartition,
-    isPartition: (partition) => partition.startsWith(PREVIEW_PARTITION_PREFIX),
+    isPartition: (partition) =>
+      partition.startsWith(PREVIEW_PARTITION_PREFIX) ||
+      partition === TEMPORARY_PREVIEW_PARTITION,
     getSession,
+    getTemporaryPartition: Effect.succeed(TEMPORARY_PREVIEW_PARTITION),
+    getTemporarySession: getSessionForPartition("temporary", TEMPORARY_PREVIEW_PARTITION),
     clearCookies: Effect.fn("BrowserSession.clearCookies")(function* () {
       const sessions = yield* SynchronizedRef.get(sessionsRef);
       yield* Effect.all(

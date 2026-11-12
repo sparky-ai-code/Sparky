@@ -1,7 +1,9 @@
 import { it as effectIt } from "@effect/vitest";
+import { EnvironmentId } from "@sparky/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -35,6 +37,45 @@ describe("preview IPC methods", () => {
   it("does not access the Electron session while the module loads", async () => {
     await expect(import("./preview.ts")).resolves.toBeDefined();
     expect(fromPartition).not.toHaveBeenCalled();
+  });
+
+  effectIt.effect("shares a persistent browser profile across environments", () => {
+    const getBrowserSession = vi.fn(() => Effect.succeed(null as never));
+    let temporarySessionInitCount = 0;
+    const getTemporaryBrowserSession = Effect.sync(() => {
+      temporarySessionInitCount += 1;
+      return null as never;
+    });
+    const getBrowserPartition = vi.fn(() =>
+      Effect.succeed("persist:t3code-preview-default"),
+    );
+
+    return Effect.gen(function* () {
+      const first = yield* PreviewIpc.getPreviewConfig.handler({
+        environmentId: EnvironmentId.make("environment-a"),
+      });
+      const second = yield* PreviewIpc.getPreviewConfig.handler({
+        environmentId: EnvironmentId.make("environment-b"),
+      });
+
+      expect(first.partition).toBe(second.partition);
+      expect(first.temporaryPartition).toBe(second.temporaryPartition);
+      expect(first.temporaryPartition.startsWith("persist:")).toBe(false);
+      expect(first.partition.startsWith("persist:")).toBe(true);
+      // Neither environment should become part of the browser session key.
+      expect(getBrowserSession.mock.calls).toEqual([[], []]);
+      expect(temporarySessionInitCount).toBe(2);
+      expect(getBrowserPartition.mock.calls).toEqual([[], []]);
+    }).pipe(
+      Effect.provide(
+        Layer.mock(PreviewManager.PreviewManager)({
+          getBrowserSession,
+          getTemporaryBrowserSession,
+          getTemporaryBrowserPartition: Effect.succeed("t3code-preview-temporary"),
+          getBrowserPartition,
+        }),
+      ),
+    );
   });
 
   effectIt.effect("rejects invalid webContents ids before resolving the preview service", () =>

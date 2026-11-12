@@ -3,7 +3,7 @@
  *
  * Hosts per-tab Chromium WebContents references (the actual <webview>
  * elements live in the renderer; we only attach listeners and forward state
- * here). Single layer-scoped browser session partition.
+ * here). Shared persistent and temporary browser profile partitions.
  */
 import type {
   DesktopPreviewAnnotationTheme,
@@ -2842,6 +2842,7 @@ export class PreviewManager extends Context.Service<
   {
     readonly setMainWindow: (window: BrowserWindow) => Effect.Effect<void, PreviewManagerError>;
     readonly getBrowserSession: (scope?: string) => Effect.Effect<Session, PreviewManagerError>;
+    readonly getTemporaryBrowserSession: Effect.Effect<Session, PreviewManagerError>;
     readonly isBrowserPartition: (partition: string) => boolean;
     readonly createTab: (tabId: string) => Effect.Effect<PreviewTabState, PreviewManagerError>;
     readonly closeTab: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
@@ -2861,6 +2862,7 @@ export class PreviewManager extends Context.Service<
     readonly clearCookies: () => Effect.Effect<void, PreviewManagerError>;
     readonly clearCache: () => Effect.Effect<void, PreviewManagerError>;
     readonly getBrowserPartition: (scope?: string) => Effect.Effect<string, PreviewManagerError>;
+    readonly getTemporaryBrowserPartition: Effect.Effect<string, PreviewManagerError>;
     readonly setAnnotationTheme: (
       theme: DesktopPreviewAnnotationTheme,
     ) => Effect.Effect<void, PreviewManagerError>;
@@ -2936,6 +2938,11 @@ export const make = Effect.gen(function* PreviewManagerMake() {
           ),
         );
     }),
+    getTemporaryBrowserSession: browserSession.getTemporarySession.pipe(
+      Effect.mapError((cause) =>
+        new PreviewOperationError({ operation: "getTemporaryBrowserSession", cause }),
+      ),
+    ),
     isBrowserPartition: browserSession.isPartition,
     createTab: operations.createTab,
     closeTab: operations.closeTab,
@@ -2965,6 +2972,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
           Effect.mapError((cause) => new PreviewOperationError({ operation: "clearCache", cause })),
         );
     }),
+    getTemporaryBrowserPartition: browserSession.getTemporaryPartition,
     getBrowserPartition: Effect.fn("PreviewManager.getBrowserPartition")(function* (scope) {
       return yield* browserSession
         .getPartition(scope)

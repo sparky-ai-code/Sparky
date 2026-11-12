@@ -20,6 +20,7 @@ const clientSettings: ClientSettings = {
   profileImage: "",
   autoOpenPlanSidebar: false,
   focusMode: false,
+  persistentBrowserProfileEnabled: true,
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   dismissedProviderUpdateNotificationKeys: [],

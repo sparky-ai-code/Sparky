@@ -45,3 +45,10 @@ without this revision, because they can show a Buildroot text login instead of a
 controllable desktop. Delete boxes using the old image before importing an updated
 image folder, then create a new box. A successful compile alone does **not** certify
 the image: its graphical boot smoke test must pass as well.
+
+### Wayland display readiness
+
+The Linux guest pins the compositor to `wayland-0` with an explicit Weston
+`--socket` option. This avoids a Weston 15 default of `wayland-1` which
+previously left the guest visible but incorrectly marked as booting; the
+Wayland terminal and desktop-ready handshake use that same display name.

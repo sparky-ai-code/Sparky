@@ -17,6 +17,9 @@ case "$1" in
     export LANG=C.UTF-8
     export LC_ALL=C.UTF-8
     export HOME=/root
+    # The Weston default socket name changes across versions. Never guess:
+    # use the same explicit Wayland display name for Weston and Foot.
+    export WAYLAND_DISPLAY=wayland-0
     # The Buildroot package's S70seatd starts exactly one seat daemon.
     # Starting another one here would race for the same /run/seatd.sock.
     i=0
@@ -29,10 +32,9 @@ case "$1" in
       exit 1
     fi
     /usr/bin/weston --backend=drm-backend.so --renderer=pixman \
-      --log=/var/log/sparky-micro-desktop.log >/dev/null 2>&1 &
+      --socket="$WAYLAND_DISPLAY" --log=/var/log/sparky-micro-desktop.log >/dev/null 2>&1 &
     weston_pid=$!
     (
-      export WAYLAND_DISPLAY=wayland-0
       i=0
       while [ "$i" -lt 60 ]; do
         if ! kill -0 "$weston_pid" 2>/dev/null; then

@@ -75,7 +75,7 @@ jobs:
           # Catch this cheaply before the expensive Buildroot image build.
           grep -Fq 'BR2_SYSTEM_DHCP=""' microboxes/os/build-x86_64.sh
           grep -Fq 'BR2_SYSTEM_DHCP=""' microboxes/os/build-aarch64.sh
-          grep -Eq '^auto[[:space:]]+lo microboxes/os/overlay/etc/network/interfaces
+          grep -Fq 'auto lo' microboxes/os/overlay/etc/network/interfaces
           if grep -Eq '^auto[[:space:]]+eth0([[:space:]]|$)' microboxes/os/overlay/etc/network/interfaces; then
             echo "Guest boot must not wait for a network adapter" >&2
             exit 1

@@ -42,17 +42,17 @@ jobs:
           needle = '      emit_console "SPARKY_MICRO_DESKTOP_ERROR: Weston did not open a display"'
           assert needle in source
           probe = """
-      # Diagnostic only: report the actual Weston socket and process state.
-      for d in /run/user/0 /run /tmp; do
-        echo "SPARKY_DIAG_DIR: $d" > /dev/ttyS0 2>/dev/null || true
-        ls -lan "$d" > /dev/ttyS0 2>/dev/null || true
-      done
-      echo "SPARKY_DIAG_PROCESSES:" > /dev/ttyS0 2>/dev/null || true
-      ps -w > /dev/ttyS0 2>/dev/null || true
-      echo "SPARKY_DIAG_LOG:" > /dev/ttyS0 2>/dev/null || true
-      cat /var/log/sparky-micro-desktop.log > /dev/ttyS0 2>/dev/null || true
-      echo "SPARKY_DIAG_DONE" > /dev/ttyS0 2>/dev/null || true
-"""
+                # Diagnostic only: report the actual Weston socket and process state.
+                for d in /run/user/0 /run /tmp; do
+                echo "SPARKY_DIAG_DIR: $d" > /dev/ttyS0 2>/dev/null || true
+                ls -lan "$d" > /dev/ttyS0 2>/dev/null || true
+                done
+                echo "SPARKY_DIAG_PROCESSES:" > /dev/ttyS0 2>/dev/null || true
+                ps -w > /dev/ttyS0 2>/dev/null || true
+                echo "SPARKY_DIAG_LOG:" > /dev/ttyS0 2>/dev/null || true
+                cat /var/log/sparky-micro-desktop.log > /dev/ttyS0 2>/dev/null || true
+                echo "SPARKY_DIAG_DONE" > /dev/ttyS0 2>/dev/null || true
+          """
           Path("/tmp/sparky-micro-diagnostic-init").write_text(source.replace(needle, probe + needle))
           PY
           disk=dist/microboxes/sparky-micro-x86_64/rootfs.ext2

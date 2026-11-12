@@ -3,7 +3,7 @@
  *
  * Hosts per-tab Chromium WebContents references (the actual <webview>
  * elements live in the renderer; we only attach listeners and forward state
- * here). Single layer-scoped browser session partition.
+ * here). Shared persistent and temporary browser profile partitions.
  */
 import type {
   DesktopPreviewAnnotationTheme,

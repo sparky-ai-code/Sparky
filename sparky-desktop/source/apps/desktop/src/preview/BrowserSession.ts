@@ -116,7 +116,8 @@ export const make = Effect.gen(function* BrowserSessionMake() {
   const crypto = yield* Crypto.Crypto;
   const sessionsRef = yield* SynchronizedRef.make<ReadonlyMap<string, Session>>(new Map());
 
-  const getPartition = Effect.fn("BrowserSession.getPartition")(function* (scope = DEFAULT_BROWSER_PROFILE_SCOPE) {
+  const getPartition = Effect.fn("BrowserSession.getPartition")(
+    function* (scope = DEFAULT_BROWSER_PROFILE_SCOPE) {
     const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(scope)).pipe(
       Effect.mapError(
         (cause) =>
@@ -126,40 +127,41 @@ export const make = Effect.gen(function* BrowserSessionMake() {
           }),
       ),
     );
-    return `${PREVIEW_PARTITION_PREFIX}${Encoding.encodeHex(digest).slice(0, 20)}`;
-  });
+      return `${PREVIEW_PARTITION_PREFIX}${Encoding.encodeHex(digest).slice(0, 20)}`;
+    },
+  );
 
   const getSessionForPartition = Effect.fn("BrowserSession.getSessionForPartition")(
     function* (scope: string, partition: string) {
       return yield* SynchronizedRef.modifyEffect(sessionsRef, (sessions) => {
-      const existing = sessions.get(partition);
-      if (existing) return Effect.succeed([existing, sessions] as const);
-      return Effect.try({
-        try: () => {
-          const browserSession = session.fromPartition(partition);
-          const userAgent = browserSession
-            .getUserAgent()
-            .replace(/Electron\/[\d.]+ /, "")
-            .replace(/\s*t3code\/[\d.]+/, "");
-          browserSession.setUserAgent(userAgent);
-          browserSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-            callback(ALLOWED_PREVIEW_PERMISSIONS.has(permission));
-          });
-          browserSession.setPermissionCheckHandler((_webContents, permission) =>
-            ALLOWED_PREVIEW_PERMISSIONS.has(permission),
-          );
-          const next = new Map(sessions);
-          next.set(partition, browserSession);
-          return [browserSession, next] as const;
-        },
-        catch: (cause) =>
-          new BrowserSessionCreationError({
-            scope,
-            partition,
-            cause,
-          }),
-      });
-      });
+        const existing = sessions.get(partition);
+        if (existing) return Effect.succeed([existing, sessions] as const);
+        return Effect.try({
+          try: () => {
+            const browserSession = session.fromPartition(partition);
+            const userAgent = browserSession
+              .getUserAgent()
+              .replace(/Electron\/[\d.]+ /, "")
+              .replace(/\s*t3code\/[\d.]+/, "");
+            browserSession.setUserAgent(userAgent);
+            browserSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+              callback(ALLOWED_PREVIEW_PERMISSIONS.has(permission));
+            });
+            browserSession.setPermissionCheckHandler((_webContents, permission) =>
+              ALLOWED_PREVIEW_PERMISSIONS.has(permission),
+            );
+            const next = new Map(sessions);
+            next.set(partition, browserSession);
+            return [browserSession, next] as const;
+          },
+          catch: (cause) =>
+            new BrowserSessionCreationError({
+              scope,
+              partition,
+              cause,
+            }),
+        });
+        });
     },
   );
 

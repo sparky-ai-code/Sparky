@@ -9,7 +9,12 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
+// Keep the existing partition prefix so previously saved browser data stays usable.
+// Electron persists partitions beginning with "persist:" to the app's user-data directory.
 const PREVIEW_PARTITION_PREFIX = "persist:t3code-preview-";
+
+/** The default browser profile is shared by every Sparky preview tab and environment. */
+export const DEFAULT_BROWSER_PROFILE_SCOPE = "shared";
 
 // Permissions granted to preview web content. `clipboard-sanitized-write` is the
 // Electron permission behind `navigator.clipboard.writeText()` — note it is NOT
@@ -107,7 +112,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
   const crypto = yield* Crypto.Crypto;
   const sessionsRef = yield* SynchronizedRef.make<ReadonlyMap<string, Session>>(new Map());
 
-  const getPartition = Effect.fn("BrowserSession.getPartition")(function* (scope = "shared") {
+  const getPartition = Effect.fn("BrowserSession.getPartition")(function* (scope = DEFAULT_BROWSER_PROFILE_SCOPE) {
     const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(scope)).pipe(
       Effect.mapError(
         (cause) =>
@@ -120,7 +125,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
     return `${PREVIEW_PARTITION_PREFIX}${Encoding.encodeHex(digest).slice(0, 20)}`;
   });
 
-  const getSession = Effect.fn("BrowserSession.getSession")(function* (scope = "shared") {
+  const getSession = Effect.fn("BrowserSession.getSession")(function* (scope = DEFAULT_BROWSER_PROFILE_SCOPE) {
     const partition = yield* getPartition(scope);
     return yield* SynchronizedRef.modifyEffect(sessionsRef, (sessions) => {
       const existing = sessions.get(partition);

@@ -56,3 +56,45 @@ jobs:
         run: |
           pnpm --filter t3 exec vp test run src/microboxes/HostBoxManager.test.ts \
             -t "boots and controls the real graphical guest through HostBoxManager"
+
+  host-manager-windows:
+    name: Verify native Windows QEMU launch
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install Windows QEMU
+        shell: pwsh
+        run: |
+          choco install qemu --yes --no-progress --limit-output
+          if (!(Test-Path "C:\Program Files\qemu\qemu-system-x86_64.exe")) {
+            throw "QEMU was not installed in Sparky's supported binary location."
+          }
+      - name: Install focused workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Download verified x86 graphical guest for real host manager
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force dist/microboxes/verified-x86_64 | Out-Null
+          gh run download 43257039967 --repo sparky-ai-code/Sparky --name sparky-micro-tested-x86_64 --dir dist/microboxes/verified-x86_64
+          if (!(Test-Path "dist/microboxes/verified-x86_64/rootfs.ext2")) { throw "Missing guest root filesystem" }
+      - name: Run HostBoxManager QEMU boot, screenshot and GUI interaction on Windows
+        env:
+          SPARKY_MICRO_REAL_GUEST_DIR: ${{ github.workspace }}/sparky-desktop/source/dist/microboxes/verified-x86_64
+        run: pnpm --filter t3 exec vp test run src/microboxes/HostBoxManager.test.ts -t "boots and controls the real graphical guest through HostBoxManager"

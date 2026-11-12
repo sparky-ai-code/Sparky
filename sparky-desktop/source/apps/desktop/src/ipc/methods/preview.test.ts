@@ -41,7 +41,11 @@ describe("preview IPC methods", () => {
 
   effectIt.effect("shares a persistent browser profile across environments", () => {
     const getBrowserSession = vi.fn(() => Effect.succeed(null as never));
-    const getTemporaryBrowserSession = vi.fn(() => Effect.succeed(null as never));
+    let temporarySessionInitCount = 0;
+    const getTemporaryBrowserSession = Effect.sync(() => {
+      temporarySessionInitCount += 1;
+      return null as never;
+    });
     const getBrowserPartition = vi.fn(() =>
       Effect.succeed("persist:t3code-preview-default"),
     );
@@ -60,7 +64,7 @@ describe("preview IPC methods", () => {
       expect(first.partition.startsWith("persist:")).toBe(true);
       // Neither environment should become part of the browser session key.
       expect(getBrowserSession.mock.calls).toEqual([[], []]);
-      expect(getTemporaryBrowserSession.mock.calls).toEqual([[], []]);
+      expect(temporarySessionInitCount).toBe(2);
       expect(getBrowserPartition.mock.calls).toEqual([[], []]);
     }).pipe(
       Effect.provide(

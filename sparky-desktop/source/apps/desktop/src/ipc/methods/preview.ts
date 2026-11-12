@@ -183,11 +183,13 @@ export const getPreviewConfig = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.PREVIEW_GET_CONFIG_CHANNEL,
   payload: DesktopPreviewConfigInputSchema,
   result: DesktopPreviewWebviewConfigSchema,
-  handler: Effect.fn("desktop.ipc.preview.getConfig")(function* ({ environmentId }) {
+  handler: Effect.fn("desktop.ipc.preview.getConfig")(function* () {
     const manager = yield* PreviewManager.PreviewManager;
-    yield* manager.getBrowserSession(environmentId);
+    // Use a single durable browser profile across environments, threads, and app restarts.
+    // The environment ID still identifies the preview host, not the browser login state.
+    yield* manager.getBrowserSession();
     return {
-      partition: yield* manager.getBrowserPartition(environmentId),
+      partition: yield* manager.getBrowserPartition(),
       webPreferences: PREVIEW_WEBVIEW_PREFERENCES,
       preloadUrl: NodeURL.pathToFileURL(`${__dirname}/preview-pick-preload.cjs`).href,
     };

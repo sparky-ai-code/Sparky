@@ -188,8 +188,10 @@ export const getPreviewConfig = DesktopIpc.makeIpcMethod({
     // Use a single durable browser profile across environments, threads, and app restarts.
     // The environment ID still identifies the preview host, not the browser login state.
     yield* manager.getBrowserSession();
+    yield* manager.getTemporaryBrowserSession;
     return {
       partition: yield* manager.getBrowserPartition(),
+      temporaryPartition: yield* manager.getTemporaryBrowserPartition,
       webPreferences: PREVIEW_WEBVIEW_PREFERENCES,
       preloadUrl: NodeURL.pathToFileURL(`${__dirname}/preview-pick-preload.cjs`).href,
     };

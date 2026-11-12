@@ -11,6 +11,7 @@ import { cn } from "~/lib/utils";
 import { stopBrowserRecording, useActiveBrowserRecordingTabId } from "./browserRecording";
 import { resolveBrowserSurfacePanelRect, useBrowserSurfaceStore } from "./browserSurfaceStore";
 import { browserViewportSettingKey } from "./browserViewportLayout";
+import { browserProfilePartition } from "./browserProfileSelection";
 import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
 import { BrowserViewportResizeHandles } from "./BrowserViewportResizeHandles";
 import { acquireDesktopTab, type AcquiredDesktopTab } from "./desktopTabLifetime";
@@ -204,9 +205,7 @@ export function HostedBrowserWebview(props: {
         <webview
           ref={setWebviewRef}
           src={initialSrc}
-          partition={
-            persistentBrowserProfileEnabled ? config.partition : config.temporaryPartition
-          }
+          partition={browserProfilePartition(config, persistentBrowserProfileEnabled)}
           webpreferences={config.webPreferences}
           {...(config.preloadUrl ? { preload: config.preloadUrl } : {})}
           data-preview-tab={tabId}

@@ -78,6 +78,24 @@ describe("BrowserSession", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("isolates temporary browser sessions from persistent sign-ins", () =>
+    Effect.gen(function* () {
+      const browserSessions = yield* BrowserSession.BrowserSession;
+      const persistent = yield* browserSessions.getSession();
+      const temporaryPartition = yield* browserSessions.getTemporaryPartition;
+      const temporary = yield* browserSessions.getTemporarySession;
+
+      assert.strictEqual(temporaryPartition, "t3code-preview-temporary");
+      assert.isFalse(temporaryPartition.startsWith("persist:"));
+      assert.isTrue(browserSessions.isPartition(temporaryPartition));
+      assert.notStrictEqual(persistent, temporary);
+      assert.strictEqual(yield* browserSessions.getTemporarySession, temporary);
+      assert.strictEqual(fromPartition.mock.calls.length, 2);
+      assert.strictEqual(temporary.clearStorageData.mock.calls.length, 0);
+      assert.isFalse(browserSessions.isPartition("temporary-unrelated"));
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("grants clipboard-sanitized-write through both the request and check handlers", () =>
     Effect.gen(function* () {
       const browserSessions = yield* BrowserSession.BrowserSession;

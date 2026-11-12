@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalTimers:off - Local hypervisor process boundary.
 import { spawn, execFile as execFileCallback, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import * as Fs from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import * as Path from "node:path";
 import { promisify } from "node:util";
 
@@ -41,8 +41,32 @@ const SAFE_IMAGE_ID = /^[a-z0-9_-]{1,48}$/u;
 const SAFE_IMAGE_FILE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u;
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 const CURRENT_SPARKY_MICRO_IMAGE_VERSION = 2;
+const OFFICIAL_MICRO_IMAGE_ID = /^sparky-micro-(?:x86_64|aarch64)$/u;
+const OFFICIAL_MICRO_VERSIONED_ID = /^sparky-micro-(?:x86_64|aarch64)-v2-[0-9a-f]{12}$/u;
+
+/** SHA256SUMS guards against accidentally mismatched kernel/rootfs files. */
+function parseMicroboxChecksums(raw: string): Map<string, string> {
+  const checksums = new Map<string, string>();
+  for (const line of raw.split(/\r?\n/u)) {
+    if (!line.trim()) continue;
+    const match = /^([0-9a-f]{64})[ \t]+\*?([a-zA-Z0-9][a-zA-Z0-9._-]{0,127})$/u.exec(line);
+    if (!match || checksums.has(match[2]!)) {
+      throw new MicroboxHostError("invalid-input", "The Linux guest checksum file is invalid.");
+    }
+    checksums.set(match[2]!, match[1]!);
+  }
+  return checksums;
+}
+async function sha256File(file: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(file)) hash.update(chunk);
+  return hash.digest("hex");
+}
+function versionedMicroboxId(manifest: GuestManifest, rootfsHash: string): string {
+  return `${manifest.id}-v${CURRENT_SPARKY_MICRO_IMAGE_VERSION}-${rootfsHash.slice(0, 12)}`;
+}
 function assertCurrentSparkyMicroImage(manifest: GuestManifest): void {
-  if (/^sparky-micro-(?:x86_64|aarch64)$/u.test(manifest.id) &&
+  if (OFFICIAL_MICRO_IMAGE_ID.test(manifest.id) &&
       manifest.boxImageVersion !== CURRENT_SPARKY_MICRO_IMAGE_VERSION) {
     throw new MicroboxHostError("image-missing",
       "This is an outdated Sparky Micro Linux image that may boot to a login prompt. Delete existing boxes using it, then install a newly built Linux guest image folder (not the Windows installer).");
@@ -224,6 +248,32 @@ export class HostBoxManager {
     }
     assertCurrentSparkyMicroImage(manifest);
     const files = ["image.json", manifest.file, ...(manifest.kernel ? [manifest.kernel] : [])];
+    let installedId = manifest.id;
+    if (OFFICIAL_MICRO_IMAGE_ID.test(manifest.id)) {
+      // Earlier imports used this same ID for a login-only root filesystem.
+      // Verify the actual bytes, and install each revision into its own dir.
+      const checksums = parseMicroboxChecksums(await Fs.readFile(
+        Path.join(source, "SHA256SUMS"), "utf8",
+      ).catch(() => {
+        throw new MicroboxHostError("image-missing",
+          "The Linux guest is missing SHA256SUMS. Download and extract the complete tested ZIP.");
+      }));
+      for (const name of files) {
+        const expected = checksums.get(name);
+        if (!expected) {
+          throw new MicroboxHostError("invalid-input", "The Linux guest checksum list is incomplete.");
+        }
+        const actual = await sha256File(Path.join(source, name)).catch(() => {
+          throw new MicroboxHostError("image-missing", "A Linux guest image file could not be read.");
+        });
+        if (actual !== expected) {
+          throw new MicroboxHostError("invalid-input",
+            `The Linux guest file ${name} differs from its checksum. Re-extract the ZIP.`);
+        }
+      }
+      installedId = versionedMicroboxId(manifest, checksums.get(manifest.file)!);
+      files.push("SHA256SUMS");
+    }
     let unpackedBytes = 0;
     for (const name of files) {
       const real = await Fs.realpath(Path.join(source, name)).catch(() => {
@@ -239,7 +289,7 @@ export class HostBoxManager {
       unpackedBytes += stat.size;
     }
     const imagesDir = Path.join(this.root, "images");
-    const target = Path.join(imagesDir, manifest.id);
+    const target = Path.join(imagesDir, installedId);
     // Upgrade in place, but never change the backing file under a live or
     // stopped box's copy-on-write disk. The user must delete those boxes first.
     if (this.updatingImages.has(manifest.id)) {
@@ -249,7 +299,7 @@ export class HostBoxManager {
     try {
       if (
         this.creating > 0 ||
-        [...this.boxes.values()].some((box) => box.status.imageId === manifest.id)
+        [...this.boxes.values()].some((box) => box.status.imageId === installedId)
       ) {
         throw new MicroboxHostError(
           "busy", "Delete existing boxes using this guest image before installing its update.",
@@ -304,7 +354,7 @@ export class HostBoxManager {
       }
       if (backedUp) await Fs.rm(backup, { recursive: true, force: true }).catch(() => undefined);
       return {
-        imageId: manifest.id, name: manifest.name,
+        imageId: installedId, name: manifest.name,
         kind: manifest.kind, architecture: manifest.architecture,
       };
     } finally {
@@ -322,7 +372,9 @@ export class HostBoxManager {
     try { manifest = JSON.parse(raw) as GuestManifest; }
     catch { throw new MicroboxHostError("image-missing", "Guest image metadata is invalid."); }
     if (
-      manifest.id !== id ||
+      (manifest.id !== id && !(
+        OFFICIAL_MICRO_IMAGE_ID.test(manifest.id) && OFFICIAL_MICRO_VERSIONED_ID.test(id)
+      )) ||
       !["linux-kernel", "disk", "installer-iso"].includes(manifest.kind) ||
       !["x86_64", "aarch64"].includes(manifest.architecture) ||
       !SAFE_IMAGE_FILE.test(manifest.file) ||
@@ -330,6 +382,23 @@ export class HostBoxManager {
       (manifest.kind === "linux-kernel" && (!manifest.kernel || !SAFE_IMAGE_FILE.test(manifest.kernel)))
     ) throw new MicroboxHostError("image-missing", "The selected guest image is invalid.");
     assertCurrentSparkyMicroImage(manifest);
+    if (OFFICIAL_MICRO_IMAGE_ID.test(manifest.id)) {
+      // Never launch the old fixed-ID installation: it may still contain a
+      // Buildroot login even if a new ZIP was downloaded elsewhere.
+      if (id === manifest.id) {
+        throw new MicroboxHostError("image-missing",
+          "The old Linux image is still installed. Import the verified guest ZIP to create a new image revision.");
+      }
+      const sums = parseMicroboxChecksums(await Fs.readFile(
+        Path.join(directory, "SHA256SUMS"), "utf8",
+      ).catch(() => {
+        throw new MicroboxHostError("image-missing", "Installed Linux guest checksums are missing.");
+      }));
+      const rootHash = sums.get(manifest.file);
+      if (!rootHash || id !== versionedMicroboxId(manifest, rootHash)) {
+        throw new MicroboxHostError("image-missing", "The installed Linux guest identity is inconsistent.");
+      }
+    }
     const realDir = await Fs.realpath(directory);
     const files = [manifest.file, ...(manifest.kernel ? [manifest.kernel] : [])];
     for (const name of files) {
@@ -354,14 +423,22 @@ export class HostBoxManager {
       try {
         const { manifest } = await this.image(entry.name);
         output.push({
-          imageId: manifest.id,
-          name: manifest.name,
+          imageId: entry.name,
+          name: OFFICIAL_MICRO_VERSIONED_ID.test(entry.name)
+            ? `${manifest.name} (verified v2)` : manifest.name,
           kind: manifest.kind,
           architecture: manifest.architecture,
         });
       } catch { /* Ignore incomplete images rather than advertising them. */ }
     }
-    return output;
+    // Deterministic default: the newest successfully installed guest wins.
+    const timestamps = await Promise.all(output.map((image) =>
+      Fs.stat(Path.join(directory, image.imageId, "image.json"))
+        .then((stat) => stat.mtimeMs, () => 0),
+    ));
+    return output.map((image, index) => ({ image, time: timestamps[index] ?? 0 }))
+      .sort((a, b) => b.time - a.time)
+      .map(({ image }) => image);
   }
 
   list(threadId: string): MicroboxStatus[] {

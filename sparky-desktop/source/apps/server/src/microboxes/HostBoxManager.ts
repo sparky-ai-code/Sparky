@@ -330,7 +330,7 @@ export class HostBoxManager {
         }
         await Fs.rename(temporary, target);
         activated = true;
-        await this.image(manifest.id);
+        await this.image(installedId);
       } catch (cause) {
         if (activated) await Fs.rm(target, { recursive: true, force: true });
         if (backedUp) {

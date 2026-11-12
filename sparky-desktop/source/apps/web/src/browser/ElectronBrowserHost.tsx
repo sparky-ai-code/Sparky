@@ -7,6 +7,7 @@ import { useEffect, useMemo } from "react";
 import { isElectron } from "~/env";
 import { useTheme } from "~/hooks/useTheme";
 import { useActivePreviewSessions } from "~/previewStateStore";
+import { useClientSettings } from "~/hooks/useSettings";
 
 import { readPreviewAnnotationTheme } from "./annotationTheme";
 import { useBrowserPointerStore } from "./browserPointerStore";
@@ -15,6 +16,9 @@ import { HostedBrowserWebview } from "./HostedBrowserWebview";
 export function ElectronBrowserHost() {
   const { resolvedTheme } = useTheme();
   const previewByThreadKey = useActivePreviewSessions();
+  const persistentBrowserProfileEnabled = useClientSettings(
+    (settings) => settings.persistentBrowserProfileEnabled,
+  );
   const sessions = useMemo(
     () =>
       Object.entries(previewByThreadKey).flatMap(([threadKey, previewState]) => {
@@ -78,7 +82,10 @@ export function ElectronBrowserHost() {
         const url = snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;
         return (
           <HostedBrowserWebview
-            key={snapshot.tabId}
+            // Electron cannot change a webview partition in place. Remount on
+            // profile changes to switch all tabs immediately.
+            key={`${snapshot.tabId}:${persistentBrowserProfileEnabled ? "persistent" : "temporary"}`}
+            persistentBrowserProfileEnabled={persistentBrowserProfileEnabled}
             threadRef={threadRef}
             tabId={snapshot.tabId}
             initialUrl={url}

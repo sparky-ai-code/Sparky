@@ -9,6 +9,45 @@ import { describe, expect, it } from "vite-plus/test";
 import { HostBoxManager, acceptsBoxInput, microLinuxBootState, visibleLinuxKernelArguments } from "./HostBoxManager.ts";
 
 describe("Microboxes image import", () => {
+  it("imports the real GitHub artifact when Windows extraction adds an outer folder", async () => {
+    const root = await mkdtemp(Path.join(tmpdir(), "sparky-box-nested-"));
+    const outer = Path.join(root, "extracted");
+    const inner = Path.join(outer, "sparky-micro-linux-x86_64-gui-input-tested");
+    try {
+      await mkdir(inner, { recursive: true });
+      await writeFile(Path.join(inner, "image.json"), JSON.stringify({
+        id: "sparky-micro-x86_64", name: "Sparky Micro Linux",
+        kind: "linux-kernel", architecture: "x86_64",
+        file: "rootfs.ext2", kernel: "bzImage", boxImageVersion: 2,
+      }));
+      await writeFile(Path.join(inner, "bzImage"), "kernel");
+      await writeFile(Path.join(inner, "rootfs.ext2"), "filesystem");
+      const manager = new HostBoxManager(Path.join(root, "data"));
+      await expect(manager.importImage(outer)).resolves.toMatchObject({
+        imageId: "sparky-micro-x86_64",
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects selecting a folder with multiple guest images rather than guessing", async () => {
+    const root = await mkdtemp(Path.join(tmpdir(), "sparky-box-ambiguous-"));
+    try {
+      for (const folder of ["a", "b"]) {
+        const nested = Path.join(root, folder);
+        await mkdir(nested);
+        await writeFile(Path.join(nested, "image.json"), "{}");
+      }
+      const manager = new HostBoxManager(Path.join(root, "data"));
+      await expect(manager.importImage(root)).rejects.toMatchObject({
+        code: "image-missing",
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("imports the existing Sparky Micro Linux x86_64 release folder", async () => {
     const root = await mkdtemp(Path.join(tmpdir(), "sparky-box-import-"));
     const source = Path.join(root, "download");

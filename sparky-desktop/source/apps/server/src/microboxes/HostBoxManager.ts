@@ -182,9 +182,31 @@ export class HostBoxManager {
     if (!Path.isAbsolute(sourceDirectory)) {
       throw new MicroboxHostError("invalid-input", "Choose an image folder on this computer.");
     }
-    const source = await Fs.realpath(sourceDirectory).catch(() => {
+    let source = await Fs.realpath(sourceDirectory).catch(() => {
       throw new MicroboxHostError("image-missing", "The selected image folder cannot be opened.");
     });
+    // Windows extraction tools sometimes create one additional directory.
+    // Safely recognize that wrapper without asking users to hunt for image.json.
+    const directManifest = await Fs.stat(Path.join(source, "image.json"))
+      .then((stat) => stat.isFile(), () => false);
+    if (!directManifest) {
+      const children = await Fs.readdir(source, { withFileTypes: true }).catch(() => []);
+      const candidates: string[] = [];
+      for (const child of children) {
+        if (!child.isDirectory()) continue;
+        const candidate = await Fs.realpath(Path.join(source, child.name)).catch(() => "");
+        if (!candidate.startsWith(source + Path.sep)) continue;
+        const containsManifest = await Fs.stat(Path.join(candidate, "image.json"))
+          .then((stat) => stat.isFile(), () => false);
+        if (containsManifest) candidates.push(candidate);
+      }
+      if (candidates.length !== 1) {
+        throw new MicroboxHostError("image-missing", candidates.length > 1
+          ? "Multiple guest image folders were found. Select the folder containing image.json."
+          : "Select an extracted guest image folder containing image.json and rootfs.ext2. Extract the ZIP before installing.");
+      }
+      source = candidates[0]!;
+    }
     let manifest: GuestManifest;
     try {
       manifest = JSON.parse(await Fs.readFile(Path.join(source, "image.json"), "utf8")) as GuestManifest;
@@ -202,6 +224,7 @@ export class HostBoxManager {
     }
     assertCurrentSparkyMicroImage(manifest);
     const files = ["image.json", manifest.file, ...(manifest.kernel ? [manifest.kernel] : [])];
+    let unpackedBytes = 0;
     for (const name of files) {
       const real = await Fs.realpath(Path.join(source, name)).catch(() => {
         throw new MicroboxHostError("image-missing", "A guest image component is missing.");
@@ -213,6 +236,7 @@ export class HostBoxManager {
       if (!stat.isFile() || stat.size > 20 * 1024 * 1024 * 1024) {
         throw new MicroboxHostError("invalid-input", "Guest image is not a supported file.");
       }
+      unpackedBytes += stat.size;
     }
     const imagesDir = Path.join(this.root, "images");
     const target = Path.join(imagesDir, manifest.id);
@@ -232,6 +256,14 @@ export class HostBoxManager {
         );
       }
       await Fs.mkdir(imagesDir, { recursive: true });
+      // The GitHub ZIP is ~24 MiB, but rootfs.ext2 expands to 1 GiB; an
+      // independent installed copy needs that much real storage again.
+      const freeBytes = await Fs.statfs(imagesDir)
+        .then((stat) => Number(stat.bavail) * Number(stat.bsize), () => undefined);
+      if (freeBytes !== undefined && freeBytes < unpackedBytes + 64 * 1024 * 1024) {
+        throw new MicroboxHostError("io-error",
+          "Not enough free disk space to install the Linux guest. The extracted image is about 1 GiB; free more space and retry.");
+      }
       const exists = await Fs.stat(target).then(() => true, () => false);
       const temporary = Path.join(imagesDir, `.install-${randomUUID()}`);
       const backup = Path.join(imagesDir, `.previous-${randomUUID()}`);
@@ -257,7 +289,16 @@ export class HostBoxManager {
           await Fs.rename(backup, target);
         }
         if (cause instanceof MicroboxHostError) throw cause;
-        throw new MicroboxHostError("io-error", "Couldn't install this guest image.");
+        const code = (cause as NodeJS.ErrnoException)?.code;
+        if (code === "ENOSPC") {
+          throw new MicroboxHostError("io-error", "Not enough free disk space to copy the guest image.");
+        }
+        if (code === "EACCES" || code === "EPERM" || code === "EBUSY") {
+          throw new MicroboxHostError("io-error",
+            "Sparky cannot replace the installed image because its files are in use or access is denied. Close running boxes and check folder permissions.");
+        }
+        throw new MicroboxHostError("io-error",
+          "Couldn't copy the image into Sparky's data folder. Check available disk space and folder permissions.");
       } finally {
         await Fs.rm(temporary, { recursive: true, force: true });
       }

@@ -29,16 +29,16 @@ export function MicroboxesSettingsPanel() {
     try {
       const result = await importGuestImage({ environmentId, input: { sourceDirectory } });
       if (result._tag === "Success") {
-        setImageMessage("Guest image installed. You can now create a box.");
+        setImageMessage("Guest image installed. You can now create a new box.");
       } else {
         // Surface only the server's sanitized product error, never a raw host exception.
         const cause = squashAtomCommandFailure(result);
         setImageMessage(Schema.is(MicroboxError)(cause)
           ? cause.message
-          : "Couldn't install the guest image. Check the selected folder and try again.");
+          : "Couldn't install the guest image. Extract the ZIP, select the folder containing image.json and rootfs.ext2, and destroy older boxes before replacing their image.");
       }
     } catch {
-      setImageMessage("Couldn't install the guest image.");
+      setImageMessage("Couldn't install the image. Ensure the ZIP is extracted, the old box is destroyed, and there is enough free space.");
     } finally {
       setInstallingImage(false);
     }
@@ -81,7 +81,7 @@ export function MicroboxesSettingsPanel() {
         </SettingsRow>
         <SettingsRow
           title="Guest images"
-          description="Install the graphical Linux guest image or a compatible installer-test guest image. Each image is kept separately from host files."
+          description="Extract the Linux guest ZIP first, then select the folder containing image.json and rootfs.ext2. The image needs roughly 1 GiB more storage after extraction. Destroy existing boxes using the old image before replacing it."
         >
           <div className="flex flex-col items-end gap-2 pb-4">
             <Button
@@ -91,7 +91,7 @@ export function MicroboxesSettingsPanel() {
             >
               {installingImage ? "Installing guest image…" : "Install guest image from folder"}
             </Button>
-            {imageMessage ? <p role="status" className="text-xs text-muted-foreground">{imageMessage}</p> : null}
+            {imageMessage ? <p role={imageMessage.startsWith("Guest image installed") ? "status" : "alert"} className="max-w-md text-right text-xs text-muted-foreground">{imageMessage}</p> : null}
           </div>
         </SettingsRow>
       </SettingsSection>

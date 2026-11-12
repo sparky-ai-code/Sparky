@@ -69,7 +69,7 @@ async function main(directory, screenshotDirectory) {
       "-display", "none", "-monitor", "none", "-serial", `file:${serialLog}`,
       "-qmp", "stdio",
       "-device", arch === "aarch64" ? "virtio-gpu-pci" : "virtio-vga",
-      "-device", "qemu-xhci", "-device", "usb-tablet",
+      "-device", "qemu-xhci", "-device", "usb-tablet", "-device", "usb-kbd",
       "-nic", "none",
       "-kernel", join(directory, manifest.kernel),
       "-append", `${manifest.append ?? "root=/dev/vda rw"} console=tty0`,

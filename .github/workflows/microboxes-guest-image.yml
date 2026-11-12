@@ -35,6 +35,15 @@ jobs:
           sh -n microboxes/os/overlay/etc/init.d/S90sparky-micro
           sh -n microboxes/os/overlay/etc/init.d/S45sparky-network
           bash -n microboxes/os/build-${{ matrix.arch }}.sh
+          # Fast checks before compiling the full cross toolchain.
+          grep -Fq 'BR2_TARGET_GENERIC_GETTY=n' microboxes/os/build-${{ matrix.arch }}.sh
+          grep -Fq 'BR2_PACKAGE_FOOT=y' microboxes/os/build-${{ matrix.arch }}.sh
+          grep -Fq 'CONFIG_USB_XHCI_PCI=y' microboxes/os/kernel.fragment
+          grep -Fq 'usb-kbd' microboxes/os/smoke-boot.mjs
+          if grep -q -- '--tty=1' microboxes/os/overlay/etc/init.d/S90sparky-micro; then
+            echo "Weston 15 rejects --tty=1" >&2
+            exit 1
+          fi
       - name: Build standalone Sparky Micro Linux image
         run: bash microboxes/os/build-${{ matrix.arch }}.sh
         env:

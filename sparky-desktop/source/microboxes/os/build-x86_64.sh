@@ -27,11 +27,16 @@ BR2_ENABLE_LOCALE=y
 BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y
 # No guest NIC is present by default; never block boot waiting for eth0.
 BR2_SYSTEM_DHCP=""
+BR2_TARGET_GENERIC_GETTY=n
+BR2_TARGET_GENERIC_HOSTNAME="sparky-micro"
 BR2_PACKAGE_EUDEV=y
 BR2_PACKAGE_SEATD=y
 BR2_PACKAGE_SEATD_DAEMON=y
 BR2_PACKAGE_PIXMAN=y
 BR2_PACKAGE_WESTON=y
+BR2_PACKAGE_FOOT=y
+BR2_PACKAGE_DEJAVU=y
+BR2_PACKAGE_DEJAVU_MONO=y
 BR2_PACKAGE_WESTON_DEFAULT_DRM=y
 BR2_PACKAGE_WESTON_SHELL_DESKTOP=y
 BR2_PACKAGE_WESTON_SIMPLE_CLIENTS=y
@@ -44,7 +49,7 @@ BR2_TARGET_ROOTFS_EXT2_SIZE="1024M"
 # BR2_PACKAGE_HOST_QEMU_SYSTEM_MODE is not set
 EOF
 make -C "$BUILDROOT_DIR" O="$OUT_DIR" olddefconfig
-for flag in BR2_PACKAGE_WESTON BR2_PACKAGE_WESTON_DEFAULT_DRM BR2_PACKAGE_EUDEV BR2_PACKAGE_SEATD_DAEMON; do
+for flag in BR2_PACKAGE_WESTON BR2_PACKAGE_WESTON_DEFAULT_DRM BR2_PACKAGE_EUDEV BR2_PACKAGE_SEATD_DAEMON BR2_PACKAGE_FOOT BR2_PACKAGE_DEJAVU; do
   grep -q "^${flag}=y$" "$OUT_DIR/.config" || {
     echo "Required setting ${flag} was not enabled by Buildroot." >&2
     grep -E '^(BR2_ROOTFS_DEVICE_CREATION|BR2_PACKAGE_HAS_UDEV|BR2_PACKAGE_EUDEV|BR2_INSTALL_LIBSTDCPP|BR2_ENABLE_LOCALE|BR2_PACKAGE_WESTON|BR2_TOOLCHAIN_BUILDROOT)' "$OUT_DIR/.config" >&2 || true
@@ -52,6 +57,34 @@ for flag in BR2_PACKAGE_WESTON BR2_PACKAGE_WESTON_DEFAULT_DRM BR2_PACKAGE_EUDEV 
   }
 done
 make -C "$BUILDROOT_DIR" O="$OUT_DIR" -j"${JOBS:-$(nproc)}"
+KCONFIG="$(find "$OUT_DIR/build" -maxdepth 2 -path '*/linux-*/.config' -type f -print -quit)"
+test -n "$KCONFIG" && test -s "$KCONFIG"
+for flag in CONFIG_USB_XHCI_HCD CONFIG_USB_XHCI_PCI CONFIG_USB_HID CONFIG_INPUT_EVDEV; do
+  grep -q "^${flag}=y$" "$KCONFIG" || { echo "Required kernel input driver missing: $flag" >&2; exit 1; }
+done
+grep -q '^# BR2_TARGET_GENERIC_GETTY is not set
+KERNEL="$OUT_DIR/images/bzImage"
+ROOTFS="$OUT_DIR/images/rootfs.ext2"
+test -s "$KERNEL" && test -s "$ROOTFS"
+cp "$KERNEL" "$OUTPUT_DIR/bzImage"
+cp "$ROOTFS" "$OUTPUT_DIR/rootfs.ext2"
+cat > "$OUTPUT_DIR/image.json" <<'EOF'
+{
+  "id": "sparky-micro-x86_64",
+  "name": "Sparky Micro Linux",
+  "kind": "linux-kernel",
+  "architecture": "x86_64",
+  "file": "rootfs.ext2",
+  "kernel": "bzImage",
+  "append": "root=/dev/vda rw console=ttyS0"
+}
+EOF
+(
+  cd "$OUTPUT_DIR"
+  sha256sum bzImage rootfs.ext2 image.json > SHA256SUMS
+)
+echo "Sparky Micro Linux image produced: $OUTPUT_DIR"
+ "$OUT_DIR/.config" || { echo "Graphical Boxes image must not enable getty" >&2; exit 1; }
 KERNEL="$OUT_DIR/images/bzImage"
 ROOTFS="$OUT_DIR/images/rootfs.ext2"
 test -s "$KERNEL" && test -s "$ROOTFS"

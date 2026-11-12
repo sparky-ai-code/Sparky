@@ -19,6 +19,14 @@ GitHub Actions can build and upload this image as an artifact without publishing
 a release. A separate signed distribution mechanism is required before the
 desktop app can provide one-click guest image downloads.
 
+The image is configured to boot directly into a graphical Weston session
+with a Foot Wayland terminal (as a readily keyboard/mouse-controllable test
+application). There is **no default text-console login prompt**: the guest
+is an automated graphical workspace, not an interactive user-login distro.
+Serial output still reports desktop readiness or clear startup failures.
+An older test image that stops at `buildroot login:` must be replaced with
+an image built from the updated sources.
+
 The initial OS boots a graphical Weston desktop. It is not a general-purpose
 Linux package manager distribution; graphical apps for this guest must be
 compiled against its userspace or packaged as compatible static binaries.

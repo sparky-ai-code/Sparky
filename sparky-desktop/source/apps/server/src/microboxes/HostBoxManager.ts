@@ -355,6 +355,8 @@ export class HostBoxManager {
       "-device", manifest.architecture === "aarch64" ? "virtio-gpu-pci" : "virtio-vga",
       "-device", "qemu-xhci",
       "-device", "usb-tablet",
+      // ARM virt has no implicit PS/2 keyboard; attach a real USB HID keyboard.
+      "-device", "usb-kbd",
       ...(input.internet ? ["-netdev", "user,id=net0", "-device", "virtio-net-pci,netdev=net0"] : ["-nic", "none"]),
     ];
     const guestFile = Path.join(imageDir, manifest.file);

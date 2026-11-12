@@ -14,6 +14,9 @@ case "$1" in
     chmod 0700 /run/user/0
     export XDG_RUNTIME_DIR=/run/user/0
     export LIBSEAT_BACKEND=seatd
+    export LANG=C.UTF-8
+    export LC_ALL=C.UTF-8
+    export HOME=/root
     # The Buildroot package's S70seatd starts exactly one seat daemon.
     # Starting another one here would race for the same /run/seatd.sock.
     i=0
@@ -25,7 +28,7 @@ case "$1" in
       emit_console "SPARKY_MICRO_DESKTOP_ERROR: seat daemon did not start"
       exit 1
     fi
-    /usr/bin/weston --backend=drm-backend.so --renderer=pixman --tty=1 \
+    /usr/bin/weston --backend=drm-backend.so --renderer=pixman \
       --log=/var/log/sparky-micro-desktop.log >/dev/null 2>&1 &
     weston_pid=$!
     (
@@ -38,10 +41,23 @@ case "$1" in
         if [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]; then
           sleep 2
           if kill -0 "$weston_pid" 2>/dev/null && [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]; then
-            emit_console "SPARKY_MICRO_DESKTOP_READY"
-            if [ -x /usr/bin/weston-terminal ]; then
-              /usr/bin/weston-terminal >/var/log/desktop-terminal.log 2>&1 &
+            # Boxes is an agent-operated graphical workspace, not a login
+            # console. Verify a usable interactive Wayland application exists.
+            if [ ! -x /usr/bin/foot ]; then
+              emit_console "SPARKY_MICRO_DESKTOP_ERROR: graphical terminal missing"
+              exit 1
             fi
+            /usr/bin/foot >/var/log/desktop-terminal.log 2>&1 &
+            terminal_pid=$!
+            sleep 2
+            if ! kill -0 "$terminal_pid" 2>/dev/null; then
+              emit_console "SPARKY_MICRO_DESKTOP_ERROR: graphical terminal exited"
+              if [ -f /var/log/desktop-terminal.log ]; then
+                tail -n 25 /var/log/desktop-terminal.log >/dev/ttyS0 2>/dev/null || true
+              fi
+              exit 1
+            fi
+            emit_console "SPARKY_MICRO_DESKTOP_READY"
             exit 0
           fi
         fi

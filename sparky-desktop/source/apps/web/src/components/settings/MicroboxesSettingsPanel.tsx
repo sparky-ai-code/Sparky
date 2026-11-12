@@ -29,7 +29,7 @@ export function MicroboxesSettingsPanel() {
     try {
       const result = await importGuestImage({ environmentId, input: { sourceDirectory } });
       if (result._tag === "Success") {
-        setImageMessage("Guest image installed. You can now create a new box.");
+        setImageMessage(`Guest image installed as ${result.value.imageId}. Create a new box to boot this verified revision; older boxes remain separate.`);
       } else {
         // Surface only the server's sanitized product error, never a raw host exception.
         const cause = squashAtomCommandFailure(result);
@@ -81,7 +81,7 @@ export function MicroboxesSettingsPanel() {
         </SettingsRow>
         <SettingsRow
           title="Guest images"
-          description="Extract the Linux guest ZIP first, then select the folder containing image.json and rootfs.ext2. The image needs roughly 1 GiB more storage after extraction. Destroy existing boxes using the old image before replacing it."
+          description="Extract the Linux guest ZIP first, then select the folder containing image.json and rootfs.ext2. Sparky verifies the files and installs new guest revisions separately from old boxes; allow at least 1 GiB of free storage."
         >
           <div className="flex flex-col items-end gap-2 pb-4">
             <Button

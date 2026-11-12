@@ -483,7 +483,12 @@ export class HostBoxManager {
       "-m", String(memoryMiB), "-smp", String(cpus),
       "-machine", manifest.architecture === "aarch64" ? "virt" : "pc",
       ...(manifest.architecture === "aarch64" ? ["-cpu", "max"] : []),
-      ...accelerator(manifest.architecture),
+      // The Linux guest's known-good QEMU tests use TCG. WHPX on Windows can
+      // change the observed boot/display path; avoid it until separately
+      // verified through this same HostBoxManager integration path.
+      ...(process.platform === "win32" && manifest.kind === "linux-kernel" &&
+        OFFICIAL_MICRO_IMAGE_ID.test(manifest.id)
+        ? ["-accel", "tcg,thread=multi"] : accelerator(manifest.architecture)),
       "-device", manifest.architecture === "aarch64" ? "virtio-gpu-pci" : "virtio-vga",
       "-device", "qemu-xhci",
       "-device", "usb-tablet",

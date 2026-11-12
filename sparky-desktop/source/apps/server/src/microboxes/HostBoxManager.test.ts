@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - Temporary filesystem regression tests.
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import type { MicroboxCreateInput } from "@sparky/contracts";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import * as Path from "node:path";
@@ -218,3 +219,61 @@ describe("Sparky Micro Linux image compatibility", () => {
     }
   });
 });
+
+/**
+ * Real integration verification, enabled only by CI with a compiled guest.
+ * Exercises HostBoxManager.importImage/create/snapshot/click/type, not the
+ * separate smoke-boot.mjs launcher, to prevent the two paths from diverging.
+ */
+const realGuest = process.env.SPARKY_MICRO_REAL_GUEST_DIR;
+const integrationTest = realGuest ? it : it.skip;
+integrationTest("boots and controls the real graphical guest through HostBoxManager", async () => {
+  const root = await mkdtemp(Path.join(tmpdir(), "sparky-real-box-"));
+  const manager = new HostBoxManager(Path.join(root, "state"));
+  const threadId = "microboxes-real-integration" as MicroboxCreateInput["threadId"];
+  let bootLog = "";
+  try {
+    const imported = await manager.importImage(Path.resolve(realGuest!));
+    expect(imported.imageId).toMatch(/^sparky-micro-x86_64-v2-[0-9a-f]{12}$/u);
+    const images = await manager.images();
+    expect(images[0]?.imageId).toBe(imported.imageId);
+    const started = await manager.create({
+      threadId, imageId: imported.imageId, memoryMiB: 512, cpus: 2,
+    });
+    const serial = Path.join(root, "state", "boxes", started.boxId, "boot-serial.log");
+    const deadline = Date.now() + 120_000;
+    let state = "starting";
+    while (Date.now() < deadline) {
+      const current = manager.status(threadId, started.boxId);
+      state = current.state;
+      bootLog = await readFile(serial, "utf8").catch(() => "");
+      if (current.state === "running" || current.state === "error") break;
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    expect(state, `VM never started its GUI: ${bootLog.slice(-4000)}`).toBe("running");
+    expect(bootLog).toContain("SPARKY_MICRO_DESKTOP_READY");
+
+    const screen = await manager.snapshot(threadId, started.boxId);
+    expect(screen.width).toBeGreaterThanOrEqual(640);
+    expect(screen.height).toBeGreaterThanOrEqual(480);
+    await manager.click(threadId, started.boxId,
+      Math.round(screen.width * 0.20), Math.round(screen.height * 0.26), "left");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await manager.type(threadId, started.boxId,
+      "echo sparky_manager_input_ok >/dev/ttyS0\n");
+    let typed = false;
+    const inputDeadline = Date.now() + 20_000;
+    while (Date.now() < inputDeadline) {
+      bootLog = await readFile(serial, "utf8").catch(() => "");
+      if (bootLog.includes("sparky_manager_input_ok")) {
+        typed = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    expect(typed, `UI input did not reach the guest terminal: ${bootLog.slice(-2000)}`).toBe(true);
+  } finally {
+    await manager.stopAll();
+    await rm(root, { recursive: true, force: true });
+  }
+}, 180_000);

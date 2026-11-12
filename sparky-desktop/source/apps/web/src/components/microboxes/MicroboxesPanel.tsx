@@ -46,7 +46,8 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
   const pending = useRef(false);
   const screenRef = useRef<HTMLImageElement | null>(null);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
-  const selectedImage = chosenImageId || images.data?.[0]?.imageId || "";
+  const selectedImage = images.data?.some((item) => item.imageId === chosenImageId)
+    ? chosenImageId : images.data?.[0]?.imageId || "";
   const selectedBox = boxes.data?.find((box) => box.boxId === boxId);
   const running = selectedBox?.state === "running";
   const booting = selectedBox?.state === "starting";
@@ -295,7 +296,7 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
                   disabled={!images.data?.length}
                 >
                   {(images.data ?? []).map((image) => (
-                    <option key={image.imageId} value={image.imageId}>{image.name} · {image.architecture}</option>
+                    <option key={image.imageId} value={image.imageId}>{image.name} · {image.architecture} · {image.imageId.slice(-12)}</option>
                   ))}
                 </select>
                 {!images.data?.length ? <p className="text-xs text-muted-foreground">No guest images installed. Use Settings → Microboxes to prepare an image.</p> : null}

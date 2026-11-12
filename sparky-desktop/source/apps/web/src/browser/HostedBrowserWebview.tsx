@@ -39,8 +39,9 @@ export function HostedBrowserWebview(props: {
   readonly initialUrl: string | null;
   readonly viewport: PreviewViewportSetting;
   readonly zoomFactor: number;
+  readonly persistentBrowserProfileEnabled: boolean;
 }) {
-  const { threadRef, tabId, initialUrl, viewport, zoomFactor } = props;
+  const { threadRef, tabId, initialUrl, viewport, zoomFactor, persistentBrowserProfileEnabled } = props;
   const config = usePreviewWebviewConfig(threadRef.environmentId);
   const [initialSrc] = useState(() => initialUrl ?? "about:blank");
   const tabLeaseRef = useRef<AcquiredDesktopTab | null>(null);
@@ -203,7 +204,9 @@ export function HostedBrowserWebview(props: {
         <webview
           ref={setWebviewRef}
           src={initialSrc}
-          partition={config.partition}
+          partition={
+            persistentBrowserProfileEnabled ? config.partition : config.temporaryPartition
+          }
           webpreferences={config.webPreferences}
           {...(config.preloadUrl ? { preload: config.preloadUrl } : {})}
           data-preview-tab={tabId}

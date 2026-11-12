@@ -118,15 +118,15 @@ export const make = Effect.gen(function* BrowserSessionMake() {
 
   const getPartition = Effect.fn("BrowserSession.getPartition")(
     function* (scope = DEFAULT_BROWSER_PROFILE_SCOPE) {
-    const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(scope)).pipe(
-      Effect.mapError(
-        (cause) =>
-          new BrowserSessionPartitionDerivationError({
-            scope,
-            cause,
-          }),
-      ),
-    );
+      const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(scope)).pipe(
+        Effect.mapError(
+          (cause) =>
+            new BrowserSessionPartitionDerivationError({
+              scope,
+              cause,
+            }),
+        ),
+      );
       return `${PREVIEW_PARTITION_PREFIX}${Encoding.encodeHex(digest).slice(0, 20)}`;
     },
   );
@@ -161,7 +161,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
               cause,
             }),
         });
-        });
+      });
     },
   );
 

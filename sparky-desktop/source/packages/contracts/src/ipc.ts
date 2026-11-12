@@ -590,7 +590,7 @@ export const DesktopPreviewPointerEventSchema: Schema.Codec<DesktopPreviewPointe
  * can attach.
  */
 export interface DesktopPreviewWebviewConfig {
-  /** `persist:t3code-preview` (or whatever the desktop chose). */
+  /** Stable persistent browser profile partition, shared across preview environments. */
   partition: string;
   /**
    * Canonical `<webview webpreferences="...">` string. Encodes the security

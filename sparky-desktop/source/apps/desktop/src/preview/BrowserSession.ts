@@ -12,6 +12,8 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 // Keep the existing partition prefix so previously saved browser data stays usable.
 // Electron persists partitions beginning with "persist:" to the app's user-data directory.
 const PREVIEW_PARTITION_PREFIX = "persist:t3code-preview-";
+// Without the persist: prefix, Chromium keeps this profile in memory only.
+const TEMPORARY_PREVIEW_PARTITION = "t3code-preview-temporary";
 
 /** The default browser profile is shared by every Sparky preview tab and environment. */
 export const DEFAULT_BROWSER_PROFILE_SCOPE = "shared";
@@ -103,6 +105,8 @@ export class BrowserSession extends Context.Service<
     ) => Effect.Effect<string, BrowserSessionPartitionDerivationError>;
     readonly isPartition: (partition: string) => boolean;
     readonly getSession: (scope?: string) => Effect.Effect<Session, BrowserSessionGetSessionError>;
+    readonly getTemporaryPartition: Effect.Effect<string>;
+    readonly getTemporarySession: Effect.Effect<Session, BrowserSessionCreationError>;
     readonly clearCookies: () => Effect.Effect<void, BrowserSessionStorageClearError>;
     readonly clearCache: () => Effect.Effect<void, BrowserSessionCacheClearError>;
   }
@@ -125,9 +129,9 @@ export const make = Effect.gen(function* BrowserSessionMake() {
     return `${PREVIEW_PARTITION_PREFIX}${Encoding.encodeHex(digest).slice(0, 20)}`;
   });
 
-  const getSession = Effect.fn("BrowserSession.getSession")(function* (scope = DEFAULT_BROWSER_PROFILE_SCOPE) {
-    const partition = yield* getPartition(scope);
-    return yield* SynchronizedRef.modifyEffect(sessionsRef, (sessions) => {
+  const getSessionForPartition = Effect.fn("BrowserSession.getSessionForPartition")(
+    function* (scope: string, partition: string) {
+      return yield* SynchronizedRef.modifyEffect(sessionsRef, (sessions) => {
       const existing = sessions.get(partition);
       if (existing) return Effect.succeed([existing, sessions] as const);
       return Effect.try({
@@ -155,13 +159,24 @@ export const make = Effect.gen(function* BrowserSessionMake() {
             cause,
           }),
       });
-    });
-  });
+      });
+    },
+  );
+
+  const getSession = Effect.fn("BrowserSession.getSession")(
+    function* (scope = DEFAULT_BROWSER_PROFILE_SCOPE) {
+      return yield* getSessionForPartition(scope, yield* getPartition(scope));
+    },
+  );
 
   return BrowserSession.of({
     getPartition,
-    isPartition: (partition) => partition.startsWith(PREVIEW_PARTITION_PREFIX),
+    isPartition: (partition) =>
+      partition.startsWith(PREVIEW_PARTITION_PREFIX) ||
+      partition === TEMPORARY_PREVIEW_PARTITION,
     getSession,
+    getTemporaryPartition: Effect.succeed(TEMPORARY_PREVIEW_PARTITION),
+    getTemporarySession: getSessionForPartition("temporary", TEMPORARY_PREVIEW_PARTITION),
     clearCookies: Effect.fn("BrowserSession.clearCookies")(function* () {
       const sessions = yield* SynchronizedRef.get(sessionsRef);
       yield* Effect.all(

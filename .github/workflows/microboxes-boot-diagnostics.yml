@@ -42,34 +42,33 @@ jobs:
         run: |
           sudo apt-get -o Acquire::Retries=3 update
           sudo apt-get -o Acquire::Retries=3 install -y ${{ matrix.host-package }} qemu-utils e2fsprogs
-      # Modify an already-compiled test image on the runner. This does not
-      # modify release artifacts or require rebuilding the Linux toolchain.
-      - name: Probe Weston runtime socket and process lifecycle
+      # Reuse the previously compiled kernel and rootfs, but apply the current
+      # guest startup script verbatim. Only uploaded after successful boot and
+      # real mouse/keyboard acceptance. No publication or automatic install.
+      - name: Patch guest desktop startup from the PR source
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          source = Path("microboxes/os/overlay/etc/init.d/S90sparky-micro").read_text()
-          needle = '      emit_console "SPARKY_MICRO_DESKTOP_ERROR: Weston did not open a display"'
-          assert needle in source
-          probe = """
-                # Diagnostic only: report the actual Weston socket and process state.
-                for d in /run/user/0 /run /tmp; do
-                echo "SPARKY_DIAG_DIR: $d" > /dev/ttyS0 2>/dev/null || true
-                ls -lan "$d" > /dev/ttyS0 2>/dev/null || true
-                done
-                echo "SPARKY_DIAG_PROCESSES:" > /dev/ttyS0 2>/dev/null || true
-                ps -w > /dev/ttyS0 2>/dev/null || true
-                echo "SPARKY_DIAG_LOG:" > /dev/ttyS0 2>/dev/null || true
-                cat /var/log/sparky-micro-desktop.log > /dev/ttyS0 2>/dev/null || true
-                echo "SPARKY_DIAG_DONE" > /dev/ttyS0 2>/dev/null || true
-          """
-          Path("/tmp/sparky-micro-diagnostic-init").write_text(source.replace(needle, probe + needle))
-          PY
           disk=dist/microboxes/sparky-micro-${{ matrix.arch }}/rootfs.ext2
           sudo debugfs -w -R 'rm /etc/init.d/S90sparky-micro' "$disk"
-          sudo debugfs -w -R 'write /tmp/sparky-micro-diagnostic-init /etc/init.d/S90sparky-micro' "$disk"
+          sudo debugfs -w -R 'write microboxes/os/overlay/etc/init.d/S90sparky-micro /etc/init.d/S90sparky-micro' "$disk"
           sudo debugfs -w -R 'set_inode_field /etc/init.d/S90sparky-micro mode 0100755' "$disk"
           sudo debugfs -R 'stat /etc/init.d/S90sparky-micro' "$disk"
+      - name: Mark the new guest revision and refresh file checksums
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          folder = Path("dist/microboxes/sparky-micro-${{ matrix.arch }}")
+          manifest_path = folder / "image.json"
+          image = json.loads(manifest_path.read_text())
+          assert image["id"] == "sparky-micro-${{ matrix.arch }}"
+          assert image["kind"] == "linux-kernel"
+          assert image["architecture"] == "${{ matrix.arch }}"
+          image["boxImageVersion"] = 2
+          manifest_path.write_text(json.dumps(image, indent=2) + "\n")
+          PY
+          cd dist/microboxes/sparky-micro-${{ matrix.arch }}
+          kernel=$(python3 -c 'import json; print(json.load(open("image.json"))["kernel"])')
+          sha256sum "$kernel" rootfs.ext2 image.json > SHA256SUMS
       - name: Record real boot status, Weston and seatd diagnostics
         env:
           SPARKY_MICRO_CAPTURE_GUEST_LOGS: "1"
@@ -86,3 +85,11 @@ jobs:
           path: sparky-desktop/source/dist/microboxes/screenshots-${{ matrix.arch }}/
           if-no-files-found: ignore
           retention-days: 7
+      - name: Upload boot-verified guest image for manual testing (no release)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparky-micro-tested-${{ matrix.arch }}
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-${{ matrix.arch }}/
+          retention-days: 14
+

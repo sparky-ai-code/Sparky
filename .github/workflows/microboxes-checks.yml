@@ -42,6 +42,10 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
           PUPPETEER_SKIP_DOWNLOAD: "true"
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      # Run focused image-import tests before unrelated contract checks: a
+      # failure in another subsystem must not prevent image install verification.
+      - name: Exercise VM monitor and guest import tests
+        run: pnpm --filter t3 exec vp test run src/microboxes/QmpClient.test.ts src/microboxes/HostBoxManager.test.ts
       - name: Typecheck contracts
         run: pnpm --filter @sparky/contracts typecheck
       - name: Typecheck shared client runtime
@@ -53,8 +57,6 @@ jobs:
       - name: Typecheck web
         continue-on-error: true # Inspect all packages in one run.
         run: pnpm --filter @sparky/web typecheck
-      - name: Exercise VM monitor and guest import tests
-        run: pnpm --filter t3 exec vp test run src/microboxes/QmpClient.test.ts src/microboxes/HostBoxManager.test.ts
       - name: Verify Microboxes agent MCP tool registration
         run: pnpm --filter t3 exec vp test run src/mcp/McpHttpServer.test.ts
       - name: Verify native agent MCP schema compatibility

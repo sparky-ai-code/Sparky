@@ -74,6 +74,7 @@ cp "$ROOTFS" "$OUTPUT_DIR/rootfs.ext2"
 cat > "$OUTPUT_DIR/image.json" <<'EOF'
 {
   "id": "sparky-micro-x86_64",
+  "boxImageVersion": 2,
   "name": "Sparky Micro Linux",
   "kind": "linux-kernel",
   "architecture": "x86_64",

@@ -34,3 +34,14 @@ compiled against its userspace or packaged as compatible static binaries.
 Windows and macOS installer testing requires separate, properly licensed
 guest operating systems. The Sparky Micro Linux image does not run .exe, .msi,
 .dmg, or .pkg installers.
+
+### Required guest image revision
+
+Rebuilding Sparky's Windows installer does **not** update the guest filesystem. The
+Linux guest image built by GitHub Actions must be downloaded separately, extracted
+and imported using Settings → Microboxes. Current official images include
+`"boxImageVersion": 2`. The backend intentionally rejects older guest images
+without this revision, because they can show a Buildroot text login instead of a
+controllable desktop. Delete boxes using the old image before importing an updated
+image folder, then create a new box. A successful compile alone does **not** certify
+the image: its graphical boot smoke test must pass as well.

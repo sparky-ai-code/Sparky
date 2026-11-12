@@ -24,6 +24,7 @@ type GuestManifest = {
   file: string;
   kernel?: string;
   append?: string;
+  boxImageVersion?: number;
 };
 type MutableStatus = { -readonly [K in keyof MicroboxStatus]: MicroboxStatus[K] };
 type RunningBox = {
@@ -39,6 +40,17 @@ const MAX_BOXES = 4;
 const SAFE_IMAGE_ID = /^[a-z0-9_-]{1,48}$/u;
 const SAFE_IMAGE_FILE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u;
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
+const CURRENT_SPARKY_MICRO_IMAGE_VERSION = 2;
+function assertCurrentSparkyMicroImage(manifest: GuestManifest): void {
+  if (/^sparky-micro-(?:x86_64|aarch64)$/u.test(manifest.id) &&
+      manifest.boxImageVersion !== CURRENT_SPARKY_MICRO_IMAGE_VERSION) {
+    throw new MicroboxHostError("image-missing",
+      "This is an outdated Sparky Micro Linux image that may boot to a login prompt. Delete existing boxes using it, then install a newly built Linux guest image folder (not the Windows installer).");
+  }
+}
+export function acceptsBoxInput(state: MicroboxStatus["state"]): boolean {
+  return state === "starting" || state === "running";
+}
 
 const DESKTOP_READY_MARKER = "SPARKY_MICRO_DESKTOP_READY";
 const DESKTOP_FAILED_MARKER = "SPARKY_MICRO_DESKTOP_ERROR";
@@ -188,6 +200,7 @@ export class HostBoxManager {
     ) {
       throw new MicroboxHostError("invalid-input", "The image manifest is invalid.");
     }
+    assertCurrentSparkyMicroImage(manifest);
     const files = ["image.json", manifest.file, ...(manifest.kernel ? [manifest.kernel] : [])];
     for (const name of files) {
       const real = await Fs.realpath(Path.join(source, name)).catch(() => {
@@ -275,6 +288,7 @@ export class HostBoxManager {
       (manifest.kind === "disk" && !manifest.file.toLowerCase().endsWith(".qcow2")) ||
       (manifest.kind === "linux-kernel" && (!manifest.kernel || !SAFE_IMAGE_FILE.test(manifest.kernel)))
     ) throw new MicroboxHostError("image-missing", "The selected guest image is invalid.");
+    assertCurrentSparkyMicroImage(manifest);
     const realDir = await Fs.realpath(directory);
     const files = [manifest.file, ...(manifest.kernel ? [manifest.kernel] : [])];
     for (const name of files) {
@@ -509,8 +523,8 @@ export class HostBoxManager {
 
   private running(threadId: string, boxId: string): RunningBox {
     const box = this.owned(threadId, boxId);
-    if (box.status.state !== "running") {
-      throw new MicroboxHostError("busy", "This box isn't running.");
+    if (!acceptsBoxInput(box.status.state)) {
+      throw new MicroboxHostError("busy", "This box isn't accepting input.");
     }
     return box;
   }

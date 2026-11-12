@@ -51,6 +51,7 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
   const running = selectedBox?.state === "running";
   const booting = selectedBox?.state === "starting";
   const showingScreen = running || booting;
+  const acceptsInput = showingScreen; // Input is valid during startup, before the desktop-ready marker.
 
   useEffect(() => {
     if (!enabled) return;
@@ -143,8 +144,13 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
     };
   };
 
+  const reportInput = (op: Promise<{ readonly _tag: string }>) => {
+    void op.then((result) => {
+      if (result._tag !== "Success") setScreenError("The guest did not accept that input.");
+    }).catch(() => setScreenError("The guest did not accept that input."));
+  };
   const onPointerDown = (event: PointerEvent<HTMLImageElement>) => {
-    if (!running || !boxId || event.button !== 0) return;
+    if (!acceptsInput || !boxId || event.button !== 0) return;
     pointerStart.current = imagePoint(event.currentTarget, event.clientX, event.clientY);
     event.currentTarget.setPointerCapture(event.pointerId);
     event.currentTarget.focus();
@@ -152,37 +158,37 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
   const onPointerUp = (event: PointerEvent<HTMLImageElement>) => {
     const start = pointerStart.current;
     pointerStart.current = null;
-    if (!running || !boxId || !start) return;
+    if (!acceptsInput || !boxId || !start) return;
     const end = imagePoint(event.currentTarget, event.clientX, event.clientY);
     if (!end) return;
     if (Math.hypot(end.x - start.x, end.y - start.y) > 6) {
-      void dragBox({
+      reportInput(dragBox({
         environmentId,
         input: { threadId, boxId, fromX: start.x, fromY: start.y, toX: end.x, toY: end.y },
-      });
+      }));
     } else {
-      void clickBox({
+      reportInput(clickBox({
         environmentId, input: { threadId, boxId, x: end.x, y: end.y, button: "left" },
-      });
+      }));
     }
   };
   const onContextMenu = (event: MouseEvent<HTMLImageElement>) => {
     event.preventDefault();
-    if (!running || !boxId) return;
+    if (!acceptsInput || !boxId) return;
     const end = imagePoint(event.currentTarget, event.clientX, event.clientY);
     if (!end) return;
-    void clickBox({ environmentId, input: { threadId, boxId, ...end, button: "right" } });
+    reportInput(clickBox({ environmentId, input: { threadId, boxId, ...end, button: "right" } }));
   };
 
   const onScreenWheel = (event: WheelEvent<HTMLImageElement>) => {
-    if (!running || !boxId || event.deltaY === 0) return;
+    if (!acceptsInput || !boxId || event.deltaY === 0) return;
     const direction = event.deltaY < 0 ? "up" : "down";
     const steps = Math.min(16, Math.max(1, Math.round(Math.abs(event.deltaY) / 100)));
-    void scrollBox({ environmentId, input: { threadId, boxId, direction, steps } });
+    reportInput(scrollBox({ environmentId, input: { threadId, boxId, direction, steps } }));
   };
 
   const onScreenKey = (event: KeyboardEvent<HTMLImageElement>) => {
-    if (!running || !boxId || event.repeat) return;
+    if (!acceptsInput || !boxId || event.repeat) return;
     let key: string | null = null;
     if (event.ctrlKey || event.metaKey || event.altKey) {
       const modifiers = [
@@ -194,14 +200,14 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
       key = [...modifiers, event.key].join("+");
     } else if (event.key.length === 1) {
       event.preventDefault();
-      void typeBox({ environmentId, input: { threadId, boxId, text: event.key } });
+      reportInput(typeBox({ environmentId, input: { threadId, boxId, text: event.key } }));
       return;
     } else if (["Enter", "Escape", "Backspace", "Tab", "Delete", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
       key = event.key;
     }
     if (key) {
       event.preventDefault();
-      void pressBox({ environmentId, input: { threadId, boxId, key } });
+      reportInput(pressBox({ environmentId, input: { threadId, boxId, key } }));
     }
   };
 
@@ -255,7 +261,7 @@ export function MicroboxesPanel({ enabled, internetAllowed, boxId, threadRef }: 
             ) : <span className="text-xs text-white/60">Connecting to the box display…</span>}
           </div>
           <p className="shrink-0 border-t border-white/10 px-3 py-1.5 text-center text-[11px] text-white/60">
-            Click the display to focus it, then use your keyboard.
+            Click the display to focus it. Keyboard and mouse input also work while the guest starts.
           </p>
           {selectedBox?.bootMessage ? (
             <p role="status" className="px-3 py-2 text-center text-xs text-amber-200">

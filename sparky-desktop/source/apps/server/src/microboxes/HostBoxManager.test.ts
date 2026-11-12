@@ -6,7 +6,7 @@ import { MicroboxImage } from "@sparky/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { HostBoxManager, microLinuxBootState, visibleLinuxKernelArguments } from "./HostBoxManager.ts";
+import { HostBoxManager, acceptsBoxInput, microLinuxBootState, visibleLinuxKernelArguments } from "./HostBoxManager.ts";
 
 describe("Microboxes image import", () => {
   it("imports the existing Sparky Micro Linux x86_64 release folder", async () => {
@@ -28,6 +28,7 @@ describe("Microboxes image import", () => {
         file: "rootfs.ext2",
         kernel: "bzImage",
         append: "root=/dev/vda rw console=ttyS0",
+        boxImageVersion: 2,
       }));
       await writeFile(Path.join(source, "bzImage"), "kernel image");
       await writeFile(Path.join(source, "rootfs.ext2"), "filesystem image");
@@ -52,7 +53,7 @@ describe("Microboxes image import", () => {
       const manifest = {
         id: "sparky-micro-x86_64", name: "Sparky Micro Linux",
         kind: "linux-kernel", architecture: "x86_64",
-        file: "rootfs.ext2", kernel: "bzImage",
+        file: "rootfs.ext2", kernel: "bzImage", boxImageVersion: 2,
       };
       await writeFile(Path.join(download, "image.json"), JSON.stringify(manifest));
       await writeFile(Path.join(download, "rootfs.ext2"), "version 1");
@@ -92,6 +93,13 @@ describe("Microboxes image import", () => {
 });
 
 describe("Sparky Micro Linux desktop readiness", () => {
+  it("forwards input during boot to avoid a visible but unresponsive VM", () => {
+    expect(acceptsBoxInput("starting")).toBe(true);
+    expect(acceptsBoxInput("running")).toBe(true);
+    expect(acceptsBoxInput("stopped")).toBe(false);
+    expect(acceptsBoxInput("stopping")).toBe(false);
+    expect(acceptsBoxInput("error")).toBe(false);
+  });
   it("does not mistake a connected VM monitor or kernel boot output for a desktop", () => {
     expect(microLinuxBootState("Booting the kernel\n")).toBe("booting");
     expect(microLinuxBootState("[0.0] Linux version\nStarting syslogd")).toBe("booting");
@@ -104,5 +112,28 @@ describe("Sparky Micro Linux desktop readiness", () => {
       .toBe("root=/dev/vda rw console=ttyS0 console=tty0");
     expect(visibleLinuxKernelArguments("root=/dev/vda console=tty0"))
       .toBe("root=/dev/vda console=tty0");
+  });
+});
+
+describe("Sparky Micro Linux image compatibility", () => {
+  it("does not reinstall the old login-only guest from the Windows-installer generation", async () => {
+    const root = await mkdtemp(Path.join(tmpdir(), "sparky-old-box-image-"));
+    const source = Path.join(root, "image");
+    try {
+      await mkdir(source);
+      await writeFile(Path.join(source, "image.json"), JSON.stringify({
+        id: "sparky-micro-x86_64",
+        name: "Sparky Micro Linux",
+        kind: "linux-kernel",
+        architecture: "x86_64",
+        file: "rootfs.ext2",
+        kernel: "bzImage",
+      }));
+      const manager = new HostBoxManager(Path.join(root, "installed"));
+      await expect(manager.importImage(source)).rejects.toMatchObject({ code: "image-missing" });
+      await expect(manager.images()).resolves.toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

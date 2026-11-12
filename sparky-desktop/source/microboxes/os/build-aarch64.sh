@@ -62,29 +62,10 @@ test -n "$KCONFIG" && test -s "$KCONFIG"
 for flag in CONFIG_USB_XHCI_HCD CONFIG_USB_XHCI_PCI CONFIG_USB_HID CONFIG_INPUT_EVDEV; do
   grep -q "^${flag}=y$" "$KCONFIG" || { echo "Required kernel input driver missing: $flag" >&2; exit 1; }
 done
-grep -q '^# BR2_TARGET_GENERIC_GETTY is not set
-KERNEL="$OUT_DIR/images/Image"
-ROOTFS="$OUT_DIR/images/rootfs.ext2"
-test -s "$KERNEL" && test -s "$ROOTFS"
-cp "$KERNEL" "$OUTPUT_DIR/Image"
-cp "$ROOTFS" "$OUTPUT_DIR/rootfs.ext2"
-cat > "$OUTPUT_DIR/image.json" <<'EOF'
-{
-  "id": "sparky-micro-aarch64",
-  "name": "Sparky Micro Linux",
-  "kind": "linux-kernel",
-  "architecture": "aarch64",
-  "file": "rootfs.ext2",
-  "kernel": "Image",
-  "append": "root=/dev/vda rw console=ttyAMA0"
-}
-EOF
-(
-  cd "$OUTPUT_DIR"
-  sha256sum Image rootfs.ext2 image.json > SHA256SUMS
-)
-echo "Sparky Micro Linux image produced: $OUTPUT_DIR"
- "$OUT_DIR/.config" || { echo "Graphical Boxes image must not enable getty" >&2; exit 1; }
+if ! grep -Fq '# BR2_TARGET_GENERIC_GETTY is not set' "$OUT_DIR/.config"; then
+  echo "Graphical Boxes image must not enable getty" >&2
+  exit 1
+fi
 KERNEL="$OUT_DIR/images/Image"
 ROOTFS="$OUT_DIR/images/rootfs.ext2"
 test -s "$KERNEL" && test -s "$ROOTFS"

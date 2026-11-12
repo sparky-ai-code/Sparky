@@ -7,7 +7,7 @@ import { useEffect, useMemo } from "react";
 import { isElectron } from "~/env";
 import { useTheme } from "~/hooks/useTheme";
 import { useActivePreviewSessions } from "~/previewStateStore";
-import { useClientSettings } from "~/hooks/useSettings";
+import { useClientSettings, useClientSettingsHydrated } from "~/hooks/useSettings";
 
 import { readPreviewAnnotationTheme } from "./annotationTheme";
 import { useBrowserPointerStore } from "./browserPointerStore";
@@ -16,6 +16,8 @@ import { HostedBrowserWebview } from "./HostedBrowserWebview";
 export function ElectronBrowserHost() {
   const { resolvedTheme } = useTheme();
   const previewByThreadKey = useActivePreviewSessions();
+  // Do not mount signed-in webviews before the saved privacy preference loads.
+  const clientSettingsHydrated = useClientSettingsHydrated();
   const persistentBrowserProfileEnabled = useClientSettings(
     (settings) => settings.persistentBrowserProfileEnabled,
   );
@@ -75,7 +77,7 @@ export function ElectronBrowserHost() {
     });
   }, []);
 
-  if (!isElectron) return null;
+  if (!isElectron || !clientSettingsHydrated) return null;
   return (
     <div className="contents" data-electron-browser-host>
       {sessions.map(({ threadRef, snapshot, zoomFactor }) => {

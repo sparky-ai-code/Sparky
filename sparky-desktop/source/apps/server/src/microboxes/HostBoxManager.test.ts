@@ -319,8 +319,11 @@ integrationTest("boots and controls the real graphical guest through HostBoxMana
     await manager.click(threadId, started.boxId,
       Math.round(screen.width * 0.20), Math.round(screen.height * 0.26), "left");
     await new Promise((resolve) => setTimeout(resolve, 350));
+    await manager.type(threadId, started.boxId, "ls /dev/vdb /dev/vdb1 >/dev/ttyS0\n");
+    await manager.type(threadId, started.boxId, "cat /proc/filesystems >/dev/ttyS0\n");
     await manager.type(threadId, started.boxId, "mkdir -p /mnt/installer\n");
-    await manager.type(threadId, started.boxId, "mount -t vfat -o ro /dev/vdb1 /mnt/installer\n");
+    await manager.type(threadId, started.boxId, "mount -t vfat -o ro /dev/vdb1 /mnt/installer 2>/dev/ttyS0\n");
+    await manager.type(threadId, started.boxId, "ls /mnt/installer >/dev/ttyS0\n");
     await manager.type(threadId, started.boxId, "cat /mnt/installer/sparky-installer.sh >/dev/ttyS0\n");
     let readable = false;
     const mountDeadline = Date.now() + 20_000;
@@ -332,7 +335,7 @@ integrationTest("boots and controls the real graphical guest through HostBoxMana
       }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    expect(readable, `Attached file was not readable from the guest: ${serialOutput.slice(-2000)}`).toBe(true);
+    expect(readable, `Attached file was not readable from the guest: ${serialOutput.slice(-6000)}`).toBe(true);
   } finally {
     await manager.stopAll();
     await rm(root, { recursive: true, force: true });

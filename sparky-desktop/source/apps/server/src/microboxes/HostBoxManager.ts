@@ -532,10 +532,14 @@ export class HostBoxManager {
         const mountDirectory = Path.join(directory, "installer");
         await Fs.mkdir(mountDirectory, { recursive: true });
         await Fs.copyFile(resolved, Path.join(mountDirectory, artifactName));
-        // QEMU snapshots a virtual FAT directory at boot; never mutate while guest is running.
+        // QEMU's USB-storage device rejects an inherently read-only VVFAT
+        // backend ("Block node is read-only") before the guest even boots.
+        // Present the guest-local directory as a VirtIO disk, which the custom
+        // Linux kernel already supports, and use a temporary COW snapshot so
+        // any guest-side writes never modify the staged installer or workspace.
+        // The guest sees this as its second VirtIO disk (/dev/vdb).
         args.push(
-          "-drive", `file=fat:ro:${guestDrivePath(mountDirectory)},format=raw,if=none,id=installer`,
-          "-device", "usb-storage,drive=installer",
+          "-drive", `file=fat:${guestDrivePath(mountDirectory)},format=raw,if=virtio,snapshot=on`,
         );
       }
       if (manifest.kind === "linux-kernel") {

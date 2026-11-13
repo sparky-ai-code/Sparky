@@ -316,9 +316,23 @@ integrationTest("boots and controls the real graphical guest through HostBoxMana
 
     // Verify the file is actually accessible to the guest and not merely a
     // second QEMU drive that happens to allow the desktop to start.
+    // A desktop-ready marker may precede Foot's first painted frame.
+    await new Promise((resolve) => setTimeout(resolve, 1_250));
     await manager.click(threadId, started.boxId,
       Math.round(screen.width * 0.20), Math.round(screen.height * 0.26), "left");
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await manager.type(threadId, started.boxId, "echo sparky_attachment_input_ok >/dev/ttyS0\n");
+    let keyboardReady = false;
+    const keyboardDeadline = Date.now() + 10_000;
+    while (Date.now() < keyboardDeadline) {
+      serialOutput = await readFile(serial, "utf8").catch(() => "");
+      if (serialOutput.includes("sparky_attachment_input_ok")) {
+        keyboardReady = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    expect(keyboardReady, `Guest input did not reach Foot after attachment: ${serialOutput.slice(-2500)}`).toBe(true);
     await manager.type(threadId, started.boxId, "ls /dev/vdb /dev/vdb1 >/dev/ttyS0\n");
     await manager.type(threadId, started.boxId, "cat /proc/filesystems >/dev/ttyS0\n");
     await manager.type(threadId, started.boxId, "mkdir -p /mnt/installer\n");

@@ -16,6 +16,8 @@ export class QmpClient {
   private readonly readyPromise: Promise<void>;
   private greeting = false;
   private closed = false;
+  private processClosed = false;
+  private stopPromise: Promise<void> | undefined;
   private readonly process: ChildProcessWithoutNullStreams;
 
   constructor(child: ChildProcessWithoutNullStreams) {
@@ -28,6 +30,7 @@ export class QmpClient {
     child.stdout.on("data", (chunk: string) => this.receive(chunk));
     child.on("error", (cause) => this.close(cause));
     child.on("exit", () => this.close(new Error("The box has stopped.")));
+    child.on("close", () => { this.processClosed = true; });
   }
 
   get ready(): Promise<void> {
@@ -105,9 +108,39 @@ export class QmpClient {
     });
   }
 
-  async stop(): Promise<void> {
+  stop(): Promise<void> {
     this.close(new Error("Box stopped."));
-    this.process.kill();
+    if (this.stopPromise) return this.stopPromise;
+    // On Windows, kill() only requests termination; QEMU can still hold
+    // boot-serial.log and the disk handles for a short time afterwards.
+    // Wait for the child "close" event (not just "exit") before deleting files.
+    this.stopPromise = new Promise<void>((resolve) => {
+      if (this.processClosed) {
+        resolve();
+        return;
+      }
+      let finished = false;
+      let terminateTimer: ReturnType<typeof setTimeout> | undefined;
+      let lastResortTimer: ReturnType<typeof setTimeout> | undefined;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        if (terminateTimer) clearTimeout(terminateTimer);
+        if (lastResortTimer) clearTimeout(lastResortTimer);
+        this.process.off("close", finish);
+        resolve();
+      };
+      this.process.once("close", finish);
+      terminateTimer = setTimeout(() => {
+        if (!this.processClosed) this.process.kill("SIGKILL");
+      }, 4_000);
+      lastResortTimer = setTimeout(finish, 8_000);
+      if (this.process.exitCode === null && this.process.signalCode === null) {
+        try { this.process.kill(); }
+        catch { finish(); }
+      }
+    });
+    return this.stopPromise;
   }
 }
 

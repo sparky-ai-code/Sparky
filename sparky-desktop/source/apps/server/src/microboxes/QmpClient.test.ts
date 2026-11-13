@@ -50,6 +50,18 @@ describe("Microboxes QMP monitor", () => {
     await expect(qmp.command("query-status")).rejects.toThrow("not running");
   });
 
+  it("waits for the QEMU process to release file handles before reporting stopped", async () => {
+    const { qmp, process } = simulateMachine();
+    await qmp.ready;
+    let completed = false;
+    const stopping = qmp.stop().then(() => { completed = true; });
+    await Promise.resolve();
+    expect(completed).toBe(false);
+    process.emit("close", 0);
+    await stopping;
+    expect(completed).toBe(true);
+  });
+
   it("encodes physical keyboard keys with balanced key-down/up events", () => {
     expect(keyEvent("a", true)).toEqual({
       type: "key", data: { down: true, key: { type: "qcode", data: "a" } },

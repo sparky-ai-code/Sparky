@@ -313,6 +313,26 @@ integrationTest("boots and controls the real graphical guest through HostBoxMana
     const screen = await manager.snapshot(threadId, started.boxId);
     expect(screen.width).toBeGreaterThanOrEqual(640);
     expect(screen.height).toBeGreaterThanOrEqual(480);
+
+    // Verify the file is actually accessible to the guest and not merely a
+    // second QEMU drive that happens to allow the desktop to start.
+    await manager.click(threadId, started.boxId,
+      Math.round(screen.width * 0.20), Math.round(screen.height * 0.26), "left");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await manager.type(threadId, started.boxId, "mkdir -p /mnt/installer\n");
+    await manager.type(threadId, started.boxId, "mount -t vfat -o ro /dev/vdb1 /mnt/installer\n");
+    await manager.type(threadId, started.boxId, "cat /mnt/installer/sparky-installer.sh >/dev/ttyS0\n");
+    let readable = false;
+    const mountDeadline = Date.now() + 20_000;
+    while (Date.now() < mountDeadline) {
+      serialOutput = await readFile(serial, "utf8").catch(() => "");
+      if (serialOutput.includes("attached installer")) {
+        readable = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    expect(readable, `Attached file was not readable from the guest: ${serialOutput.slice(-2000)}`).toBe(true);
   } finally {
     await manager.stopAll();
     await rm(root, { recursive: true, force: true });

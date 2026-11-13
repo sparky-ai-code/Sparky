@@ -187,6 +187,13 @@ describe("Sparky Micro Linux desktop readiness", () => {
     expect(microLinuxBootState("Booting the kernel\n")).toBe("booting");
     expect(microLinuxBootState("[0.0] Linux version\nStarting syslogd")).toBe("booting");
     expect(microLinuxBootState("SPARKY_MICRO_DESKTOP_READY\n")).toBe("ready");
+    expect(microLinuxBootState("SPARKY_MICRO_DESKTOP_READY\n", true)).toBe("failed");
+    expect(microLinuxBootState(
+      "SPARKY_MICRO_INSTALLER_READY\nSPARKY_MICRO_DESKTOP_READY\n", true,
+    )).toBe("ready");
+    expect(microLinuxBootState(
+      "SPARKY_MICRO_INSTALLER_MOUNT_ERROR\nSPARKY_MICRO_DESKTOP_READY\n", true,
+    )).toBe("failed");
     expect(microLinuxBootState("Kernel panic - not syncing: VFS: Unable to mount root fs")).toBe("failed");
     expect(microLinuxBootState("SPARKY_MICRO_DESKTOP_ERROR")).toBe("failed");
   });

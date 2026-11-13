@@ -16,7 +16,7 @@ permissions:
 jobs:
   host-manager-boot:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 55
     defaults:
       run:
         working-directory: sparky-desktop/source
@@ -45,8 +45,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p dist/microboxes/verified-x86_64
-          gh run download 43257039967 --repo sparky-ai-code/Sparky \
-            --name sparky-micro-tested-x86_64 --dir dist/microboxes/verified-x86_64
+          # This guest was rebuilt with built-in VFAT support. The earlier
+          # image booted the GUI but could not read attached installer disks.
+          for attempt in $(seq 1 90); do
+            if gh run download 43373834025 --repo sparky-ai-code/Sparky \
+              --name sparky-micro-x86_64 --dir dist/microboxes/verified-x86_64; then
+              break
+            fi
+            if [ "$attempt" -eq 90 ]; then
+              echo "Rebuilt VFAT-capable guest image artifact did not become available." >&2
+              exit 1
+            fi
+            sleep 20
+          done
           test -s dist/microboxes/verified-x86_64/image.json
           cd dist/microboxes/verified-x86_64
           sha256sum --check SHA256SUMS
@@ -61,7 +72,7 @@ jobs:
   host-manager-windows:
     name: Verify native Windows QEMU launch
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 55
     defaults:
       run:
         working-directory: sparky-desktop/source
@@ -93,7 +104,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           New-Item -ItemType Directory -Force dist/microboxes/verified-x86_64 | Out-Null
-          gh run download 43257039967 --repo sparky-ai-code/Sparky --name sparky-micro-tested-x86_64 --dir dist/microboxes/verified-x86_64
+          for ($attempt = 1; $attempt -le 90; $attempt++) {
+            gh run download 43373834025 --repo sparky-ai-code/Sparky --name sparky-micro-x86_64 --dir dist/microboxes/verified-x86_64
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq 90) { throw "The rebuilt VFAT-capable Linux guest artifact is unavailable." }
+            Start-Sleep -Seconds 20
+          }
           if (!(Test-Path "dist/microboxes/verified-x86_64/rootfs.ext2")) { throw "Missing guest root filesystem" }
       - name: Run HostBoxManager QEMU boot, screenshot and GUI interaction on Windows
         env:

@@ -83,12 +83,19 @@ const LINUX_BOOT_TIMEOUT_MS = 120_000;
 const ARM_EMULATED_BOOT_TIMEOUT_MS = 240_000;
 
 /** Boot diagnostics are local; only these fixed status messages reach an agent. */
-export function microLinuxBootState(serialOutput: string): "ready" | "failed" | "booting" {
-  if (serialOutput.includes(DESKTOP_READY_MARKER)) return "ready";
+export function microLinuxBootState(
+  serialOutput: string, installerRequired = false,
+): "ready" | "failed" | "booting" {
+  // A painted desktop without its requested installer is not a successful box.
   if (
     serialOutput.includes(DESKTOP_FAILED_MARKER) ||
+    (installerRequired && serialOutput.includes("SPARKY_MICRO_INSTALLER_MOUNT_ERROR")) ||
     /kernel panic|VFS: Unable to mount root fs|No working init found/iu.test(serialOutput)
   ) return "failed";
+  if (serialOutput.includes(DESKTOP_READY_MARKER)) {
+    return installerRequired && !serialOutput.includes("SPARKY_MICRO_INSTALLER_READY")
+      ? "failed" : "ready";
+  }
   return "booting";
 }
 
@@ -185,7 +192,7 @@ export class HostBoxManager {
       box.status.state === "starting"
     ) {
       const serialOutput = await Fs.readFile(serialFile, "utf8").catch(() => "");
-      outcome = microLinuxBootState(serialOutput);
+      outcome = microLinuxBootState(serialOutput, !!box.status.artifactName);
       if (outcome !== "booting") break;
       await new Promise<void>((resolve) => setTimeout(resolve, BOOT_POLL_MS));
     }
@@ -196,9 +203,11 @@ export class HostBoxManager {
       return;
     }
     box.status.state = "error";
-    box.status.bootMessage = outcome === "failed"
-      ? "The Linux guest could not start its desktop. Install the updated Sparky Micro Linux image."
-      : "The Linux graphical desktop did not become ready. Install the latest Sparky Micro Linux image and recreate this box.";
+    box.status.bootMessage = box.status.artifactName && outcome === "failed"
+      ? "The attached installer is not accessible in this Linux guest. Import a new Sparky Micro Linux image with VFAT support and create a new box."
+      : outcome === "failed"
+        ? "The Linux guest could not start its desktop. Install the updated Sparky Micro Linux image."
+        : "The Linux graphical desktop did not become ready. Install the latest Sparky Micro Linux image and recreate this box.";
     await box.qmp.stop().catch(() => undefined);
   }
 

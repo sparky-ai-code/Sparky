@@ -228,7 +228,7 @@ describe("Sparky Micro Linux image compatibility", () => {
  */
 const realGuest = process.env.SPARKY_MICRO_REAL_GUEST_DIR;
 const integrationTest = realGuest ? it : it.skip;
-integrationTest("boots and controls the real graphical guest through HostBoxManager", async () => {
+integrationTest("boots and controls the real graphical guest through HostBoxManager without attachment", async () => {
   const root = await mkdtemp(Path.join(tmpdir(), "sparky-real-box-"));
   const manager = new HostBoxManager(Path.join(root, "state"));
   const threadId = "microboxes-real-integration" as MicroboxCreateInput["threadId"];
@@ -273,6 +273,46 @@ integrationTest("boots and controls the real graphical guest through HostBoxMana
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     expect(typed, `UI input did not reach the guest terminal: ${bootLog.slice(-2000)}`).toBe(true);
+  } finally {
+    await manager.stopAll();
+    await rm(root, { recursive: true, force: true });
+  }
+}, 180_000);
+
+integrationTest("boots and controls the real graphical guest through HostBoxManager with installer attachment", async () => {
+  const root = await mkdtemp(Path.join(tmpdir(), "sparky-attached-box-"));
+  const workspace = Path.join(root, "workspace");
+  const manager = new HostBoxManager(Path.join(root, "state"));
+  const threadId = "attached-real-integration" as MicroboxCreateInput["threadId"];
+  let serialOutput = "";
+  try {
+    await mkdir(Path.join(workspace, "dist"), { recursive: true });
+    await writeFile(Path.join(workspace, "dist", "sample-installer.sh"),
+      "#!/bin/sh\\necho attached installer\\n");
+    const imported = await manager.importImage(Path.resolve(realGuest!));
+    const started = await manager.create({
+      threadId,
+      imageId: imported.imageId,
+      memoryMiB: 512,
+      cpus: 2,
+      artifactRelativePath: "dist/sample-installer.sh",
+    }, workspace);
+    expect(started.artifactName).toBe("sparky-installer.sh");
+    const serial = Path.join(root, "state", "boxes", started.boxId, "boot-serial.log");
+    const deadline = Date.now() + 120_000;
+    let state: string = started.state;
+    while (Date.now() < deadline) {
+      const current = manager.status(threadId, started.boxId);
+      state = current.state;
+      serialOutput = await readFile(serial, "utf8").catch(() => "");
+      if (state === "running" || state === "error") break;
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    expect(state, `Guest failed to boot with attached installer: ${serialOutput.slice(-4000)}`).toBe("running");
+    expect(serialOutput).toContain("SPARKY_MICRO_DESKTOP_READY");
+    const screen = await manager.snapshot(threadId, started.boxId);
+    expect(screen.width).toBeGreaterThanOrEqual(640);
+    expect(screen.height).toBeGreaterThanOrEqual(480);
   } finally {
     await manager.stopAll();
     await rm(root, { recursive: true, force: true });

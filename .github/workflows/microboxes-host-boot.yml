@@ -55,7 +55,7 @@ jobs:
           SPARKY_MICRO_REAL_GUEST_DIR: ${{ github.workspace }}/sparky-desktop/source/dist/microboxes/verified-x86_64
         run: |
           pnpm --filter t3 exec vp test run src/microboxes/HostBoxManager.test.ts \
-            -t "boots and controls the real graphical guest through HostBoxManager"
+            -t "through HostBoxManager"
 
   host-manager-windows:
     name: Verify native Windows QEMU launch
@@ -97,4 +97,4 @@ jobs:
       - name: Run HostBoxManager QEMU boot, screenshot and GUI interaction on Windows
         env:
           SPARKY_MICRO_REAL_GUEST_DIR: ${{ github.workspace }}/sparky-desktop/source/dist/microboxes/verified-x86_64
-        run: pnpm --filter t3 exec vp test run src/microboxes/HostBoxManager.test.ts -t "boots and controls the real graphical guest through HostBoxManager"
+        run: pnpm --filter t3 exec vp test run src/microboxes/HostBoxManager.test.ts -t "through HostBoxManager"

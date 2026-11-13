@@ -208,8 +208,8 @@ describe("cross-environment agent thread collaboration", () => {
       interactionMode: "default",
     });
     if (start?.type === "thread.turn.start") {
-      expect(start.message.text).toContain("origin-thread (environment source-env)");
-      expect(start.message.text).toContain("Please fix the remote tests");
+      expect(start.message.text).toBe("Please fix the remote tests");
+      expect(start.message.text).not.toContain("Message from Sparky agent");
     }
   });
 

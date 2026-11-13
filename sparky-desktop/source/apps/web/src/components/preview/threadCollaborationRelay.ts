@@ -383,7 +383,7 @@ export async function runThreadCollaboration(
         threadId,
         message: {
           messageId: MessageId.make(id()), role: "user",
-          text: attribution(source, input.initialMessage), attachments: [],
+          text: nonEmpty(input.initialMessage, "initialMessage"), attachments: [],
         },
         modelSelection,
         runtimeMode: access.runtimeMode,

@@ -46,6 +46,10 @@ export function formatAgentThreadMessage(sourceThreadId: string, message: string
   return "[Message from Sparky agent in thread " + sourceThreadId + "]\n" + message.trim();
 }
 
+export function formatInitialThreadMessage(message: string): string {
+  return message.trim();
+}
+
 export function canAgentSendThreadMessage(
   source: Pick<OrchestrationThreadShell, "runtimeMode" | "interactionMode">,
   target: Pick<OrchestrationThreadShell, "runtimeMode">,
@@ -513,7 +517,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
             message: {
               messageId,
               role: "user",
-              text: formatAgentThreadMessage(String(scope.threadId), input.initialMessage),
+              text: formatInitialThreadMessage(input.initialMessage),
               attachments: [],
             },
             modelSelection,

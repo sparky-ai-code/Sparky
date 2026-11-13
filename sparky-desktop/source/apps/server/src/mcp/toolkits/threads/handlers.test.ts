@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import {
   canAgentSendThreadMessage,
   formatAgentThreadMessage,
+  formatInitialThreadMessage,
   resolveExistingWorktreeRef,
 } from "./handlers.ts";
 import {
@@ -26,7 +27,8 @@ describe("agent-managed thread collaboration tools", () => {
     ]);
   });
 
-  it("attributes a peer message to its source and preserves the actual instruction", () => {
+  it("keeps new-thread prompts free of agent attribution while preserving peer-message attribution", () => {
+    expect(formatInitialThreadMessage("Review tests.  ")).toBe("Review tests.");
     expect(formatAgentThreadMessage("parent-thread", "Review tests.  ")).toBe(
       "[Message from Sparky agent in thread parent-thread]\nReview tests.",
     );

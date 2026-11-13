@@ -15,7 +15,7 @@ export const ListThreadsTool = Tool.make("sparky_threads_list", {
   success: Schema.Unknown,
   failure: Schema.Never,
 })
-  .annotate(Tool.Title, "List Sparky projects and threads")
+  .annotate(Tool.Title, "List threads")
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
@@ -32,7 +32,7 @@ export const ProjectBranchesTool = Tool.make("sparky_project_branches", {
   success: Schema.Unknown,
   failure: Schema.Never,
 })
-  .annotate(Tool.Title, "List project branches and worktrees")
+  .annotate(Tool.Title, "List project branches")
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
@@ -47,7 +47,7 @@ export const ThreadModelsTool = Tool.make("sparky_thread_models", {
   success: Schema.Unknown,
   failure: Schema.Never,
 })
-  .annotate(Tool.Title, "List thread models and supported options")
+  .annotate(Tool.Title, "List thread models")
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
@@ -64,7 +64,7 @@ export const ReadThreadTool = Tool.make("sparky_thread_read", {
   success: Schema.Unknown,
   failure: Schema.Never,
 })
-  .annotate(Tool.Title, "Read Sparky thread")
+  .annotate(Tool.Title, "Read thread")
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
@@ -86,7 +86,7 @@ export const CreateThreadTool = Tool.make("sparky_thread_create", {
   success: Schema.Unknown,
   failure: Schema.Never,
 })
-  .annotate(Tool.Title, "Create Sparky thread")
+  .annotate(Tool.Title, "Create thread")
   .annotate(Tool.OpenWorld, false)
   .annotate(Tool.Destructive, true);
 
@@ -101,7 +101,7 @@ export const MessageThreadTool = Tool.make("sparky_thread_message", {
   success: Schema.Unknown,
   failure: Schema.Never,
 })
-  .annotate(Tool.Title, "Message another Sparky thread")
+  .annotate(Tool.Title, "Message thread")
   .annotate(Tool.OpenWorld, false)
   .annotate(Tool.Destructive, true);
 
@@ -116,7 +116,7 @@ export const SteerThreadTool = Tool.make("sparky_thread_steer", {
   success: Schema.Unknown,
   failure: Schema.Never,
 })
-  .annotate(Tool.Title, "Steer another Sparky thread")
+  .annotate(Tool.Title, "Steer thread")
   .annotate(Tool.OpenWorld, false)
   .annotate(Tool.Destructive, true);
 

@@ -77,6 +77,34 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 :root {
+  --app-motion-duration-stagger: 40ms;
+  --app-motion-duration-micro: 80ms;
+  --app-motion-duration-quick: 150ms;
+  --app-motion-duration-fast: 250ms;
+  --app-motion-duration-medium: 350ms;
+  --app-motion-duration-slow: 400ms;
+  --app-motion-duration-emphasis: 500ms;
+  --app-motion-ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --app-motion-ease-in-out: ease-in-out;
+  --app-motion-ease-out: ease-out;
+  --app-motion-ease-linear: linear;
+  --app-motion-ease-bounce: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --app-motion-ease-bounce-strong: cubic-bezier(0.34, 3.85, 0.64, 1);
+  --app-motion-distance-micro: 4px;
+  --app-motion-distance-small: 6px;
+  --app-motion-distance-base: 8px;
+  --app-motion-distance-medium: 12px;
+  --app-motion-distance-large: 30px;
+  --app-motion-scale-large: 0.96;
+  --app-motion-scale-medium: 0.97;
+  --app-motion-scale-small: 0.98;
+  --app-motion-scale-tiny: 0.99;
+  --app-motion-blur-small: 2px;
+  --app-motion-blur-medium: 3px;
+  --app-motion-blur-large: 8px;
+}
+
+:root {
   --app-scrollbar-width: 6px;
   --desktop-window-right-resize-inset: 0px;
   --workspace-topbar-height: 52px;
@@ -206,6 +234,82 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   body {
     @apply text-foreground relative;
     background-color: var(--app-chrome-background);
+  }
+}
+
+/* Shared interaction motion: keep controls responsive and popovers anchored to
+   their trigger, with one timing scale across the web and desktop surfaces. */
+[data-slot="button"] {
+  transition:
+    color var(--app-motion-duration-quick) var(--app-motion-ease-smooth-out),
+    background-color var(--app-motion-duration-quick) var(--app-motion-ease-smooth-out),
+    border-color var(--app-motion-duration-quick) var(--app-motion-ease-smooth-out),
+    box-shadow var(--app-motion-duration-quick) var(--app-motion-ease-smooth-out),
+    transform var(--app-motion-duration-micro) var(--app-motion-ease-smooth-out);
+}
+
+[data-slot="button"]:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+[data-slot="button"]:not(:disabled):active,
+[data-slot="button"][data-pressed] {
+  transform: scale(0.98);
+}
+
+[data-slot="menu-popup"],
+[data-slot="select-popup"],
+[data-slot="popover-popup"],
+[data-slot="tooltip-popup"] {
+  transition:
+    opacity var(--app-motion-duration-fast) var(--app-motion-ease-smooth-out),
+    transform var(--app-motion-duration-fast) var(--app-motion-ease-smooth-out);
+}
+
+[data-slot="menu-popup"],
+[data-slot="select-popup"],
+[data-slot="popover-popup"] {
+  transform: scale(1);
+}
+
+[data-slot="menu-popup"][data-starting-style],
+[data-slot="menu-popup"][data-ending-style],
+[data-slot="select-popup"][data-starting-style],
+[data-slot="select-popup"][data-ending-style],
+[data-slot="popover-popup"][data-starting-style],
+[data-slot="popover-popup"][data-ending-style] {
+  opacity: 0;
+  transform: scale(var(--app-motion-scale-medium)) translateY(var(--app-motion-distance-micro));
+}
+
+[data-slot="tooltip-popup"][data-starting-style],
+[data-slot="tooltip-popup"][data-ending-style] {
+  opacity: 0;
+  transform: scale(var(--app-motion-scale-small));
+  transition-duration: var(--app-motion-duration-quick);
+  transition-timing-function: var(--app-motion-ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="button"],
+  [data-slot="menu-popup"],
+  [data-slot="select-popup"],
+  [data-slot="popover-popup"],
+  [data-slot="tooltip-popup"],
+  [data-slot="dialog-popup"],
+  [data-slot="dialog-backdrop"],
+  [data-slot="sheet-popup"],
+  [data-slot="sheet-backdrop"] {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+
+  [data-slot="button"]:not(:disabled):hover,
+  [data-slot="button"]:not(:disabled):active,
+  [data-slot="button"][data-pressed] {
+    transform: none;
   }
 }
 

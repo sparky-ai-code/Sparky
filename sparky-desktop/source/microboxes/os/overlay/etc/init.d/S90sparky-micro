@@ -31,6 +31,18 @@ case "$1" in
       emit_console "SPARKY_MICRO_DESKTOP_ERROR: seat daemon did not start"
       exit 1
     fi
+    # Sparky attaches the original file only from the authenticated workspace,
+    # with guest writes diverted to a temporary QEMU COW snapshot.
+    # VirtIO disk #1 is /dev/vda (Linux root); #2 is /dev/vdb (installer).
+    # Never block the graphical desktop when no installer is attached.
+    if [ -b /dev/vdb1 ]; then
+      mkdir -p /mnt/sparky-installer
+      if mount -t vfat -o ro,nodev,nosuid /dev/vdb1 /mnt/sparky-installer; then
+        emit_console "SPARKY_MICRO_INSTALLER_READY"
+      else
+        emit_console "SPARKY_MICRO_INSTALLER_MOUNT_ERROR"
+      fi
+    fi
     /usr/bin/weston --backend=drm-backend.so --renderer=pixman \
       --socket="$WAYLAND_DISPLAY" --log=/var/log/sparky-micro-desktop.log >/dev/null 2>&1 &
     weston_pid=$!

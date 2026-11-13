@@ -52,3 +52,21 @@ The Linux guest pins the compositor to `wayland-0` with an explicit Weston
 `--socket` option. This avoids a Weston 15 default of `wayland-1` which
 previously left the guest visible but incorrectly marked as booting; the
 Wayland terminal and desktop-ready handshake use that same display name.
+
+### Installer attachments
+
+The host exposes the workspace-scoped installer as the **second VirtIO disk**
+(`/dev/vdb1`) after the Linux root disk (`/dev/vda`). The source file is
+copied into the box's private staging folder, and the guest's write operations
+are redirected into an ephemeral QEMU snapshot. No writes affect the workspace.
+The guest mounts the FAT partition read-only at `/mnt/sparky-installer` and
+logs `SPARKY_MICRO_INSTALLER_READY` on its serial console. When no installer is
+attached, boot proceeds normally without any mount attempt.
+
+Installing an image is not equivalent to executing an installer automatically.
+Agents must explicitly start an application after identifying its compatible
+package or executable format. Linux Microboxes cannot run Windows `.exe` or
+`.msi` installers natively; those require a compatible Windows guest.
+The previously released guest image lacks built-in VFAT support. **Use a newly
+built guest kernel/filesystem from this PR for attached installers** and
+create a new box using its checksum-derived image ID.

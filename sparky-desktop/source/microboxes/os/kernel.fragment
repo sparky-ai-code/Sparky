@@ -16,3 +16,12 @@ CONFIG_HID_GENERIC=y
 CONFIG_VIRTIO_PCI=y
 CONFIG_VIRTIO_BLK=y
 CONFIG_VIRTIO_NET=y
+
+# The attached installer is a read-only FAT volume on a second VirtIO disk.
+# Built-in (not module): available before Weston starts, without modprobe.
+CONFIG_FAT_FS=y
+CONFIG_MSDOS_FS=y
+CONFIG_VFAT_FS=y
+CONFIG_NLS=y
+CONFIG_NLS_CODEPAGE_437=y
+CONFIG_NLS_ISO8859_1=y

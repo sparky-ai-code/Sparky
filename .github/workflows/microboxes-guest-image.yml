@@ -44,6 +44,8 @@ jobs:
           grep -Fq 'BR2_TARGET_GENERIC_GETTY=n' microboxes/os/build-${{ matrix.arch }}.sh
           grep -Fq 'BR2_PACKAGE_FOOT=y' microboxes/os/build-${{ matrix.arch }}.sh
           grep -Fq 'CONFIG_USB_XHCI_PCI=y' microboxes/os/kernel.fragment
+          grep -Fq 'CONFIG_VFAT_FS=y' microboxes/os/kernel.fragment
+          grep -Fq 'SPARKY_MICRO_INSTALLER_READY' microboxes/os/overlay/etc/init.d/S90sparky-micro
           grep -Fq 'usb-kbd' microboxes/os/smoke-boot.mjs
           # The compositor's default is wayland-1 on Weston 15; the guest
           # must choose and check an explicit socket, or UI input stays blocked.

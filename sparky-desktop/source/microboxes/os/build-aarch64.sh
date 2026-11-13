@@ -59,7 +59,7 @@ done
 make -C "$BUILDROOT_DIR" O="$OUT_DIR" -j"${JOBS:-$(nproc)}"
 KCONFIG="$(find "$OUT_DIR/build" -maxdepth 2 -path '*/linux-*/.config' -type f -print -quit)"
 test -n "$KCONFIG" && test -s "$KCONFIG"
-for flag in CONFIG_USB_XHCI_HCD CONFIG_USB_XHCI_PCI CONFIG_USB_HID CONFIG_INPUT_EVDEV; do
+for flag in CONFIG_USB_XHCI_HCD CONFIG_USB_XHCI_PCI CONFIG_USB_HID CONFIG_INPUT_EVDEV CONFIG_FAT_FS CONFIG_VFAT_FS CONFIG_NLS_CODEPAGE_437 CONFIG_NLS_ISO8859_1; do
   grep -q "^${flag}=y$" "$KCONFIG" || { echo "Required kernel input driver missing: $flag" >&2; exit 1; }
 done
 if ! grep -Fq '# BR2_TARGET_GENERIC_GETTY is not set' "$OUT_DIR/.config"; then

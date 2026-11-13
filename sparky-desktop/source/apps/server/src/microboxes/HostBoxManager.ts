@@ -504,6 +504,7 @@ export class HostBoxManager {
     ];
     const guestFile = Path.join(imageDir, manifest.file);
     let artifactName: string | undefined;
+    let attachedInstallerDrive: string[] = [];
     try {
       if (input.artifactRelativePath !== undefined) {
         if (!workspaceRoot || !Path.isAbsolute(workspaceRoot)) {
@@ -532,15 +533,14 @@ export class HostBoxManager {
         const mountDirectory = Path.join(directory, "installer");
         await Fs.mkdir(mountDirectory, { recursive: true });
         await Fs.copyFile(resolved, Path.join(mountDirectory, artifactName));
-        // QEMU's USB-storage device rejects an inherently read-only VVFAT
-        // backend ("Block node is read-only") before the guest even boots.
-        // Present the guest-local directory as a VirtIO disk, which the custom
-        // Linux kernel already supports, and use a temporary COW snapshot so
-        // any guest-side writes never modify the staged installer or workspace.
-        // The guest sees this as its second VirtIO disk (/dev/vdb).
-        args.push(
+        // QEMU USB storage rejects an inherently read-only VVFAT backend.
+        // Use a snapshot-backed VirtIO disk so the host installer is immutable.
+        // IMPORTANT: append this drive AFTER the primary OS disk. Earlier
+        // versions inserted it first, making the FAT disk /dev/vda and causing
+        // the guest kernel to panic when mounting root=/dev/vda.
+        attachedInstallerDrive = [
           "-drive", `file=fat:${guestDrivePath(mountDirectory)},format=raw,if=virtio,snapshot=on`,
-        );
+        ];
       }
       if (manifest.kind === "linux-kernel") {
         const overlay = Path.join(directory, "rootfs.qcow2");
@@ -571,6 +571,9 @@ export class HostBoxManager {
           "-boot", "order=d",
         );
       }
+      // Rootfs is the first VirtIO block device (/dev/vda); the attachment
+      // must always be added afterward (/dev/vdb) for kernel root stability.
+      args.push(...attachedInstallerDrive);
       const child = spawn(imageBinary(manifest.architecture), args, {
         cwd: directory,
         stdio: ["pipe", "pipe", "pipe"],

@@ -310,6 +310,8 @@ integrationTest("boots and controls the real graphical guest through HostBoxMana
     }
     expect(state, `Guest failed to boot with attached installer: ${serialOutput.slice(-4000)}`).toBe("running");
     expect(serialOutput).toContain("SPARKY_MICRO_DESKTOP_READY");
+    expect(serialOutput, "Guest must mount attached installer on boot").toContain("SPARKY_MICRO_INSTALLER_READY");
+    expect(serialOutput).not.toContain("SPARKY_MICRO_INSTALLER_MOUNT_ERROR");
     const screen = await manager.snapshot(threadId, started.boxId);
     expect(screen.width).toBeGreaterThanOrEqual(640);
     expect(screen.height).toBeGreaterThanOrEqual(480);
@@ -333,12 +335,10 @@ integrationTest("boots and controls the real graphical guest through HostBoxMana
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     expect(keyboardReady, `Guest input did not reach Foot after attachment: ${serialOutput.slice(-2500)}`).toBe(true);
-    await manager.type(threadId, started.boxId, "ls /dev/vdb /dev/vdb1 >/dev/ttyS0\n");
-    await manager.type(threadId, started.boxId, "cat /proc/filesystems >/dev/ttyS0\n");
-    await manager.type(threadId, started.boxId, "mkdir -p /mnt/installer\n");
-    await manager.type(threadId, started.boxId, "mount -t vfat -o ro /dev/vdb1 /mnt/installer 2>/dev/ttyS0\n");
-    await manager.type(threadId, started.boxId, "ls /mnt/installer >/dev/ttyS0\n");
-    await manager.type(threadId, started.boxId, "cat /mnt/installer/sparky-installer.sh >/dev/ttyS0\n");
+    // S90sparky-micro automatically mounts the second VirtIO FAT partition.
+    // Confirm actual file contents can be consumed inside the guest.
+    await manager.type(threadId, started.boxId,
+      "cat /mnt/sparky-installer/sparky-installer.sh >/dev/ttyS0\n");
     let readable = false;
     const mountDeadline = Date.now() + 20_000;
     while (Date.now() < mountDeadline) {

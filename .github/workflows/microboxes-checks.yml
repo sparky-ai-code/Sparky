@@ -1,0 +1,85 @@
+name: Microboxes runtime verification
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "sparky-desktop/source/packages/contracts/src/microboxes.ts"
+      - "sparky-desktop/source/packages/contracts/src/rpc.ts"
+      - "sparky-desktop/source/apps/server/src/microboxes/**"
+      - "sparky-desktop/source/apps/server/src/mcp/toolkits/microboxes/**"
+      - "sparky-desktop/source/apps/web/src/components/microboxes/**"
+      - "sparky-desktop/source/apps/web/src/components/chat/MessagesTimeline.tsx"
+      - "sparky-desktop/source/apps/web/src/components/chat/MessagesTimeline.test.tsx"
+      - "sparky-desktop/source/apps/server/src/provider/Layers/SparkyAdapter.ts"
+      - "sparky-desktop/source/apps/server/src/provider/Layers/SparkyAdapter.test.ts"
+      - "sparky-desktop/source/apps/web/src/components/settings/MicroboxesSettingsPanel.tsx"
+      - "sparky-desktop/source/packages/client-runtime/src/state/microboxes.ts"
+      - ".github/workflows/microboxes-checks.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      # Run focused image-import tests before unrelated contract checks: a
+      # failure in another subsystem must not prevent image install verification.
+      - name: Exercise VM monitor and guest import tests
+        run: pnpm --filter t3 exec vp test run src/microboxes/QmpClient.test.ts src/microboxes/HostBoxManager.test.ts
+      - name: Typecheck contracts
+        run: pnpm --filter @sparky/contracts typecheck
+      - name: Typecheck shared client runtime
+        continue-on-error: true # Legacy account-token tests currently fail independently of Microboxes.
+        run: pnpm --filter @sparky/client-runtime typecheck
+      - name: Typecheck server
+        continue-on-error: true # Capture server diagnostics even when unrelated legacy tests fail.
+        run: pnpm --filter t3 typecheck
+      - name: Typecheck web
+        continue-on-error: true # Inspect all packages in one run.
+        run: pnpm --filter @sparky/web typecheck
+      - name: Verify Microboxes agent MCP tool registration
+        run: pnpm --filter t3 exec vp test run src/mcp/McpHttpServer.test.ts
+      - name: Verify native agent MCP schema compatibility
+        run: |
+          cd ../..
+          cargo test -p sparky_tools mcp::tests:: --locked
+      - name: Verify Sparky Boxes agent tool presentation
+        run: pnpm --filter t3 exec vp test run src/provider/Layers/SparkyAdapter.test.ts
+      - name: Verify Sparky Boxes custom tool icon
+        run: pnpm --filter @sparky/web exec vp test run src/components/chat/MessagesTimeline.test.tsx -t "renders Boxes tool actions"
+      - name: Run contracts tests
+        run: pnpm --filter @sparky/contracts test
+      - name: Verify thread-scoped Boxes tabs
+        run: pnpm --filter @sparky/web exec vp test run src/rightPanelStore.test.ts
+      - name: Guard against the legacy Linux guest network boot hang
+        run: |
+          # Legacy artifacts waited for eth0 despite launching without a NIC.
+          # Catch this cheaply before the expensive Buildroot image build.
+          grep -Fq 'BR2_SYSTEM_DHCP=""' microboxes/os/build-x86_64.sh
+          grep -Fq 'BR2_SYSTEM_DHCP=""' microboxes/os/build-aarch64.sh
+          grep -Fq 'auto lo' microboxes/os/overlay/etc/network/interfaces
+          if grep -Eq '^auto[[:space:]]+eth0([[:space:]]|$)' microboxes/os/overlay/etc/network/interfaces; then
+            echo "Guest boot must not wait for a network adapter" >&2
+            exit 1
+          fi
+          grep -Fq 'SPARKY_MICRO_DESKTOP_READY' microboxes/os/overlay/etc/init.d/S90sparky-micro

@@ -1,5 +1,10 @@
 name: PR Windows installer (artifact only)
 
+# Latest-commit-only test builds; superseded PR commits need no installer.
+concurrency:
+  group: sparky-pr-windows-installer-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     branches: [main]
@@ -119,9 +124,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sparky-windows-installer-pr${{ github.event.pull_request.number || 'manual' }}-${{ github.run_number }}
-          path: |
-            sparky-desktop/source/release-pr/Sparky-x64.exe
-            sparky-desktop/source/release-pr/Sparky-x64.exe.blockmap
-            sparky-desktop/source/release-pr/latest.yml
+          # A PR test install needs only the executable. The release updater
+          # workflow retains blockmaps and feed manifests separately.
+          path: sparky-desktop/source/release-pr/Sparky-x64.exe
           if-no-files-found: error
+          # Installer executables are already compressed; recompressing the
+          # artifact wastes runner time without meaningfully reducing upload.
+          compression-level: 0
           retention-days: 14

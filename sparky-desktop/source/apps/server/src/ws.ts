@@ -83,6 +83,7 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as Microboxes from "./microboxes/Microboxes.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import { listExternalMcpTools } from "./mcp/ExternalMcp.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -410,6 +411,19 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.terminalClose, AuthTerminalOperateScope],
   [WS_METHODS.subscribeTerminalEvents, AuthTerminalOperateScope],
   [WS_METHODS.subscribeTerminalMetadata, AuthTerminalOperateScope],
+  [WS_METHODS.microboxImages, AuthOrchestrationReadScope],
+  [WS_METHODS.microboxImportImage, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxList, AuthOrchestrationReadScope],
+  [WS_METHODS.microboxCreate, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxStatus, AuthOrchestrationReadScope],
+  [WS_METHODS.microboxSnapshot, AuthOrchestrationReadScope],
+  [WS_METHODS.microboxClick, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxDrag, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxScroll, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxType, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxPress, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxStop, AuthOrchestrationOperateScope],
+  [WS_METHODS.microboxDestroy, AuthOrchestrationOperateScope],
   [WS_METHODS.previewOpen, AuthOrchestrationOperateScope],
   [WS_METHODS.previewNavigate, AuthOrchestrationOperateScope],
   [WS_METHODS.previewResize, AuthOrchestrationOperateScope],
@@ -470,6 +484,7 @@ function toAuthAccessStreamEvent(
 const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  microboxes: Microboxes.MicroboxesService,
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -2085,6 +2100,32 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "terminal" },
           ),
+        [WS_METHODS.microboxImportImage]: ({ sourceDirectory }) =>
+          observeRpcEffect(WS_METHODS.microboxImportImage, microboxes.importImage(sourceDirectory)),
+        [WS_METHODS.microboxImages]: () =>
+          observeRpcEffect(WS_METHODS.microboxImages, microboxes.images),
+        [WS_METHODS.microboxList]: ({ threadId }) =>
+          observeRpcEffect(WS_METHODS.microboxList, microboxes.list(threadId)),
+        [WS_METHODS.microboxCreate]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxCreate, microboxes.create(input)),
+        [WS_METHODS.microboxStatus]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxStatus, microboxes.status(input)),
+        [WS_METHODS.microboxSnapshot]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxSnapshot, microboxes.snapshot(input)),
+        [WS_METHODS.microboxClick]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxClick, microboxes.click(input)),
+        [WS_METHODS.microboxDrag]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxDrag, microboxes.drag(input)),
+        [WS_METHODS.microboxScroll]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxScroll, microboxes.scroll(input)),
+        [WS_METHODS.microboxType]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxType, microboxes.type(input)),
+        [WS_METHODS.microboxPress]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxPress, microboxes.press(input)),
+        [WS_METHODS.microboxStop]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxStop, microboxes.stop(input)),
+        [WS_METHODS.microboxDestroy]: (input) =>
+          observeRpcEffect(WS_METHODS.microboxDestroy, microboxes.destroy(input)),
         [WS_METHODS.previewOpen]: (input) =>
           observeRpcEffect(WS_METHODS.previewOpen, previewManager.open(input), {
             "rpc.aggregate": "preview",
@@ -2262,6 +2303,7 @@ const makeWsRpcLayer = (
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+    const microboxes = yield* Microboxes.Microboxes;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -2282,7 +2324,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           disableTracing: true,
         }).pipe(
           Effect.provide(
-            makeWsRpcLayer(session, previewAutomationBroker).pipe(
+            makeWsRpcLayer(session, previewAutomationBroker, microboxes).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provideMerge(ServerConfig.layer(config)),

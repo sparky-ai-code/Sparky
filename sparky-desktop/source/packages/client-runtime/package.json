@@ -75,6 +75,10 @@
       "types": "./src/state/presentation.ts",
       "default": "./src/state/presentation.ts"
     },
+    "./state/microboxes": {
+      "types": "./src/state/microboxes.ts",
+      "default": "./src/state/microboxes.ts"
+    },
     "./state/preview": {
       "types": "./src/state/preview.ts",
       "default": "./src/state/preview.ts"

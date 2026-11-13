@@ -132,6 +132,37 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("opens separate thread-scoped box tabs", () => {
+    useRightPanelStore.getState().openBox(refA, null);
+    useRightPanelStore.getState().openBox(refA, "vm-01");
+    useRightPanelStore.getState().openBox(refA, "vm-02");
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.activeSurfaceId).toBe("box:vm-02");
+    expect(state.surfaces).toEqual([
+      { id: "box:vm-01", kind: "box", resourceId: "vm-01" },
+      { id: "box:vm-02", kind: "box", resourceId: "vm-02" },
+    ]);
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).toBeNull();
+  });
+
+  it("rejects malformed saved box surfaces", () => {
+    const persisted = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "box:good",
+          surfaces: [
+            { id: "box:wrong", kind: "box", resourceId: "bad" },
+            { id: "box:good", kind: "box", resourceId: "good" },
+          ],
+        },
+      },
+    });
+    expect(persisted.byThreadKey["env-1:thread-A"]?.surfaces).toEqual([
+      { id: "box:good", kind: "box", resourceId: "good" },
+    ]);
+  });
+
   it("keeps Environment as a selectable singleton surface", () => {
     useRightPanelStore.getState().open(refA, "environment");
     expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe(

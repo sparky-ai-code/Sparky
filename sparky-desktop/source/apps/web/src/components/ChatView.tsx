@@ -268,6 +268,7 @@ import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { EnvironmentPanel } from "./EnvironmentPanel";
+import { MicroboxesPanel } from "./microboxes/MicroboxesPanel";
 import { RightPanelSheet } from "./RightPanelSheet";
 import { previewEnvironment } from "../state/preview";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -3120,6 +3121,12 @@ function ChatViewContent(props: ChatViewProps) {
     if (!workspaceContextEnabled || !activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().open(activeThreadRef, "files");
   }, [activeProject, activeThreadRef, workspaceContextEnabled]);
+  const addBoxSurface = useCallback(() => {
+    if (!workspaceContextEnabled || !activeThreadRef || !isElectron || !settings.microboxesEnabled) {
+      return;
+    }
+    useRightPanelStore.getState().openBox(activeThreadRef, null);
+  }, [activeThreadRef, workspaceContextEnabled, settings.microboxesEnabled]);
   const addEnvironmentSurface = useCallback(() => {
     if (!workspaceContextEnabled || !activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "environment");
@@ -5469,6 +5476,13 @@ function ChatViewContent(props: ChatViewProps) {
           visible
         />
       </Suspense>
+    ) : activeRightPanelSurface?.kind === "box" ? (
+      <MicroboxesPanel
+        enabled={settings.microboxesEnabled}
+        internetAllowed={settings.microboxesInternetEnabled}
+        threadRef={activeThreadRef}
+        boxId={activeRightPanelSurface.resourceId}
+      />
     ) : activeRightPanelSurface?.kind === "terminal" ? (
       <PersistentThreadTerminalPanel
         threadRef={activeThreadRef}
@@ -5937,11 +5951,13 @@ function ChatViewContent(props: ChatViewProps) {
           onCloseAllSurfaces={closeAllRightPanelSurfaces}
           onCopyFilePath={copyRightPanelFilePath}
           onAddBrowser={createBrowserSurface}
+          onAddBox={addBoxSurface}
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
           onAddEnvironment={addEnvironmentSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
+          boxAvailable={isElectron && settings.microboxesEnabled}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
           environmentAvailable={activeThreadRef !== null}
@@ -5967,11 +5983,13 @@ function ChatViewContent(props: ChatViewProps) {
             onCloseAllSurfaces={closeAllRightPanelSurfaces}
             onCopyFilePath={copyRightPanelFilePath}
             onAddBrowser={createBrowserSurface}
+          onAddBox={addBoxSurface}
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
             onAddEnvironment={addEnvironmentSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
+          boxAvailable={isElectron && settings.microboxesEnabled}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
             environmentAvailable={activeThreadRef !== null}

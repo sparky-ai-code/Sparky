@@ -1,0 +1,111 @@
+name: Build Sparky Microboxes Linux guest
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "sparky-desktop/source/microboxes/os/**"
+      - ".github/workflows/microboxes-guest-image.yml"
+
+concurrency:
+  group: microboxes-guest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-micro-linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      # The GitHub-hosted Ubuntu image already contains these build tools.
+      # Avoid a fragile apt update: mirrors occasionally fail in hosted runners.
+      - name: Verify Buildroot host dependencies
+        run: |
+          set -eu
+          for bin in gcc g++ make git wget curl rsync cpio unzip file bc bison flex python3 sha256sum; do
+            command -v "$bin" >/dev/null || { echo "Missing build dependency: $bin"; exit 1; }
+          done
+      - name: Check image build hooks before compiling Linux
+        run: |
+          set -eu
+          test -x microboxes/os/post-build.sh
+          node --check microboxes/os/smoke-boot.mjs
+          sh -n microboxes/os/post-build.sh
+          sh -n microboxes/os/overlay/etc/init.d/S90sparky-micro
+          sh -n microboxes/os/overlay/etc/init.d/S45sparky-network
+          bash -n microboxes/os/build-${{ matrix.arch }}.sh
+          # Fast checks before compiling the full cross toolchain.
+          grep -Fq 'BR2_TARGET_GENERIC_GETTY=n' microboxes/os/build-${{ matrix.arch }}.sh
+          grep -Fq 'BR2_PACKAGE_FOOT=y' microboxes/os/build-${{ matrix.arch }}.sh
+          grep -Fq 'CONFIG_USB_XHCI_PCI=y' microboxes/os/kernel.fragment
+          grep -Fq 'CONFIG_VFAT_FS=y' microboxes/os/kernel.fragment
+          grep -Fq 'SPARKY_MICRO_INSTALLER_READY' microboxes/os/overlay/etc/init.d/S90sparky-micro
+          grep -Fq 'usb-kbd' microboxes/os/smoke-boot.mjs
+          # The compositor's default is wayland-1 on Weston 15; the guest
+          # must choose and check an explicit socket, or UI input stays blocked.
+          grep -Fq 'export WAYLAND_DISPLAY=wayland-0' microboxes/os/overlay/etc/init.d/S90sparky-micro
+          grep -Fq -- '--socket="$WAYLAND_DISPLAY"' microboxes/os/overlay/etc/init.d/S90sparky-micro
+          if grep -q -- '--tty=1' microboxes/os/overlay/etc/init.d/S90sparky-micro; then
+            echo "Weston 15 rejects --tty=1" >&2
+            exit 1
+          fi
+      - name: Build standalone Sparky Micro Linux image
+        run: bash microboxes/os/build-${{ matrix.arch }}.sh
+        env:
+          JOBS: "4"
+      - name: Upload guest image (no publication)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparky-micro-${{ matrix.arch }}
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-${{ matrix.arch }}/
+          retention-days: 14
+
+  smoke-guest:
+    needs: build-micro-linux
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            host-package: qemu-system-x86
+          - arch: aarch64
+            host-package: qemu-system-arm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: sparky-micro-${{ matrix.arch }}
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-${{ matrix.arch }}/
+      - name: Verify VM boot-test dependencies
+        run: |
+          if ! command -v qemu-system-${{ matrix.arch }} >/dev/null || ! command -v qemu-img >/dev/null; then
+            sudo apt-get -o Acquire::Retries=3 update
+            sudo apt-get -o Acquire::Retries=3 install -y ${{ matrix.host-package }} qemu-utils
+          fi
+      - name: Capture a real guest framebuffer and exercise GUI input
+        env:
+          SPARKY_MICRO_CAPTURE_GUEST_LOGS: "1"
+          SPARKY_MICRO_VERIFY_GUI_INPUT: "1"
+        run: |
+          node microboxes/os/smoke-boot.mjs \
+            dist/microboxes/sparky-micro-${{ matrix.arch }} \
+            dist/microboxes/screenshots
+      - name: Upload smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: microboxes-smoke-${{ matrix.arch }}
+          path: sparky-desktop/source/dist/microboxes/screenshots/
+          if-no-files-found: ignore
+          retention-days: 14

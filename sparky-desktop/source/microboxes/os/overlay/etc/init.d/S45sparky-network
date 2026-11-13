@@ -1,0 +1,16 @@
+#!/bin/sh
+# Do not wait for eth0 when Boxes is offline. If the user explicitly enables
+# guest internet access, QEMU attaches the NIC and DHCP starts in background.
+case "$1" in
+  start)
+    if [ -d /sys/class/net/eth0 ]; then
+      /sbin/ifconfig eth0 up >/dev/null 2>&1 || true
+      /sbin/udhcpc -i eth0 -b -t 3 -T 2 >/var/log/sparky-micro-network.log 2>&1 &
+    fi
+    ;;
+  stop)
+    ;;
+  *)
+    exit 1
+    ;;
+esac

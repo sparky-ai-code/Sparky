@@ -30,6 +30,18 @@ import {
 } from "./SparkyAdapter.ts";
 import { ProviderAdapterProcessError } from "../Errors.ts";
 
+describe("Sparky Boxes tool presentations", () => {
+  it("routes Box tools through the graphical MCP presentation", () => {
+    expect(sparkyToolPresentation("box_create", { imageId: "sparky-micro-x86_64" }))
+      .toMatchObject({
+        itemType: "mcp_tool_call",
+        title: "Create box",
+        data: { kind: "box_create", toolName: "box_create" },
+      });
+    expect(sparkyToolPresentation("box_snapshot", { boxId: "a" }).title).toBe("View box screen");
+  });
+});
+
 describe("hidden Sparky control tools", () => {
   it("suppresses only the terminal control tool from UI lifecycle rendering", () => {
     expect(isHiddenSparkyControlTool("end_task")).toBe(true);
@@ -75,6 +87,18 @@ describe("Sparky reconnect classification", () => {
         ),
       ),
     ).toBe(true);
+  });
+
+  it("retries classified provider connection failures without repeating permanent ones", () => {
+    expect(isRetryableSparkyProcessError(
+      processError("The connection to the model provider was interrupted. Check your connection and retry."),
+    )).toBe(true);
+    expect(isRetryableSparkyProcessError(
+      processError("The selected model provider rejected its credentials. Reconnect or update your API key in Models."),
+    )).toBe(false);
+    expect(isRetryableSparkyProcessError(
+      processError("The selected model has reached its usage quota. Choose another model."),
+    )).toBe(false);
   });
 
   it("does not retry permanent request or authentication failures", () => {

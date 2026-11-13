@@ -3,6 +3,7 @@ import {
   ArchiveIcon,
   ArrowLeftIcon,
   BoxesIcon,
+  MonitorIcon,
   SlidersHorizontalIcon,
   PaletteIcon,
   BrainIcon,
@@ -33,6 +34,7 @@ export type SettingsSectionPath =
   | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/models"
+  | "/settings/microboxes"
   | "/settings/plugins"
   | "/settings/mcp"
   | "/settings/memory"
@@ -59,6 +61,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
     icon: PaletteIcon,
   },
   { label: "Models", section: "AI & tools", to: "/settings/models", icon: BoxesIcon },
+  { label: "Microboxes", section: "AI & tools", to: "/settings/microboxes", icon: MonitorIcon },
   { label: "Plugins", section: "AI & tools", to: "/settings/plugins", icon: PlugZapIcon },
   { label: "MCP", section: "AI & tools", to: "/settings/mcp", icon: McpIcon },
   { label: "Memory", section: "AI & tools", to: "/settings/memory", icon: BrainIcon },

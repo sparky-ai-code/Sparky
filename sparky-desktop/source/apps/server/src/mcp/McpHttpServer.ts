@@ -33,6 +33,8 @@ import {
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
 import { HtmlRenderToolkit, HtmlRenderToolkitHandlersLive } from "./toolkits/htmlRender.ts";
+import { MicroboxesToolkit } from "./toolkits/microboxes/tools.ts";
+import { MicroboxesToolkitHandlersLive } from "./toolkits/microboxes/handlers.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -303,7 +305,12 @@ const HtmlRenderToolkitRegistrationLive = McpServer.toolkit(HtmlRenderToolkit).p
   Layer.provide(HtmlRenderToolkitHandlersLive),
 );
 
+export const MicroboxesToolkitRegistrationLive = McpServer.toolkit(MicroboxesToolkit).pipe(
+  Layer.provide(MicroboxesToolkitHandlersLive),
+);
+
 const ToolkitRegistrationLive = Layer.mergeAll(
+  MicroboxesToolkitRegistrationLive,
   PreviewToolkitRegistrationLive,
   HtmlRenderToolkitRegistrationLive,
   ExternalMcpToolkitRegistrationLive,

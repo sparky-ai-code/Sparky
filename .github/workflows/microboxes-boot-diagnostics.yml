@@ -1,0 +1,95 @@
+# Short diagnostic against the already-built GUI guest to inspect why Weston
+# paints the screen but never emits a desktop-ready signal. No image rebuild.
+name: Diagnose Microboxes GUI readiness
+on:
+  push:
+    paths:
+      - ".github/workflows/microboxes-boot-diagnostics.yml"
+      - "sparky-desktop/source/microboxes/os/overlay/etc/init.d/S90sparky-micro"
+      - "sparky-desktop/source/microboxes/os/smoke-boot.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose-gui:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            host-package: qemu-system-x86
+          - arch: aarch64
+            host-package: qemu-system-arm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download existing compiled GUI image #16
+        run: |
+          mkdir -p dist/microboxes/sparky-micro-${{ matrix.arch }}
+          gh run download 43230362940 --repo sparky-ai-code/Sparky \
+            --name sparky-micro-${{ matrix.arch }} \
+            --dir dist/microboxes/sparky-micro-${{ matrix.arch }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Install guest test runtime
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y ${{ matrix.host-package }} qemu-utils e2fsprogs
+      # Reuse the previously compiled kernel and rootfs, but apply the current
+      # guest startup script verbatim. Only uploaded after successful boot and
+      # real mouse/keyboard acceptance. No publication or automatic install.
+      - name: Patch guest desktop startup from the PR source
+        run: |
+          disk=dist/microboxes/sparky-micro-${{ matrix.arch }}/rootfs.ext2
+          sudo debugfs -w -R 'rm /etc/init.d/S90sparky-micro' "$disk"
+          sudo debugfs -w -R 'write microboxes/os/overlay/etc/init.d/S90sparky-micro /etc/init.d/S90sparky-micro' "$disk"
+          sudo debugfs -w -R 'set_inode_field /etc/init.d/S90sparky-micro mode 0100755' "$disk"
+          sudo debugfs -R 'stat /etc/init.d/S90sparky-micro' "$disk"
+      - name: Mark the new guest revision and refresh file checksums
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          folder = Path("dist/microboxes/sparky-micro-${{ matrix.arch }}")
+          manifest_path = folder / "image.json"
+          image = json.loads(manifest_path.read_text())
+          assert image["id"] == "sparky-micro-${{ matrix.arch }}"
+          assert image["kind"] == "linux-kernel"
+          assert image["architecture"] == "${{ matrix.arch }}"
+          image["boxImageVersion"] = 2
+          manifest_path.write_text(json.dumps(image, indent=2) + "\n")
+          PY
+          cd dist/microboxes/sparky-micro-${{ matrix.arch }}
+          kernel=$(python3 -c 'import json; print(json.load(open("image.json"))["kernel"])')
+          sha256sum "$kernel" rootfs.ext2 image.json > SHA256SUMS
+      - name: Record real boot status, Weston and seatd diagnostics
+        env:
+          SPARKY_MICRO_CAPTURE_GUEST_LOGS: "1"
+          SPARKY_MICRO_VERIFY_GUI_INPUT: "1"
+        run: |
+          node microboxes/os/smoke-boot.mjs \
+            dist/microboxes/sparky-micro-${{ matrix.arch }} \
+            dist/microboxes/screenshots-${{ matrix.arch }}
+      - name: Upload boot evidence even if Linux fails to start
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: microboxes-gui-readiness-${{ matrix.arch }}
+          path: sparky-desktop/source/dist/microboxes/screenshots-${{ matrix.arch }}/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload boot-verified guest image for manual testing (no release)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparky-micro-tested-${{ matrix.arch }}
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-${{ matrix.arch }}/
+          retention-days: 14
+

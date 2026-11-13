@@ -1,7 +1,8 @@
 name: Build Windows installer artifact
 
+# The PR workflow owns automatic test installers; this one is retained
+# for explicitly requested builds and the dedicated installer branch.
 on:
-  pull_request:
   push:
     branches:
       - t3code/remove-nightly-update-track

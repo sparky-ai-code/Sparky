@@ -1,0 +1,98 @@
+#!/bin/sh
+# Sparky Micro Linux: only declare the graphical desktop ready after Weston
+# exposes a live Wayland socket. Never claim boot success at the QMP handshake.
+emit_console() {
+  for device in /dev/ttyS0 /dev/ttyAMA0; do
+    if [ -c "$device" ]; then
+      printf '%s\n' "$1" > "$device" 2>/dev/null || true
+    fi
+  done
+}
+case "$1" in
+  start)
+    mkdir -p /run/user/0 /var/log
+    chmod 0700 /run/user/0
+    export XDG_RUNTIME_DIR=/run/user/0
+    export LIBSEAT_BACKEND=seatd
+    export LANG=C.UTF-8
+    export LC_ALL=C.UTF-8
+    export HOME=/root
+    # The Weston default socket name changes across versions. Never guess:
+    # use the same explicit Wayland display name for Weston and Foot.
+    export WAYLAND_DISPLAY=wayland-0
+    # The Buildroot package's S70seatd starts exactly one seat daemon.
+    # Starting another one here would race for the same /run/seatd.sock.
+    i=0
+    while [ ! -S /run/seatd.sock ] && [ "$i" -lt 15 ]; do
+      sleep 1
+      i=$((i + 1))
+    done
+    if [ ! -S /run/seatd.sock ]; then
+      emit_console "SPARKY_MICRO_DESKTOP_ERROR: seat daemon did not start"
+      exit 1
+    fi
+    # Sparky attaches the original file only from the authenticated workspace,
+    # with guest writes diverted to a temporary QEMU COW snapshot.
+    # VirtIO disk #1 is /dev/vda (Linux root); #2 is /dev/vdb (installer).
+    # Never block the graphical desktop when no installer is attached.
+    if [ -b /dev/vdb1 ]; then
+      mkdir -p /mnt/sparky-installer
+      if mount -t vfat -o ro,nodev,nosuid /dev/vdb1 /mnt/sparky-installer; then
+        emit_console "SPARKY_MICRO_INSTALLER_READY"
+      else
+        emit_console "SPARKY_MICRO_INSTALLER_MOUNT_ERROR"
+      fi
+    fi
+    /usr/bin/weston --backend=drm-backend.so --renderer=pixman \
+      --socket="$WAYLAND_DISPLAY" --log=/var/log/sparky-micro-desktop.log >/dev/null 2>&1 &
+    weston_pid=$!
+    (
+      i=0
+      while [ "$i" -lt 60 ]; do
+        if ! kill -0 "$weston_pid" 2>/dev/null; then
+          break
+        fi
+        if [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]; then
+          sleep 2
+          if kill -0 "$weston_pid" 2>/dev/null && [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]; then
+            # Boxes is an agent-operated graphical workspace, not a login
+            # console. Verify a usable interactive Wayland application exists.
+            if [ ! -x /usr/bin/foot ]; then
+              emit_console "SPARKY_MICRO_DESKTOP_ERROR: graphical terminal missing"
+              exit 1
+            fi
+            /usr/bin/foot >/var/log/desktop-terminal.log 2>&1 &
+            terminal_pid=$!
+            sleep 2
+            if ! kill -0 "$terminal_pid" 2>/dev/null; then
+              emit_console "SPARKY_MICRO_DESKTOP_ERROR: graphical terminal exited"
+              if [ -f /var/log/desktop-terminal.log ]; then
+                tail -n 25 /var/log/desktop-terminal.log >/dev/ttyS0 2>/dev/null || true
+              fi
+              exit 1
+            fi
+            emit_console "SPARKY_MICRO_DESKTOP_READY"
+            exit 0
+          fi
+        fi
+        sleep 1
+        i=$((i + 1))
+      done
+      emit_console "SPARKY_MICRO_DESKTOP_ERROR: Weston did not open a display"
+      # The image is purpose-built and includes no user secrets at boot.
+      if [ -f /var/log/sparky-micro-desktop.log ]; then
+        for device in /dev/ttyS0 /dev/ttyAMA0; do
+          if [ -c "$device" ]; then
+            tail -n 30 /var/log/sparky-micro-desktop.log > "$device" 2>/dev/null || true
+          fi
+        done
+      fi
+    ) &
+    ;;
+  stop)
+    killall weston 2>/dev/null || true
+    ;;
+  *)
+    exit 1
+    ;;
+esac

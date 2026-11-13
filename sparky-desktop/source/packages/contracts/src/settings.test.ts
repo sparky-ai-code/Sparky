@@ -16,6 +16,23 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 
+describe("ServerSettings Microboxes access opt-in", () => {
+  it("defaults to disabled on both new and older server settings", () => {
+    expect(DEFAULT_SERVER_SETTINGS.microboxesEnabled).toBe(false);
+    expect(decodeServerSettings({}).microboxesEnabled).toBe(false);
+  });
+
+  it("accepts explicit enabled/disabled server settings patches", () => {
+    expect(decodeServerSettingsPatch({ microboxesEnabled: true }).microboxesEnabled).toBe(true);
+    expect(decodeServerSettingsPatch({ microboxesEnabled: false }).microboxesEnabled).toBe(false);
+  });
+
+  it("round-trips the opt-in through server persistence", () => {
+    const updated = decodeServerSettings({ microboxesEnabled: true });
+    expect(encodeServerSettings(updated).microboxesEnabled).toBe(true);
+  });
+});
+
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
     expect(decodeClientSettings({}).wordWrap).toBe(true);

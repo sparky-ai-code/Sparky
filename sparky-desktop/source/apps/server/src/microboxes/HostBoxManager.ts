@@ -573,8 +573,13 @@ export class HostBoxManager {
         windowsHide: true,
         env: guestRuntimeEnv(),
       });
-      // Drain diagnostic stderr; otherwise a full pipe could stall the VM.
-      child.stderr.resume();
+      // Drain diagnostic stderr without exposing filesystem paths or host
+      // secrets to the agent. Keep only a small bounded startup trace.
+      let startupStderr = "";
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk: string) => {
+        if (startupStderr.length < 16_384) startupStderr += chunk.slice(0, 16_384 - startupStderr.length);
+      });
       const qmp = new QmpClient(child);
       const status: MutableStatus = {
         boxId,
@@ -629,8 +634,17 @@ export class HostBoxManager {
           status.state = "running";
         }
       } catch {
+        // Diagnostic opt-in for CI's synthetic installer only. Never send
+        // unfiltered QEMU stderr (which may contain user paths) into chat.
+        if (process.env.SPARKY_MICRO_TEST_QEMU_DIAGNOSTICS === "1") {
+          console.warn("[microboxes-test] QEMU launch stderr:", startupStderr);
+        }
         await qmp.stop();
         this.boxes.delete(boxId);
+        if (artifactName) {
+          throw new MicroboxHostError("launch-failed",
+            "Sparky could not attach the installer drive to this guest. Check the guest's storage setup.");
+        }
         throw new MicroboxHostError("launch-failed", "Sparky could not start this guest image.");
       } finally {
         if (startupTimeout) clearTimeout(startupTimeout);

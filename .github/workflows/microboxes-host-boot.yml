@@ -53,6 +53,7 @@ jobs:
       - name: Boot, screenshot, click and type via HostBoxManager (not the smoke-test launcher)
         env:
           SPARKY_MICRO_REAL_GUEST_DIR: ${{ github.workspace }}/sparky-desktop/source/dist/microboxes/verified-x86_64
+          SPARKY_MICRO_TEST_QEMU_DIAGNOSTICS: "1"
         run: |
           pnpm --filter t3 exec vp test run src/microboxes/HostBoxManager.test.ts \
             -t "through HostBoxManager"
@@ -97,4 +98,5 @@ jobs:
       - name: Run HostBoxManager QEMU boot, screenshot and GUI interaction on Windows
         env:
           SPARKY_MICRO_REAL_GUEST_DIR: ${{ github.workspace }}/sparky-desktop/source/dist/microboxes/verified-x86_64
+          SPARKY_MICRO_TEST_QEMU_DIAGNOSTICS: "1"
         run: pnpm --filter t3 exec vp test run src/microboxes/HostBoxManager.test.ts -t "through HostBoxManager"

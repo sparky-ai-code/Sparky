@@ -3,6 +3,11 @@ import * as Schema from "effect/Schema";
 import { Tool } from "effect/unstable/ai";
 
 const NonEmptyText = Schema.String.check(Schema.isMinLength(1));
+const NonWhitespaceText = Schema.String.check(
+  Schema.makeFilter(
+    (value) => value.trim().length > 0 || "Text must contain non-whitespace characters.",
+  ),
+);
 const WorkspaceMode = Schema.Literals(["current", "existing", "new"]);
 
 export const ListThreadsTool = Tool.make("sparky_threads_list", {
@@ -58,7 +63,9 @@ export const ReadThreadTool = Tool.make("sparky_thread_read", {
   parameters: Schema.Struct({
     environmentId: Schema.optional(Schema.String),
     threadId: NonEmptyText,
-    limit: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(100))),
+    limit: Schema.optional(
+      Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(100)),
+    ),
     offsetFromLatest: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   }),
   success: Schema.Unknown,
@@ -81,7 +88,7 @@ export const CreateThreadTool = Tool.make("sparky_thread_create", {
     baseBranch: Schema.optional(NonEmptyText),
     worktreePath: Schema.optional(NonEmptyText),
     modelSelection: Schema.optional(ModelSelection),
-    initialMessage: Schema.optional(NonEmptyText),
+    initialMessage: Schema.optional(NonWhitespaceText),
   }),
   success: Schema.Unknown,
   failure: Schema.Never,

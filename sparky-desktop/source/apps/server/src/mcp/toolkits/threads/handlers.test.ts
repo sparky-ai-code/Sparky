@@ -7,12 +7,7 @@ import {
   formatInitialThreadMessage,
   resolveExistingWorktreeRef,
 } from "./handlers.ts";
-import {
-  CreateThreadTool,
-  ProjectBranchesTool,
-  ReadThreadTool,
-  ThreadTools,
-} from "./tools.ts";
+import { CreateThreadTool, ProjectBranchesTool, ReadThreadTool, ThreadTools } from "./tools.ts";
 
 describe("agent-managed thread collaboration tools", () => {
   it("exposes each operation to MCP with a stable name", () => {
@@ -86,18 +81,12 @@ describe("agent-managed thread collaboration tools", () => {
       { name: "feature/a", worktreePath: "/repo/.worktrees/a" },
       { name: "feature/b", worktreePath: "/repo/.worktrees/b" },
     ];
-    expect(
-      resolveExistingWorktreeRef(refs, "feature/a", "/repo/.worktrees/a", "/repo"),
-    ).toEqual(refs[1]);
-    expect(
-      resolveExistingWorktreeRef(refs, "feature/a", "/repo/.worktrees/b", "/repo"),
-    ).toBeNull();
-    expect(
-      resolveExistingWorktreeRef(refs, "main", "/repo", "/repo"),
-    ).toBeNull();
-    expect(
-      resolveExistingWorktreeRef(refs, "feature/a", "/tmp/unlisted", "/repo"),
-    ).toBeNull();
+    expect(resolveExistingWorktreeRef(refs, "feature/a", "/repo/.worktrees/a", "/repo")).toEqual(
+      refs[1],
+    );
+    expect(resolveExistingWorktreeRef(refs, "feature/a", "/repo/.worktrees/b", "/repo")).toBeNull();
+    expect(resolveExistingWorktreeRef(refs, "main", "/repo", "/repo")).toBeNull();
+    expect(resolveExistingWorktreeRef(refs, "feature/a", "/tmp/unlisted", "/repo")).toBeNull();
   });
 
   it("rejects unknown workspace modes and empty message IDs", () => {
@@ -111,6 +100,17 @@ describe("agent-managed thread collaboration tools", () => {
     expect(() =>
       Schema.decodeUnknownSync(ReadThreadTool.parametersSchema)({
         threadId: "",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects whitespace-only initial thread messages", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(CreateThreadTool.parametersSchema)({
+        projectId: "project-1",
+        title: "Review",
+        workspaceMode: "current",
+        initialMessage: " \n\t ",
       }),
     ).toThrow();
   });

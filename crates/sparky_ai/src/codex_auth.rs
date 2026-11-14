@@ -34,8 +34,8 @@ fn oauth_http_client() -> anyhow::Result<Client> {
         .build()?)
 }
 
-/// OAuth codes are one-use credentials. Retry only transient transport/server
-/// failures; never retry an explicit 4xx authorization/grant rejection.
+/// OAuth codes are one-use credentials. Retry transient transport/server
+/// failures and rate limits, but never retry an explicit grant rejection.
 async fn send_oauth_token_request(
     client: &Client,
     token_url: &str,
@@ -569,6 +569,70 @@ pub async fn codex_usage() -> anyhow::Result<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn token_test_server(
+        replies: Vec<(&'static str, &'static str, Duration)>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let url = format!("http://{}/token", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            for (status, body, delay) in replies {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0u8; 4096];
+                assert!(stream.read(&mut request).await.unwrap() > 0);
+                tokio::time::sleep(delay).await;
+                let reply = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(reply.as_bytes()).await.unwrap();
+            }
+        });
+        (url, task)
+    }
+
+    #[tokio::test]
+    async fn retries_transient_oauth_token_error_then_accepts_delayed_response() {
+        let (url, server) = token_test_server(vec![
+            ("503 Service Unavailable", r#"{"error":"temporarily_unavailable"}"#, Duration::ZERO),
+            ("200 OK", r#"{"access_token":"test-token"}"#, Duration::from_millis(150)),
+        ])
+        .await;
+        let response = send_oauth_token_request(
+            &oauth_http_client().unwrap(),
+            &url,
+            &[("grant_type", "authorization_code"), ("code", "test-code")],
+            "ChatGPT token exchange",
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(
+            response.json::<serde_json::Value>().await.unwrap()["access_token"],
+            "test-token"
+        );
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_expired_authorization_code() {
+        let (url, server) = token_test_server(vec![(
+            "400 Bad Request",
+            r#"{"error":"invalid_grant"}"#,
+            Duration::ZERO,
+        )])
+        .await;
+        let error = send_oauth_token_request(
+            &oauth_http_client().unwrap(),
+            &url,
+            &[("grant_type", "authorization_code"), ("code", "expired-code")],
+            "ChatGPT token exchange",
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("expired, invalid, or already used"));
+        server.await.unwrap();
+    }
 
     #[test]
     fn requires_explicit_chatgpt_plan_usage_scopes() {

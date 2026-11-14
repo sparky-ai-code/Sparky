@@ -51,7 +51,8 @@ const DESKTOP_RENDERER_ORIGINS = [
 const SPARKY_CODEX_AUTH_ROUTE = "/api/sparky/codex-auth";
 const SPARKY_CODEX_USAGE_ROUTE = "/api/sparky/codex-usage";
 const CODEX_AUTH_STATUS_TIMEOUT_MS = 20_000;
-const CODEX_AUTH_LOGIN_TIMEOUT_MS = 15 * 60_000;
+// Leave enough time for manual browser approval and slow-network token exchange.
+const CODEX_AUTH_LOGIN_TIMEOUT_MS = 60 * 60_000;
 
 export const browserApiCorsLayer = Layer.unwrap(
   Effect.gen(function* () {
@@ -135,7 +136,7 @@ const runSparkyCodexAuthCommand = (argument: string) =>
         };
         timeout = setTimeout(() => {
           child.kill();
-          finish(() => reject(new Error("ChatGPT authentication service timed out.")));
+          finish(() => reject(new Error("ChatGPT sign-in did not complete within 60 minutes. Start sign-in again from Models settings.")));
         }, timeoutMs);
         child.stdout.setEncoding("utf8");
         child.stderr.setEncoding("utf8");

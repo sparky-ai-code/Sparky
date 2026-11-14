@@ -190,8 +190,15 @@ layer("OrchestrationEventStore", (it) => {
         )
       `;
 
+      // Other tests may have appended hundreds of valid events; query the
+      // corrupt row directly rather than assuming it appears in the first page.
+      const inserted = yield* sql<{ readonly sequence: number }>`
+        SELECT sequence FROM orchestration_events
+        WHERE event_id = ${EventId.make("evt-store-invalid-json")}
+      `;
+      assert.equal(inserted.length, 1);
       const replayResult = yield* Effect.result(
-        Stream.runCollect(eventStore.readFromSequence(0, 10)),
+        Stream.runCollect(eventStore.readFromSequence(inserted[0]!.sequence - 1, 1)),
       );
       assert.equal(replayResult._tag, "Failure");
       if (replayResult._tag === "Failure") {

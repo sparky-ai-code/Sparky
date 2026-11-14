@@ -46,7 +46,7 @@ export function AppearanceSettingsPanel() {
           <p className="text-sm text-muted-foreground">Colors, interaction, and spacing.</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => { setMode("system"); update({ ...DEFAULT_APPEARANCE }); }}>
-          <RotateCcwIcon className="size-3.5" />Reset
+          <RotateCcwIcon className="size-3.5" />Reset theme
         </Button>
       </header>
       <SettingsSection title="Color theme" className="space-y-2">

@@ -1408,6 +1408,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     asarUnpack: [...DESKTOP_ASAR_UNPACK, "apps/server/dist/**", "**/node_modules/**"],
     extraResources: [
       { from: "apps/desktop/resources/sparky", to: "sparky" },
+      { from: "apps/desktop/resources/microboxes", to: "microboxes" },
       ...(platform === "win"
         ? [{ from: "apps/desktop/resources/icon.ico", to: "icon.ico" }]
         : []),
@@ -1748,6 +1749,30 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     options.verbose,
     repoRoot,
   );
+
+  // Never produce an installer without its matching, integrity-checked
+  // Microboxes guest. CI builds and smoke-tests these artifacts first.
+  // A universal macOS installer carries both guest architectures.
+  const guestArchitectures = options.arch === "universal"
+    ? ["x86_64", "aarch64"]
+    : [options.arch === "arm64" ? "aarch64" : "x86_64"];
+  for (const guestArch of guestArchitectures) {
+    const guestName = `sparky-micro-${guestArch}`;
+    const guestSource = path.join(repoRoot, "dist", "microboxes", guestName);
+    const requiredFiles = [
+      "image.json", "SHA256SUMS", "rootfs.ext2",
+      guestArch === "aarch64" ? "Image" : "bzImage",
+    ];
+    for (const file of requiredFiles) {
+      if (!(yield* fs.exists(path.join(guestSource, file)))) {
+        return yield* Effect.fail(new Error(
+          `Cannot build Sparky without its bundled Microboxes guest: ${guestName}/${file}. Build and boot-verify the guest image first.`
+        ));
+      }
+    }
+    yield* fs.copy(guestSource, path.join(stageResourcesDir, "microboxes", guestName));
+    yield* Effect.log(`[desktop-artifact] Bundled verified guest ${guestName}.`);
+  }
 
   // electron-builder is filtering out stageResourcesDir directory in the AppImage for production
   yield* fs.copy(stageResourcesDir, path.join(stageAppDir, "apps/desktop/prod-resources"));

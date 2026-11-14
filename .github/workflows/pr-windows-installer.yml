@@ -35,6 +35,59 @@ env:
   NODE_ENV: production
 
 jobs:
+  build-micro-linux:
+    name: Build and boot-verify bundled Linux guest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore verified guest cache
+        id: guest-cache
+        uses: actions/cache@v4
+        with:
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-x86_64
+          key: microbox-x86_64-v2-${{ hashFiles('sparky-desktop/source/microboxes/os/**') }}
+      - name: Verify Buildroot prerequisites
+        if: steps.guest-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for bin in gcc g++ make git wget curl rsync cpio unzip file bc bison flex python3 sha256sum; do
+            command -v "$bin" >/dev/null || { echo "Missing build tool: $bin"; exit 1; }
+          done
+      - name: Build Linux guest from this revision
+        if: steps.guest-cache.outputs.cache-hit != 'true'
+        run: bash microboxes/os/build-x86_64.sh
+        env:
+          JOBS: "4"
+      - name: Verify bundled image checksums
+        run: |
+          cd dist/microboxes/sparky-micro-x86_64
+          sha256sum -c SHA256SUMS
+          grep -Fq '"boxImageVersion": 2' image.json
+      - name: Install QEMU for guest acceptance
+        run: |
+          if ! command -v qemu-system-x86_64 >/dev/null || ! command -v qemu-img >/dev/null; then
+            sudo apt-get -o Acquire::Retries=3 update
+            sudo apt-get -o Acquire::Retries=3 install -y qemu-system-x86 qemu-utils
+          fi
+      - name: Boot desktop and test mouse and keyboard
+        env:
+          SPARKY_MICRO_VERIFY_GUI_INPUT: "1"
+        run: |
+          node microboxes/os/smoke-boot.mjs \
+            dist/microboxes/sparky-micro-x86_64 \
+            dist/microboxes/screenshots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sparky-micro-x86_64-bundled
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-x86_64/
+          if-no-files-found: error
+          retention-days: 1
+
   build-wsl-node-pty:
     name: Build Linux node-pty for WSL
     runs-on: ubuntu-latest
@@ -76,7 +129,7 @@ jobs:
 
   build-windows-x64:
     name: Build and upload Windows x64 installer
-    needs: build-wsl-node-pty
+    needs: [build-wsl-node-pty, build-micro-linux]
     runs-on: windows-latest
     defaults:
       run:
@@ -111,6 +164,19 @@ jobs:
         run: pnpm --config.verify-deps-before-run=false exec vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build
       - name: Verify GitHub OAuth bundle
         run: node scripts/verify-github-oauth-build.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          name: sparky-micro-x86_64-bundled
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-x86_64
+      - name: Confirm image was staged for packaging
+        shell: pwsh
+        run: |
+          $guest = 'dist/microboxes/sparky-micro-x86_64'
+          foreach ($name in @('image.json', 'SHA256SUMS', 'rootfs.ext2', 'bzImage')) {
+            if (!(Test-Path -LiteralPath (Join-Path $guest $name) -PathType Leaf)) {
+              throw "Missing bundled guest: $name"
+            }
+          }
       - name: Build unsigned Windows installer
         run: pnpm --config.verify-deps-before-run=false dist:desktop:win:x64 --output-dir release-pr --wsl-prebuild "$env:GITHUB_WORKSPACE/wsl-prebuild/pty.node" --verbose
       - name: Verify installer

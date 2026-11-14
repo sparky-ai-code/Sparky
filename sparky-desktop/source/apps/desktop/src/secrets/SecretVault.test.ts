@@ -78,6 +78,39 @@ describe("local encrypted credential vault", () => {
     await expect(Vault.saveSecret(example)).rejects.toThrow("Secure credential storage is unavailable");
   });
 
+  it("preserves the old password on metadata edits and replaces it only when supplied", async () => {
+    const entry = await Vault.saveSecret(example);
+    await Vault.saveSecret({ ...example, id: entry.id, name: "Renamed", password: "" });
+    expect((await Vault.getSecretForOrigin(entry.id, example.origin)).password).toBe(example.password);
+    await Vault.saveSecret({ ...example, id: entry.id, password: "a-new-password" });
+    expect((await Vault.getSecretForOrigin(entry.id, example.origin)).password).toBe("a-new-password");
+    await Vault.removeSecret(entry.id);
+    await expect(Vault.getSecretForOrigin(entry.id, example.origin)).rejects.toThrow("Credential not found");
+  });
+
+  it("refuses corrupt and duplicate vault records without overwriting them", async () => {
+    const entry = await Vault.saveSecret(example);
+    const filename = path.join(mock.directory, "sparky-secret-vault-v1.json");
+    const valid = JSON.parse(await fs.readFile(filename, "utf8"));
+    for (const entries of [
+      [{ ...valid.entries[0], metadata: { ...valid.entries[0].metadata, origin: "https://another-site.test" } }],
+      [{ ...valid.entries[0], metadata: { ...valid.entries[0].metadata, kind: "passkey" } }],
+      [valid.entries[0], valid.entries[0]],
+    ]) {
+      const raw = JSON.stringify({ version: 1, entries });
+      await fs.writeFile(filename, raw);
+      await expect(Vault.listSecrets()).rejects.toThrow("Credential vault file is invalid");
+      await expect(Vault.saveSecret({ ...example, id: entry.id })).rejects.toThrow("Credential vault file is invalid");
+      expect(await fs.readFile(filename, "utf8")).toBe(raw);
+    }
+  });
+
+  it("fails closed when OS encryption is unavailable", async () => {
+    mock.available = false;
+    await expect(Vault.saveSecret(example)).rejects.toThrow("Secure credential storage is unavailable");
+    await expect(Vault.listSecrets()).rejects.toThrow("Secure credential storage is unavailable");
+  });
+
   it("stores native passkeys as metadata-only references", async () => {
     const entry = await Vault.saveSecret({
       name: "Passkey test",

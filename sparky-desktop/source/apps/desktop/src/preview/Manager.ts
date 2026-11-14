@@ -65,6 +65,7 @@ import {
 import { isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
 import { playwrightInjectedRuntimeInstallExpression } from "./PlaywrightInjectedRuntime.ts";
 import { makePreviewAutomationKeySequence } from "./PreviewKeyboard.ts";
+import { canClickProtectedPage, isProtectedInspectionAction } from "./SecretProtectionPolicy.ts";
 
 export type PreviewNavStatus =
   | { kind: "Idle" }
@@ -735,6 +736,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           const scope = yield* Scope.fork(parentScope, "sequential");
           const handleDebuggerMessage = Effect.fn("PreviewManager.handleDebuggerMessage")(
             function* (method: string, params: Record<string, unknown>) {
+              const activeTabId = yield* tabIdForWebContents(wc.id);
+              const protectedTab = activeTabId !== null && (yield* isProtected(activeTabId));
               if (method === "Page.screencastFrame") {
                 const sessionId = params["sessionId"];
                 if (typeof sessionId === "number") {
@@ -746,12 +749,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                     () => wc.debugger.sendCommand("Page.screencastFrameAck", { sessionId }),
                   ).pipe(Effect.ignore);
                 }
-                const tabId = yield* tabIdForWebContents(wc.id);
+                const tabId = activeTabId;
                 const metadata =
                   typeof params["metadata"] === "object" && params["metadata"] !== null
                     ? (params["metadata"] as Record<string, unknown>)
                     : {};
-                if (tabId && typeof params["data"] === "string") {
+                if (tabId && !protectedTab && typeof params["data"] === "string") {
                   const receivedAt = yield* currentIso;
                   const listeners = yield* Ref.get(recordingFrameListenersRef);
                   const frame: DesktopPreviewRecordingFrame = {
@@ -771,7 +774,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                   );
                 }
               }
-              yield* captureDiagnosticMessage(wc.id, method, params);
+              // CDP console/network events may contain credentials (including
+              // form URLs or site-logged values). Never cache them while protected.
+              if (!protectedTab) yield* captureDiagnosticMessage(wc.id, method, params);
             },
           );
           const onMessage: BrowserControlSession["onMessage"] = (_event, method, params) => {
@@ -895,6 +900,15 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const epoch = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
     const control = yield* ensureControlSession(wc);
     const execute = Effect.fn("PreviewManager.executeControlAction")(function* () {
+      // Recheck AFTER acquiring the per-tab semaphore. An inspection queued
+      // before autofill must not run once the password is in the document.
+      if (isProtectedInspectionAction(action) && (yield* isProtected(tabId))) {
+        return yield* new PreviewOperationError({
+          operation: `protected.${action}`,
+          tabId,
+          cause: "Browser inspection and input are disabled while a saved password is present.",
+        });
+      }
       yield* update(tabId, { controller: "agent" });
       const send: SendCommand = Effect.fn("PreviewManager.sendCommand")(
         function* (method, commandParams) {
@@ -1174,11 +1188,18 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     // Only full-document navigation destroys the login page JavaScript context.
     // did-navigate-in-page (SPA route changes) does NOT release protection.
     const releaseProtectionAfterDocumentReplacement = () => {
-      runFork(Ref.update(protectedTabsRef, (tabs) => {
-        if (!tabs.has(tabId)) return tabs;
-        const next = new Set(tabs);
-        next.delete(tabId);
-        return next;
+      runFork(Effect.gen(function* () {
+        // Destroy all diagnostics collected while the credential was present
+        // BEFORE restoring the agent's right to inspect this tab.
+        yield* Ref.update(diagnosticsRef, (diagnostics) =>
+          replaceMap(diagnostics, (copy) => { copy.delete(wc.id); }),
+        );
+        yield* Ref.update(protectedTabsRef, (tabs) => {
+          if (!tabs.has(tabId)) return tabs;
+          const next = new Set(tabs);
+          next.delete(tabId);
+          return next;
+        });
       }));
     };
     const failed = (
@@ -1733,6 +1754,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const id = `browser-screenshot-${artifactSiteSlug(wc.getURL())}-${millis.toString(36)}`;
     const artifactPath = path.join(resolvedArtifactDirectory, `${id}.png`);
     const data = image.toPNG();
+    // A screenshot initiated before autofill might complete after protection.
+    if (yield* isProtected(tabId)) {
+      return yield* new PreviewOperationError({ operation: "captureScreenshot.protected", tabId, cause: "Screenshot capture crossed a saved-password fill." });
+    }
     yield* fileSystem.makeDirectory(resolvedArtifactDirectory, { recursive: true }).pipe(
       Effect.mapError(
         (cause) =>
@@ -1792,8 +1817,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       });
     }
     const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "recording.start", startScreencast);
-    yield* Ref.set(recordingTabIdRef, Option.some(tabId));
+    yield* withControlSession(tabId, wc, "recording.start", (send) =>
+      Effect.gen(function* () {
+        yield* startScreencast(send);
+        // Reserve the slot inside the lock, so a queued secret fill cannot
+        // slip between starting screencast and recording its active state.
+        yield* Ref.set(recordingTabIdRef, Option.some(tabId));
+      }),
+    );
   });
 
   const stopRecording = Effect.fn("PreviewManager.stopRecording")(function* (tabId: string) {
@@ -2161,14 +2192,23 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   ) {
     const wc = yield* requireWebContents(tabId);
     yield* withControlSession(tabId, wc, "click", (send, sendCleanup) =>
-      performAutomationClick(tabId, input, send, sendCleanup),
+      Effect.gen(function* () {
+        if ((yield* isProtected(tabId)) && !canClickProtectedPage(input)) {
+          return yield* new PreviewOperationError({
+            operation: "click.protected",
+            tabId,
+            cause: "Only a simple sign-in button locator or a coordinate click is allowed while a saved password is present.",
+          });
+        }
+        yield* performAutomationClick(tabId, input, send, sendCleanup);
+      }),
     );
   });
 
   const typeIntoAutomationTarget = Effect.fn("PreviewManager.typeIntoAutomationTarget")(function* (
     tabId: string,
     send: SendCommand,
-    input: PreviewAutomationTypeInput,
+    input: PreviewAutomationTypeInput & { readonly expectedOrigin?: string },
   ) {
     const locator = automationLocator(input);
     if (locator) yield* ensurePlaywrightInjected(tabId, send);
@@ -2181,6 +2221,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
     const result = yield* evaluateWithDebugger<
       | { ok: true }
+      | { originMismatch: true }
       | { invalidSelector: true; message: string }
       | { notEditable: true }
       | { notFound: true }
@@ -2189,6 +2230,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       send,
       `(() => {
           try {
+            if (${input.expectedOrigin === undefined ? "false" : `location.origin !== ${JSON.stringify(input.expectedOrigin)}`}) {
+              return { originMismatch: true };
+            }
             const element = ${locatorJson ? `(() => { const injected = globalThis.__t3PlaywrightInjected; return injected.querySelector(injected.parseSelector(${locatorJson}), document, true); })()` : "document.activeElement"};
             if (!element) return { notFound: true };
             const textControl =
@@ -2246,6 +2290,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         })()`,
       true,
     );
+    if ("originMismatch" in result) {
+      return yield* new PreviewOperationError({
+        operation: "saved-login.origin",
+        tabId,
+        cause: "The browser changed sites before the credential could be entered.",
+      });
+    }
     if ("invalidSelector" in result) {
       return yield* new PreviewAutomationInvalidSelectorError({
         operation: "type",
@@ -2542,6 +2593,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const wc = yield* requireWebContents(tabId);
     return yield* withControlSession(tabId, wc, "saved-login", (send, sendCleanup) =>
       Effect.gen(function* () {
+        const activeRecording = yield* Ref.get(recordingTabIdRef);
+        if (Option.isSome(activeRecording) && activeRecording.value === tabId) {
+          return yield* new PreviewOperationError({
+            operation: "saved-login.recording",
+            tabId,
+            cause: "Stop browser recording before using a saved credential.",
+          });
+        }
         if (new URL(wc.getURL()).origin !== input.origin) {
           return yield* new PreviewOperationError({ operation: "saved-login.origin", tabId, cause: "The browser navigated away from the saved site." });
         }
@@ -2560,11 +2619,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             locator: input.emailLocator ?? "css=input[type=email], input[autocomplete=username], input[name=email], input[name=username]",
             text: input.email,
             clear: true,
+            expectedOrigin: input.origin,
           });
         }
         const locator = input.passwordLocator ?? "css=input[type=password]";
         // Protect BEFORE injecting the secret, but let the agent correct username locators first.
         yield* Ref.update(protectedTabsRef, (tabs) => new Set([...tabs, tabId]));
+        // Wipe pre-fill diagnostics so a delayed website log cannot later be
+        // replayed to an agent when navigation unlocks inspection.
+        yield* Ref.update(diagnosticsRef, (diagnostics) =>
+          replaceMap(diagnostics, (copy) => { copy.delete(wc.id); }),
+        );
         // Apply masking before the password appears in the page, including reveal-password controls.
         yield* ensurePlaywrightInjected(tabId, send);
         const locatorJson = yield* encodeJson({ operation: "saved-login.locator", tabId }, locator);
@@ -2578,7 +2643,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           "input[type=password], [data-sparky-protected-credential] { filter: blur(14px) !important; -webkit-text-security: disc !important; }",
           { cssOrigin: "user" },
         ));
-        yield* typeIntoAutomationTarget(tabId, send, { locator, text: input.password, clear: true }).pipe(
+        yield* typeIntoAutomationTarget(tabId, send, { locator, text: input.password, clear: true, expectedOrigin: input.origin }).pipe(
           Effect.mapError(() => new PreviewOperationError({ operation: "saved-login.fill", tabId, cause: "Could not fill the password field." })),
         );
         return { kind: "password" as const, status: "filled" as const } satisfies SecretVaultUseResult;

@@ -37,6 +37,39 @@ function normalizedOrigin(value: string): string {
   return url.origin;
 }
 
+function validateVaultFile(value: unknown): VaultFile {
+  const invalid = () => new Error("Credential vault file is invalid; no data has been overwritten.");
+  if (!value || typeof value !== "object") throw invalid();
+  const file = value as Partial<VaultFile>;
+  if (file.version !== 1 || !Array.isArray(file.entries)) throw invalid();
+  const ids = new Set<string>();
+  for (const stored of file.entries) {
+    if (!stored || typeof stored !== "object") throw invalid();
+    const entry = stored.metadata;
+    if (!entry || typeof entry !== "object") throw invalid();
+    if (typeof entry.id !== "string" || !entry.id ||
+      typeof entry.name !== "string" || !entry.name ||
+      typeof entry.description !== "string" ||
+      typeof entry.email !== "string" ||
+      typeof entry.createdAt !== "string" ||
+      typeof entry.updatedAt !== "string" ||
+      typeof entry.origin !== "string" ||
+      (entry.kind !== "password" && entry.kind !== "passkey") ||
+      ids.has(entry.id)
+    ) throw invalid();
+    try {
+      if (normalizedOrigin(entry.origin) !== entry.origin) throw invalid();
+    } catch {
+      throw invalid();
+    }
+    if (entry.kind === "password" ? typeof stored.cipherText !== "string" || !stored.cipherText : stored.cipherText !== null) {
+      throw invalid();
+    }
+    ids.add(entry.id);
+  }
+  return file as VaultFile;
+}
+
 async function readFile(): Promise<VaultFile> {
   requireSystemEncryption();
   let content: string;
@@ -46,11 +79,7 @@ async function readFile(): Promise<VaultFile> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, entries: [] };
     throw error;
   }
-  const file: unknown = JSON.parse(content);
-  if (!file || typeof file !== "object" || (file as VaultFile).version !== 1 || !Array.isArray((file as VaultFile).entries)) {
-    throw new Error("Credential vault file is invalid; no data has been overwritten.");
-  }
-  return file as VaultFile;
+  return validateVaultFile(JSON.parse(content) as unknown);
 }
 
 async function writeFile(file: VaultFile): Promise<void> {

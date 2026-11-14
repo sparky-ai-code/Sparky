@@ -1408,7 +1408,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     asarUnpack: [...DESKTOP_ASAR_UNPACK, "apps/server/dist/**", "**/node_modules/**"],
     extraResources: [
       { from: "apps/desktop/resources/sparky", to: "sparky" },
-      { from: "apps/desktop/resources/microboxes", to: "microboxes" },
+      // Keep the potentially large guest outside the staged application/asar,
+      // so electron-builder bundles it exactly once as a real resource.
+      { from: "../microboxes", to: "microboxes" },
       ...(platform === "win"
         ? [{ from: "apps/desktop/resources/icon.ico", to: "icon.ico" }]
         : []),
@@ -1770,7 +1772,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         ));
       }
     }
-    yield* fs.copy(guestSource, path.join(stageResourcesDir, "microboxes", guestName));
+    yield* fs.copy(guestSource, path.join(stageRoot, "microboxes", guestName));
     yield* Effect.log(`[desktop-artifact] Bundled verified guest ${guestName}.`);
   }
 

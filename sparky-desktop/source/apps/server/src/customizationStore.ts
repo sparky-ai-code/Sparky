@@ -65,7 +65,7 @@ export function readCustomization(stateDir: string): CustomizationSnapshot {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       return empty;
     }
-    return { ...empty, error: error instanceof Error ? error.message : "Could not read the customization file." };
+    return { ...empty, error: "Saved customization is invalid or could not be read." };
   } finally {
     if (fd !== undefined) NodeFS.closeSync(fd);
   }

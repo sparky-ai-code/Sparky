@@ -1,0 +1,75 @@
+name: Build verified Microboxes installer images
+on:
+  workflow_call:
+    inputs:
+      source_ref:
+        description: Commit or ref to build the guest from (defaults to caller commit)
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build-guest:
+    name: Boot-verify ${{ matrix.arch }} Micro Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            qemu-package: qemu-system-x86
+          - arch: aarch64
+            qemu-package: qemu-system-arm
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+      - name: Restore guest cache
+        id: guest-cache
+        uses: actions/cache@v4
+        with:
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-${{ matrix.arch }}
+          key: microboxes-bundled-${{ matrix.arch }}-v2-${{ hashFiles('sparky-desktop/source/microboxes/os/**') }}
+      - name: Check Buildroot tools
+        if: steps.guest-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          for bin in gcc g++ make git wget curl rsync cpio unzip file bc bison flex python3 sha256sum; do
+            command -v "$bin" >/dev/null || { echo "Missing guest build dependency: $bin"; exit 1; }
+          done
+      - name: Build guest image
+        if: steps.guest-cache.outputs.cache-hit != 'true'
+        run: bash microboxes/os/build-${{ matrix.arch }}.sh
+        env:
+          JOBS: "4"
+      - name: Check guest integrity
+        run: |
+          cd dist/microboxes/sparky-micro-${{ matrix.arch }}
+          sha256sum -c SHA256SUMS
+          grep -Fq '"boxImageVersion": 2' image.json
+      - name: Install guest smoke-test emulator
+        run: |
+          if ! command -v qemu-system-${{ matrix.arch }} >/dev/null || ! command -v qemu-img >/dev/null; then
+            sudo apt-get -o Acquire::Retries=3 update
+            sudo apt-get -o Acquire::Retries=3 install -y ${{ matrix.qemu-package }} qemu-utils
+          fi
+      - name: Boot graphical desktop and exercise input
+        env:
+          SPARKY_MICRO_VERIFY_GUI_INPUT: "1"
+        run: |
+          node microboxes/os/smoke-boot.mjs \
+            dist/microboxes/sparky-micro-${{ matrix.arch }} \
+            dist/microboxes/screenshots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sparky-micro-${{ matrix.arch }}-bundled
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-${{ matrix.arch }}/
+          if-no-files-found: error
+          retention-days: 2

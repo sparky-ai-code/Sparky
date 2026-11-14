@@ -17,6 +17,9 @@ env:
   VITE_SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
 
 jobs:
+  build-micro-linux:
+    uses: ./.github/workflows/microboxes-installer-images.yml
+
   test-update-feeds:
     runs-on: ubuntu-latest
     steps:
@@ -30,7 +33,7 @@ jobs:
         run: npm --prefix sparky-download-worker test
 
   build-macos-x64:
-    needs: test-update-feeds
+    needs: [test-update-feeds, build-micro-linux]
     runs-on: macos-14
     defaults:
       run:
@@ -41,6 +44,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: sparky-micro-x86_64-bundled
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-x86_64
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0
@@ -125,7 +132,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   build-macos-arm64:
-    needs: test-update-feeds
+    needs: [test-update-feeds, build-micro-linux]
     runs-on: macos-latest
     defaults:
       run:
@@ -136,6 +143,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: sparky-micro-aarch64-bundled
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-aarch64
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0
@@ -220,7 +231,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   build-linux-x64:
-    needs: test-update-feeds
+    needs: [test-update-feeds, build-micro-linux]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -231,6 +242,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: sparky-micro-x86_64-bundled
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-x86_64
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0
@@ -381,7 +396,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   build-windows:
-    needs: test-update-feeds
+    needs: [test-update-feeds, build-micro-linux]
     runs-on: windows-latest
     defaults:
       run:
@@ -392,6 +407,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: sparky-micro-x86_64-bundled
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-x86_64
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0

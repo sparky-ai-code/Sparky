@@ -30,6 +30,12 @@ env:
   VITE_SPARKY_PLUGIN_WORKER_URL: ${{ vars.SPARKY_PLUGIN_WORKER_URL }}
 
 jobs:
+  build-micro-linux:
+    needs: validate
+    uses: ./.github/workflows/microboxes-installer-images.yml
+    with:
+      source_ref: ${{ needs.validate.outputs.source_sha }}
+
   validate:
     runs-on: ubuntu-latest
     outputs:
@@ -90,7 +96,7 @@ jobs:
           retention-days: 1
 
   build-macos-x64:
-    needs: validate
+    needs: [validate, build-micro-linux]
     runs-on: macos-14
     defaults:
       run:
@@ -99,6 +105,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.validate.outputs.source_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: sparky-micro-x86_64-bundled
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-x86_64
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0
@@ -149,7 +159,7 @@ jobs:
           retention-days: 1
 
   build-macos-arm64:
-    needs: validate
+    needs: [validate, build-micro-linux]
     runs-on: macos-latest
     defaults:
       run:
@@ -158,6 +168,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.validate.outputs.source_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: sparky-micro-aarch64-bundled
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-aarch64
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0
@@ -208,7 +222,7 @@ jobs:
           retention-days: 1
 
   build-linux-x64:
-    needs: validate
+    needs: [validate, build-micro-linux]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -217,6 +231,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.validate.outputs.source_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: sparky-micro-x86_64-bundled
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-x86_64
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0
@@ -262,7 +280,7 @@ jobs:
           retention-days: 1
 
   build-windows-x64:
-    needs: [validate, build-wsl-node-pty]
+    needs: [validate, build-wsl-node-pty, build-micro-linux]
     runs-on: windows-latest
     defaults:
       run:
@@ -275,6 +293,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.validate.outputs.source_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: sparky-micro-x86_64-bundled
+          path: sparky-desktop/source/dist/microboxes/sparky-micro-x86_64
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0

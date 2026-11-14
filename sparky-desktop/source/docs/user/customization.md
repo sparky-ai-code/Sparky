@@ -18,8 +18,11 @@ the first and a complete manifest. Mods are saved to
 `~/.t3/userdata/customization.json` unless the configured home differs).
 
 Changes appear automatically in all connected clients (polling every few
-seconds) and survive restarts. There is also a JSON editor in **Settings →
-Appearance → Agent customization**, with Apply, Discard and Reset.
+seconds) and survive restarts. **Settings → Appearance → Sparky mods**
+shows the active mod and a simple reset control. Manual JSON editing stays
+under **Advanced: edit mod JSON** so most users never have to touch it.
+Edits use the revision from when editing began, preventing them from silently
+overwriting a newer agent change. Reset requires confirmation.
 
 ## Manifest v1
 

@@ -36,6 +36,11 @@ export const registerCustomizationTools = Effect.fn("McpCustomizationTools.regis
   const apply: Invoke = (payload, scope) =>
     Effect.gen(function* () {
       const input = yield* Schema.decodeUnknownEffect(ApplyCustomizationTool.parametersSchema)(payload);
+      if (input.expectedRevision === "*") {
+        return yield* Effect.fail(new CustomizationToolError({
+          message: "Read the current customization and supply its revision before applying a mod.",
+        }));
+      }
       const source = Option.getOrNull(yield* projection.getThreadShellById(scope.threadId));
       if (!source || source.runtimeMode !== "full-access" || source.interactionMode === "plan") {
         return yield* Effect.fail(new CustomizationToolError({ message: "Customizing the app requires an active thread in Full access mode." }));

@@ -140,7 +140,11 @@ function commandId() { return CommandId.make(id()); }
 function nowIso() { return new Date().toISOString(); }
 function attribution(source: typeof AgentSource.Type, message: string): string {
   return "[Message from Sparky agent in thread " + source.threadId +
-    " (environment " + source.environmentId + ")]\n" + nonEmpty(message, "message");
+    " (environment " + source.environmentId + ")]\n" +
+    "Reply to this agent with sparky_thread_message(threadId=" + JSON.stringify(source.threadId) +
+    ", environmentId=" + JSON.stringify(source.environmentId) +
+    "). A reply in this conversation alone is not delivered to the sender.\n\n" +
+    nonEmpty(message, "message");
 }
 
 function formatShell(environmentId: string, snapshot: OrchestrationShellSnapshot, projectId?: string) {
@@ -385,7 +389,7 @@ export async function runThreadCollaboration(
         threadId,
         message: {
           messageId: MessageId.make(id()), role: "user",
-          text: nonEmpty(input.initialMessage, "initialMessage"), attachments: [],
+          text: attribution(source, input.initialMessage), attachments: [],
         },
         modelSelection,
         runtimeMode: access.runtimeMode,

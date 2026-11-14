@@ -42,12 +42,25 @@ type ThreadToolEffect = Effect.Effect<unknown, Error>;
 const newCommandId = () => CommandId.make(randomUUID());
 const nowIso = () => new Date().toISOString();
 
-export function formatAgentThreadMessage(sourceThreadId: string, message: string): string {
-  return "[Message from Sparky agent in thread " + sourceThreadId + "]\n" + message.trim();
+export function formatAgentThreadMessage(
+  sourceThreadId: string,
+  sourceEnvironmentId: string,
+  message: string,
+): string {
+  return "[Message from Sparky agent in thread " + sourceThreadId +
+    " (environment " + sourceEnvironmentId + ")]\n" +
+    "Reply to this agent with sparky_thread_message(threadId=" + JSON.stringify(sourceThreadId) +
+    ", environmentId=" + JSON.stringify(sourceEnvironmentId) +
+    "). A reply in this conversation alone is not delivered to the sender.\n\n" +
+    message.trim();
 }
 
-export function formatInitialThreadMessage(message: string): string {
-  return message.trim();
+export function formatInitialThreadMessage(
+  sourceThreadId: string,
+  sourceEnvironmentId: string,
+  message: string,
+): string {
+  return formatAgentThreadMessage(sourceThreadId, sourceEnvironmentId, message);
 }
 
 // A delegated thread inherits the calling agent's active provider/model by default.
@@ -189,7 +202,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
           message: {
             messageId,
             role: "user",
-            text: formatAgentThreadMessage(String(scope.threadId), message),
+            text: formatAgentThreadMessage(String(scope.threadId), String(scope.environmentId), message),
             attachments: [],
           },
           modelSelection: target.modelSelection,
@@ -202,6 +215,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
       return {
         threadId: target.id,
         fromThreadId: scope.threadId,
+        fromEnvironmentId: scope.environmentId,
         messageId,
         delivery: target.latestTurn?.state === "running" ? "steer" : "turn",
         status: "accepted",
@@ -529,7 +543,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
             message: {
               messageId,
               role: "user",
-              text: formatInitialThreadMessage(input.initialMessage),
+              text: formatInitialThreadMessage(String(scope.threadId), String(scope.environmentId), input.initialMessage),
               attachments: [],
             },
             modelSelection,

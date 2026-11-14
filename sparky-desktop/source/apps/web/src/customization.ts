@@ -100,7 +100,10 @@ export async function saveCustomization(
   customization: SparkyCustomization,
   expectedRevision?: string,
 ): Promise<CustomizationSnapshot> {
-  const next = await requestCustomization({ customization: parseCustomization(customization), expectedRevision });
+  const next = await requestCustomization({
+    customization: parseCustomization(customization),
+    ...(expectedRevision === undefined ? {} : { expectedRevision }),
+  });
   lastLoadedAt = Date.now();
   setCustomizationSnapshot(next);
   return next;

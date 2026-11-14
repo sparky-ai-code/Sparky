@@ -78,7 +78,7 @@ export const ReadThreadTool = Tool.make("sparky_thread_read", {
 
 export const CreateThreadTool = Tool.make("sparky_thread_create", {
   description:
-    "Create a thread in any project on a connected backend; pass environmentId from sparky_threads_list to target a different environment. Select the model and its provider-supported reasoning/context traits in modelSelection.options; discover valid model IDs and option choices with sparky_thread_models. workspaceMode=current keeps the checkout unchanged; existing reuses the exact listed branch/worktree; new creates an isolated worktree from required baseBranch with optional branch name. Use sparky_project_branches to discover refs. Set initialMessage to start the new agent immediately; otherwise it remains idle.",
+    "Create a thread in any project on a connected backend; pass environmentId from sparky_threads_list to target a different environment. Select the model and its provider-supported reasoning/context traits in modelSelection.options; discover valid model IDs and option choices with sparky_thread_models. workspaceMode=current keeps the checkout unchanged; existing reuses the exact listed branch/worktree; new creates an isolated worktree from required baseBranch with optional branch name. Use sparky_project_branches to discover refs. Set initialMessage to start the new agent immediately; otherwise it remains idle. The initial message includes the calling agent's reply address (threadId and environmentId), so the new agent can message its creator.",
   parameters: Schema.Struct({
     environmentId: Schema.optional(Schema.String),
     projectId: NonEmptyText,
@@ -99,7 +99,7 @@ export const CreateThreadTool = Tool.make("sparky_thread_create", {
 
 export const MessageThreadTool = Tool.make("sparky_thread_message", {
   description:
-    "Send an agent-attributed message to a DIFFERENT Sparky thread and start its next turn. If the target is already running this becomes a steer. Its original model and permission mode are preserved. Read the destination's reply with sparky_thread_read; do not recursively ping-pong agents.",
+    "Send an agent-attributed message to a DIFFERENT Sparky thread and start its next turn. If the target is already running this becomes a steer. Its original model and permission mode are preserved. Incoming agent messages include the sender's threadId and environmentId. To reply, call this tool with those exact IDs; a reply in your own chat does not reach the sender. Read peer replies with sparky_thread_read and avoid unnecessary circular exchanges.",
   parameters: Schema.Struct({
     environmentId: Schema.optional(Schema.String),
     threadId: NonEmptyText,

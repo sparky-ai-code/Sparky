@@ -154,8 +154,31 @@ describe("cross-environment agent thread collaboration", () => {
     });
     if (command?.type === "thread.turn.start") {
       expect(command.message.text).toContain("origin-thread (environment source-env)");
+      expect(command.message.text).toContain(
+        'sparky_thread_message(threadId="origin-thread", environmentId="source-env")',
+      );
       expect(command.message.text).toContain("Focus on tests");
     }
+  });
+
+  it("includes the sender's reply address in ordinary remote messages", async () => {
+    const { transport, dispatch } = makeTransport();
+    const result = await runThreadCollaboration({
+      operation: "message",
+      payload: { environmentId: "remote-env", threadId: "remote-thread", message: "Can you review?" },
+      source,
+    }, transport);
+    expect(result).toMatchObject({
+      fromThreadId: "origin-thread",
+      fromEnvironmentId: "source-env",
+      status: "accepted",
+    });
+    const command = dispatch.mock.calls[0]?.[1];
+    if (command?.type !== "thread.turn.start") throw new Error("Expected a start command");
+    expect(command.message.text).toContain(
+      'sparky_thread_message(threadId="origin-thread", environmentId="source-env")',
+    );
+    expect(command.message.text.endsWith("\n\nCan you review?")).toBe(true);
   });
 
   it("does not claim steering succeeds for an idle remote thread", async () => {
@@ -209,8 +232,13 @@ describe("cross-environment agent thread collaboration", () => {
       interactionMode: "default",
     });
     if (start?.type === "thread.turn.start") {
-      expect(start.message.text).toBe("Please fix the remote tests");
-      expect(start.message.text).not.toContain("Message from Sparky agent");
+      expect(start.message.text).toContain(
+        "[Message from Sparky agent in thread origin-thread (environment source-env)]",
+      );
+      expect(start.message.text).toContain(
+        'sparky_thread_message(threadId="origin-thread", environmentId="source-env")',
+      );
+      expect(start.message.text.endsWith("\n\nPlease fix the remote tests")).toBe(true);
     }
   });
 

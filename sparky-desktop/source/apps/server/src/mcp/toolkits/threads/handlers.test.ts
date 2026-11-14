@@ -24,11 +24,14 @@ describe("agent-managed thread collaboration tools", () => {
     ]);
   });
 
-  it("keeps new-thread prompts free of agent attribution while preserving peer-message attribution", () => {
-    expect(formatInitialThreadMessage("Review tests.  ")).toBe("Review tests.");
-    expect(formatAgentThreadMessage("parent-thread", "Review tests.  ")).toBe(
-      "[Message from Sparky agent in thread parent-thread]\nReview tests.",
+  it("includes the authenticated source address and reply instructions in first turns and peer messages", () => {
+    const message = formatAgentThreadMessage("parent-thread", "local-env", "Review tests.  ");
+    expect(message).toContain("[Message from Sparky agent in thread parent-thread (environment local-env)]");
+    expect(message).toContain(
+      'sparky_thread_message(threadId="parent-thread", environmentId="local-env")',
     );
+    expect(message.endsWith("\n\nReview tests.")).toBe(true);
+    expect(formatInitialThreadMessage("parent-thread", "local-env", "Review tests.  ")).toBe(message);
   });
 
   it("inherits the caller's Codex OAuth model instead of an API-key project default", () => {

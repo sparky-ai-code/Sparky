@@ -61,9 +61,26 @@ describe("customization client sync", () => {
   it("recognizes recovery mode in web and Electron hash routes", () => {
     vi.stubGlobal("window", { location: { search: "?safe-ui=1", hash: "" } });
     expect(isCustomizationSafeMode()).toBe(true);
-    vi.stubGlobal("window", { location: { search: "", hash: "#/settings/appearance?safe-ui=1" } });
+    vi.stubGlobal("window", { location: { search: "?foo=bar", hash: "#/settings/appearance?safe-ui=1" } });
     expect(isCustomizationSafeMode()).toBe(true);
     vi.stubGlobal("window", { location: { search: "", hash: "#/settings/appearance" } });
     expect(isCustomizationSafeMode()).toBe(false);
+  });
+
+  it("does not let an older refresh roll back a successful save", async () => {
+    let completeRead: ((response: Response) => void) | undefined;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => {
+      completeRead = resolve;
+    }));
+    const previousRead = refreshCustomization(true);
+    const updated = { ...DEFAULT_CUSTOMIZATION, name: "Current" };
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      customization: updated, revision: "new-rev", path: "/state/customization.json",
+    }), { status: 200 }));
+    await saveCustomization(updated, "old-rev");
+    completeRead?.(new Response(JSON.stringify({
+      customization: DEFAULT_CUSTOMIZATION, revision: "old-rev", path: "/state/customization.json",
+    }), { status: 200 }));
+    expect((await previousRead).customization.name).toBe("Current");
   });
 });

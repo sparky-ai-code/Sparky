@@ -23,17 +23,20 @@ const listeners = new Set<() => void>();
 let snapshot = EMPTY;
 let appliedKey = "";
 let lastLoadedAt = 0;
+let writeVersion = 0;
 let inflight: Promise<CustomizationSnapshot> | null = null;
 
 export function isCustomizationSafeMode(): boolean {
-  return typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search || window.location.hash.split("?")[1] || "").get("safe-ui") === "1";
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("safe-ui") === "1" ||
+    new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("safe-ui") === "1";
 }
 
 function updateStyle(next: SparkyCustomization): void {
   if (typeof document === "undefined") return;
   let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
-  if (isCustomizationSafeMode()) {
+  const css = customizationCss(next);
+  if (isCustomizationSafeMode() || !css) {
     style?.remove();
     return;
   }
@@ -42,17 +45,17 @@ function updateStyle(next: SparkyCustomization): void {
     style.id = STYLE_ID;
     document.head.append(style);
   }
-  style.textContent = customizationCss(next);
+  if (style.textContent !== css) style.textContent = css;
 }
 
 export function setCustomizationSnapshot(next: CustomizationSnapshot): void {
   const customization = parseCustomization(next.customization);
   const normalized: CustomizationSnapshot = { ...next, customization };
   const key = JSON.stringify(normalized);
-  if (key === appliedKey) return;
-  // Render the stylesheet before notifying React. An invalid response never
-  // replaces the user's last valid customization.
+  // Sync recovery mode even when the manifest has not changed.
   updateStyle(customization);
+  if (key === appliedKey) return;
+  // An invalid response never replaces the user's last valid customization.
   snapshot = normalized;
   appliedKey = key;
   for (const listener of listeners) listener();
@@ -88,10 +91,14 @@ export function refreshCustomization(force = false): Promise<CustomizationSnapsh
   if (!force && Date.now() - lastLoadedAt < 1500 && snapshot.revision) {
     return Promise.resolve(snapshot);
   }
+  const version = writeVersion;
   inflight = requestCustomization().then((next) => {
-    lastLoadedAt = Date.now();
-    setCustomizationSnapshot(next);
-    return next;
+    // A delayed GET must never undo a newer local save.
+    if (version === writeVersion) {
+      lastLoadedAt = Date.now();
+      setCustomizationSnapshot(next);
+    }
+    return snapshot;
   }).finally(() => { inflight = null; });
   return inflight;
 }
@@ -100,8 +107,10 @@ export async function saveCustomization(
   customization: SparkyCustomization,
   expectedRevision?: string,
 ): Promise<CustomizationSnapshot> {
+  const validated = parseCustomization(customization);
+  writeVersion++;
   const next = await requestCustomization({
-    customization: parseCustomization(customization),
+    customization: validated,
     ...(expectedRevision === undefined ? {} : { expectedRevision }),
   });
   lastLoadedAt = Date.now();
@@ -122,5 +131,6 @@ export function resetCustomizationForTests(): void {
   snapshot = EMPTY;
   appliedKey = "";
   lastLoadedAt = 0;
+  writeVersion = 0;
   updateStyle(DEFAULT_CUSTOMIZATION);
 }

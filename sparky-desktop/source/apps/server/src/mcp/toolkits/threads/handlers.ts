@@ -50,6 +50,16 @@ export function formatInitialThreadMessage(message: string): string {
   return message.trim();
 }
 
+// A delegated thread inherits the calling agent's active provider/model by default.
+// The project's default can be unrelated (for example an API-key model while
+// the caller uses Codex OAuth), so do not silently switch authentication paths.
+export function resolveAgentThreadModelSelection(
+  requested: OrchestrationThreadShell["modelSelection"] | undefined,
+  source: OrchestrationThreadShell["modelSelection"],
+): OrchestrationThreadShell["modelSelection"] {
+  return requested ?? source;
+}
+
 export function canAgentSendThreadMessage(
   source: Pick<OrchestrationThreadShell, "runtimeMode" | "interactionMode">,
   target: Pick<OrchestrationThreadShell, "runtimeMode">,
@@ -369,8 +379,10 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
           invalid("Project not found in this environment. Call sparky_threads_list first."),
         );
       }
-      const modelSelection =
-        input.modelSelection ?? project.defaultModelSelection ?? source.modelSelection;
+      const modelSelection = resolveAgentThreadModelSelection(
+        input.modelSelection,
+        source.modelSelection,
+      );
       if (input.modelSelection) {
         const availableProviders = yield* providerRegistry.getProviders;
         const requestedProvider = availableProviders.find(

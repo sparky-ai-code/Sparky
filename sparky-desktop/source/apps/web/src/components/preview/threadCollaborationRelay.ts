@@ -296,7 +296,9 @@ export async function runThreadCollaboration(
     const snapshot = await transport.shell(target);
     const project = snapshot.projects.find((candidate) => candidate.id === input.projectId);
     if (!project) throw new Error("Project does not exist in the destination environment.");
-    const modelSelection = input.modelSelection ?? project.defaultModelSelection ?? access.modelSelection;
+    // Inherit the originating agent's provider/model unless explicitly overridden.
+    // A destination project's default may use API keys rather than the caller's OAuth.
+    const modelSelection = input.modelSelection ?? access.modelSelection;
     const config = await transport.serverConfig(target);
     const provider = config.providers.find((candidate) =>
       candidate.instanceId === modelSelection.instanceId &&

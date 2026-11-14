@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
+import { ProviderInstanceId } from "@sparky/contracts";
 import * as Schema from "effect/Schema";
 
 import {
   canAgentSendThreadMessage,
   formatAgentThreadMessage,
   formatInitialThreadMessage,
+  resolveAgentThreadModelSelection,
   resolveExistingWorktreeRef,
 } from "./handlers.ts";
 import { CreateThreadTool, ProjectBranchesTool, ReadThreadTool, ThreadTools } from "./tools.ts";
@@ -27,6 +29,22 @@ describe("agent-managed thread collaboration tools", () => {
     expect(formatAgentThreadMessage("parent-thread", "Review tests.  ")).toBe(
       "[Message from Sparky agent in thread parent-thread]\nReview tests.",
     );
+  });
+
+  it("inherits the caller's Codex OAuth model instead of an API-key project default", () => {
+    const oauthModel = {
+      instanceId: ProviderInstanceId.make("sparky"),
+      model: "openai-codex/gpt-5.6",
+    };
+    const projectDefault = {
+      instanceId: ProviderInstanceId.make("sparky"),
+      model: "openai/gpt-4o-mini",
+    };
+    // An omitted explicit selection must not cause the caller's OAuth
+    // provider to be replaced with a project default needing OPENAI_API_KEY.
+    expect(resolveAgentThreadModelSelection(undefined, oauthModel)).toEqual(oauthModel);
+    // When the agent deliberately selects a model, preserve that choice.
+    expect(resolveAgentThreadModelSelection(projectDefault, oauthModel)).toEqual(projectDefault);
   });
 
   it("does not allow a plan agent to delegate mutations", () => {

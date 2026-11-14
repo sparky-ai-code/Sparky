@@ -25,10 +25,11 @@ function makeTransport(options?: {
   readonly targetMode?: "approval-required" | "full-access";
   readonly running?: boolean;
   readonly environments?: ReadonlyArray<string>;
+  readonly projectDefaultModelSelection?: { readonly instanceId: string; readonly model: string };
 }) {
   const dispatch = vi.fn(async (_environment: string, _command: ClientOrchestrationCommand) => ({ sequence: 1 }));
   const shell = {
-    projects: [{ id: "remote-project", title: "Another repo", workspaceRoot: "/remote/project", defaultModelSelection: null }],
+    projects: [{ id: "remote-project", title: "Another repo", workspaceRoot: "/remote/project", defaultModelSelection: options?.projectDefaultModelSelection ?? null }],
     threads: [{ id: "remote-thread", projectId: "remote-project", title: "Remote peer", runtimeMode: "approval-required", interactionMode: "default", modelSelection: source.modelSelection }],
   } as unknown as OrchestrationShellSnapshot;
   const thread = {
@@ -211,6 +212,40 @@ describe("cross-environment agent thread collaboration", () => {
       expect(start.message.text).toBe("Please fix the remote tests");
       expect(start.message.text).not.toContain("Message from Sparky agent");
     }
+  });
+
+  it("keeps Codex OAuth when a remote project defaults to an API-key model", async () => {
+    const { transport, dispatch } = makeTransport({
+      projectDefaultModelSelection: { instanceId: "sparky", model: "openai/gpt-4o-mini" },
+    });
+    await runThreadCollaboration({
+      operation: "create",
+      payload: {
+        environmentId: "remote-env",
+        projectId: "remote-project",
+        title: "OAuth-inherited thread",
+        workspaceMode: "current",
+        initialMessage: "Continue with Codex OAuth",
+      },
+      source,
+    }, {
+      ...transport,
+      serverConfig: async () => ({
+        providers: [{
+          instanceId: "codex", enabled: true, availability: "available",
+          models: [{ slug: "gpt-6", capabilities: { optionDescriptors: [] } }],
+        }],
+      }) as unknown as ServerConfig,
+    });
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(dispatch.mock.calls[0]?.[1]).toMatchObject({
+      type: "thread.create",
+      modelSelection: source.modelSelection,
+    });
+    expect(dispatch.mock.calls[1]?.[1]).toMatchObject({
+      type: "thread.turn.start",
+      modelSelection: source.modelSelection,
+    });
   });
 
   it("rejects worktree spoofing rather than checking out an arbitrary path", async () => {

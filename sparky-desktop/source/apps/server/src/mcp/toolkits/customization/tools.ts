@@ -17,7 +17,7 @@ export const ApplyCustomizationTool = Tool.make("sparky_customization_apply", {
     "Apply a persistent Sparky UI mod immediately. Requires Full access mode. Supply a COMPLETE version=1 customization with name, tokens (allowed colors and --radius), css (layout, backgrounds, animations, data-slot selectors), and panels (id/title/description/actions). Actions may open HTTPS URLs or Sparky routes, or copy text on click. Call sparky_customization_read first and pass its revision as expectedRevision to avoid overwriting changes. Rejects CSS network loads and arbitrary JavaScript. Use this tool when the user asks to retheme, restyle or add a small UI panel or quick actions. Explain that changing application logic requires ordinary code changes and tests.",
   parameters: Schema.Struct({
     customization: Schema.Unknown,
-    expectedRevision: Schema.optional(Schema.String),
+    expectedRevision: Schema.String,
   }),
   success: Schema.Unknown,
   failure: Schema.Never,

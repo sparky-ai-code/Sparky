@@ -7,6 +7,7 @@ import * as NodePath from "node:path";
 import {
   EventId,
   ProviderDriverKind,
+  RuntimeRequestId,
   ProviderInstanceId,
   RuntimeItemId,
   ThreadId,
@@ -15,6 +16,7 @@ import {
   type ToolLifecycleItemType,
   TurnId,
   type ProviderInteractionMode,
+  type RuntimeMode,
   type ProviderRuntimeEvent,
   type ProviderSession,
   type ProviderWorkspaceContext,
@@ -83,6 +85,13 @@ export interface SparkyToolStartedEvent {
   readonly arguments: unknown;
 }
 
+export interface SparkyApprovalRequestedEvent {
+  readonly requestId: string;
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly arguments: unknown;
+}
+
 export interface SparkyToolCompletedEvent {
   readonly toolCallId: string;
   readonly toolName: string;
@@ -102,6 +111,7 @@ export interface SparkyStreamCallbacks {
   readonly onSessionId?: ((sessionId: string) => void) | undefined;
   readonly onToolStarted?: ((event: SparkyToolStartedEvent) => void) | undefined;
   readonly onToolCompleted?: ((event: SparkyToolCompletedEvent) => void) | undefined;
+  readonly onApprovalRequested?: ((event: SparkyApprovalRequestedEvent) => void) | undefined;
   readonly onUsage?: ((event: SparkyUsageEvent) => void) | undefined;
   /** Fired as soon as the result frame for this request is received. */
   readonly onResult?: ((result: SparkyProcessResult) => void) | undefined;
@@ -266,6 +276,7 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
         toolCallId?: unknown;
         toolName?: unknown;
         jobId?: unknown;
+        requestId?: unknown;
         arguments?: unknown;
         output?: unknown;
         isError?: unknown;
@@ -297,6 +308,24 @@ export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
           return;
         }
         callbacks.onSessionId?.(event.sessionId);
+        return;
+      }
+      if (event.type === "approval.requested") {
+        if (
+          typeof event.requestId !== "string" ||
+          !event.requestId.trim() ||
+          typeof event.toolCallId !== "string" ||
+          typeof event.toolName !== "string"
+        ) {
+          setProtocolError("Sparky returned a malformed approval request.");
+          return;
+        }
+        callbacks.onApprovalRequested?.({
+          requestId: event.requestId,
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          arguments: event.arguments,
+        });
         return;
       }
       if (event.type === "tool.started") {
@@ -817,6 +846,7 @@ export function makeSparkyProcessArgs(input: {
   readonly reasoningEffort?: string | undefined;
   readonly contextWindow?: string | undefined;
   readonly interactionMode?: ProviderInteractionMode | undefined;
+  readonly runtimeMode?: RuntimeMode | undefined;
   readonly sessionId?: string | undefined;
   readonly workspaceContext?: ProviderWorkspaceContext | undefined;
   readonly customInstructions?: string | undefined;
@@ -856,6 +886,9 @@ export function makeSparkyProcessArgs(input: {
   }
   if (input.contextWindow?.trim()) {
     args.push("--context-window", input.contextWindow.trim());
+  }
+  if (input.runtimeMode) {
+    args.push("--runtime-mode", input.runtimeMode);
   }
   if (input.interactionMode) {
     // The provider contract calls the normal coding mode "default", while
@@ -1023,6 +1056,7 @@ function runPersistentSparky(input: {
   readonly environment: NodeJS.ProcessEnv;
   readonly activeChildren: Map<string, SparkyChildProcess>;
   readonly childKey: string;
+  readonly runtimeMode: RuntimeMode;
   readonly isCancelled: () => boolean;
   readonly callbacks?: SparkyStreamCallbacks | undefined;
   readonly sessionId?: string | undefined;
@@ -1184,6 +1218,7 @@ function runPersistentSparky(input: {
               imagePaths: (input.images ?? []).map((image) => image.path),
               imageMimeTypes: (input.images ?? []).map((image) => image.mimeType),
               interactionMode: input.interactionMode === "plan" ? "plan" : "build",
+              runtimeMode: input.runtimeMode,
               provider: modelSelection.provider,
               model: modelSelection.model,
               baseUrl: modelSelection.baseUrl,
@@ -1223,6 +1258,20 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
     const runtimeEvents = yield* PubSub.unbounded<ProviderRuntimeEvent>();
     const sessions = new Map<ThreadId, SessionState>();
     const activeChildren = new Map<string, SparkyChildProcess>();
+    const pendingApprovals = new Map<
+      string,
+      {
+        threadId: ThreadId;
+        turnId: TurnId;
+        childKey: string;
+        requestType: "command_execution_approval" | "file_change_approval" | "dynamic_tool_call";
+      }
+    >();
+    const clearTurnApprovals = (childKey: string) => {
+      for (const [requestId, request] of pendingApprovals) {
+        if (request.childKey === childKey) pendingApprovals.delete(requestId);
+      }
+    };
     const persistentProcesses = new Map<string, PersistentSparkyProcess>();
     const prewarmedProcesses = new Map<string, PersistentSparkyProcess>();
     const ensurePrewarmedProcess = () => {
@@ -1482,6 +1531,7 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
               reasoningEffort,
               contextWindow,
               interactionMode,
+              runtimeMode: state.session.runtimeMode,
               workspaceContext,
               environment: sparkyChildEnvironment(
                 activeMcp
@@ -1540,6 +1590,44 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
                           compactsAutomatically: true,
                         },
                       },
+                    }),
+                  );
+                },
+                onApprovalRequested: (event) => {
+                  if (isTurnCancelled()) return;
+                  attemptProducedOutput = true;
+                  const requestType =
+                    event.toolName === "bash"
+                      ? "command_execution_approval"
+                      : event.toolName === "write" || event.toolName === "edit"
+                        ? "file_change_approval"
+                        : "dynamic_tool_call";
+                  const args =
+                    event.arguments !== null && typeof event.arguments === "object"
+                      ? (event.arguments as Record<string, unknown>)
+                      : {};
+                  const command = args.command;
+                  const path = args.path ?? args.file_path;
+                  const detail =
+                    typeof command === "string" && event.toolName === "bash"
+                      ? command
+                      : typeof path === "string"
+                        ? `${event.toolName}: ${path}`
+                        : `Allow ${event.toolName} to run?`;
+                  const requestId = RuntimeRequestId.make(event.requestId);
+                  pendingApprovals.set(event.requestId, {
+                    threadId,
+                    turnId,
+                    childKey,
+                    requestType,
+                  });
+                  assistantSegments.closeBeforeTool();
+                  runEffectSync(
+                    publish({
+                      type: "request.opened",
+                      ...stamp(threadId, turnId),
+                      requestId,
+                      payload: { requestType, detail },
                     }),
                   );
                 },
@@ -1766,6 +1854,7 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
         Effect.ensuring(
           Effect.sync(() => {
             activeChildren.delete(childKey);
+            clearTurnApprovals(childKey);
             activeFibers.delete(childKey);
             cancelledTurnKeys.delete(childKey);
           }),
@@ -1962,6 +2051,7 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
         const key = `${threadId}:${targetTurnId}`;
         return Effect.gen(function* () {
           cancelledTurnKeys.add(key);
+          clearTurnApprovals(key);
           activeChildren.get(key)?.kill();
           const fiber = activeFibers.get(key);
           if (fiber) yield* Fiber.interrupt(fiber);
@@ -1983,16 +2073,60 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
           });
         });
       },
-      respondToRequest: (threadId) =>
-        sessions.has(threadId)
-          ? Effect.fail(
-              new ProviderAdapterValidationError({
+      respondToRequest: (threadId, requestId, decision) =>
+        Effect.gen(function* () {
+          if (!sessions.has(threadId)) return yield* missingSession(threadId);
+          const pending = pendingApprovals.get(String(requestId));
+          if (!pending || pending.threadId !== threadId) {
+            return yield* new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "respondToRequest",
+              detail: `Unknown pending approval request '${requestId}'.`,
+            });
+          }
+          if (decision === "cancel") {
+            pendingApprovals.delete(String(requestId));
+            yield* publish({
+              type: "request.resolved",
+              ...stamp(threadId, pending.turnId),
+              requestId: RuntimeRequestId.make(String(requestId)),
+              payload: { requestType: pending.requestType, decision },
+            });
+            // Cancel turn must interrupt the entire native turn, not just
+            // decline the tool and let subsequent commands continue.
+            return yield* adapter.interruptTurn(threadId, pending.turnId);
+          }
+          const child = activeChildren.get(pending.childKey);
+          if (!child || !child.stdin.writable) {
+            pendingApprovals.delete(String(requestId));
+            return yield* new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "respondToRequest",
+              detail: "Sparky approval process is no longer available.",
+            });
+          }
+          yield* Effect.try({
+            try: () => {
+              child.stdin.write(
+                `${JSON.stringify({ type: "approval.respond", requestId: String(requestId), decision })}\n`,
+                "utf8",
+              );
+            },
+            catch: (cause) =>
+              new ProviderAdapterRequestError({
                 provider: PROVIDER,
-                operation: "respondToRequest",
-                issue: "Sparky handles tool execution inside its own runtime.",
+                method: "respondToRequest",
+                detail: `Unable to deliver Sparky approval response: ${String(cause)}`,
               }),
-            )
-          : missingSession(threadId),
+          });
+          pendingApprovals.delete(String(requestId));
+          yield* publish({
+            type: "request.resolved",
+            ...stamp(threadId, pending.turnId),
+            requestId: RuntimeRequestId.make(String(requestId)),
+            payload: { requestType: pending.requestType, decision },
+          });
+        }),
       respondToUserInput: (threadId) =>
         sessions.has(threadId)
           ? Effect.fail(
@@ -2012,7 +2146,10 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
               ),
             ),
           ];
-          for (const key of activeKeys) cancelledTurnKeys.add(key);
+          for (const key of activeKeys) {
+            cancelledTurnKeys.add(key);
+            clearTurnApprovals(key);
+          }
           for (const [key, child] of activeChildren) {
             if (key.startsWith(`${threadId}:`)) child.kill();
           }
@@ -2061,6 +2198,7 @@ export const makeSparkyAdapter = (options: SparkyAdapterOptions) =>
           for (const processState of prewarmedProcesses.values()) processState.child.kill();
           prewarmedProcesses.clear();
           persistentProcesses.clear();
+          pendingApprovals.clear();
           activeChildren.clear();
           sessions.clear();
         }),

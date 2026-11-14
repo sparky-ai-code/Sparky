@@ -1,5 +1,8 @@
 import {
   PreviewAutomationClickInput,
+  PreviewTabId,
+  SecretVaultEntrySchema,
+  SecretVaultUseResultSchema,
   PreviewAutomationError,
   PreviewAutomationEvaluateInput,
   PreviewAutomationNavigateInput,
@@ -184,7 +187,37 @@ export const PreviewRecordingStopTool = safeBrowserTool(
   }).annotate(Tool.Title, "Stop browser recording"),
 );
 
+/** Lists only public metadata. No password or passkey private key ever crosses MCP. */
+export const SecretsListTool = readonlyBrowserTool(
+  Tool.make("secrets_list", {
+    description: "List named logins saved in the local Sparky Passkeys settings. Returns only names, descriptions, sites, and credential types; never passwords or private keys.",
+    parameters: PreviewAutomationTabTargetInput,
+    success: Schema.Array(SecretVaultEntrySchema),
+    failure: PreviewAutomationError,
+    dependencies,
+  }).annotate(Tool.Title, "Find saved logins"),
+);
+
+export const SecretsUseTool = browserTool(
+  Tool.make("secrets_use", {
+    description: "Select a reusable saved login by name or ID in the Sparky vault, without revealing its password. Exact site match required. The desktop fills email and password while the agent is blocked from inspecting the credential-bearing page. After the site performs a full document navigation, normal browser inspection resumes. Passkey sign-in still needs native user confirmation. Never request or print a password.",
+    parameters: Schema.Struct({
+      tabId: Schema.optional(PreviewTabId).annotate({ description: "Optional collaborative browser tab identifier. Defaults to the current tab." }),
+      id: Schema.optional(Schema.String).annotate({ description: "Optional credential ID from secrets_list. Provide ID or name, not both." }),
+      name: Schema.optional(Schema.String).annotate({ description: "Optional friendly login name in Settings > Passkeys. Provide name or ID, not both." }),
+      emailLocator: Schema.optional(Schema.String).annotate({ description: "Optional Playwright locator for the site's email or username field." }),
+      passwordLocator: Schema.optional(Schema.String).annotate({ description: "Optional Playwright locator for the site's password field." }),
+      passkeyLocator: Schema.optional(Schema.String).annotate({ description: "Playwright locator of the site's passkey sign-in button; native approval remains with the user." }),
+    }),
+    success: SecretVaultUseResultSchema,
+    failure: PreviewAutomationError,
+    dependencies,
+  }).annotate(Tool.Title, "Use saved login"),
+);
+
 export const PreviewToolkit = Toolkit.make(
+  SecretsListTool,
+  SecretsUseTool,
   PreviewStatusTool,
   PreviewOpenTool,
   PreviewNavigateTool,
@@ -201,6 +234,8 @@ export const PreviewToolkit = Toolkit.make(
 );
 
 export const PreviewStandardToolkit = Toolkit.make(
+  SecretsListTool,
+  SecretsUseTool,
   PreviewStatusTool,
   PreviewOpenTool,
   PreviewNavigateTool,

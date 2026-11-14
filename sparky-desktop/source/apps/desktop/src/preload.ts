@@ -190,6 +190,13 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.invoke(IpcChannels.SET_ACCOUNT_SESSION_TOKEN_CHANNEL, token),
   getOrCreatePluginInstallationId: (candidate) =>
     ipcRenderer.invoke(IpcChannels.GET_OR_CREATE_PLUGIN_INSTALLATION_ID_CHANNEL, candidate),
+  secrets: {
+    list: () => ipcRenderer.invoke(IpcChannels.SECRET_VAULT_LIST_CHANNEL),
+    save: (input) => ipcRenderer.invoke(IpcChannels.SECRET_VAULT_SAVE_CHANNEL, input),
+    remove: (id) => ipcRenderer.invoke(IpcChannels.SECRET_VAULT_REMOVE_CHANNEL, { id }),
+    use: (tabId, input) => ipcRenderer.invoke(IpcChannels.SECRET_VAULT_USE_CHANNEL, { tabId, input }),
+    isProtected: (tabId) => ipcRenderer.invoke(IpcChannels.SECRET_VAULT_IS_PROTECTED_CHANNEL, { tabId }),
+  },
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>
     ipcRenderer.invoke(IpcChannels.SET_CLIENT_SETTINGS_CHANNEL, settings),

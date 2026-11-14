@@ -1,0 +1,76 @@
+name: Sparky UI mods verification
+
+on:
+  pull_request:
+    paths:
+      - "sparky-desktop/source/apps/server/src/customizationStore*"
+      - "sparky-desktop/source/apps/server/src/mcp/toolkits/customization/**"
+      - "sparky-desktop/source/apps/server/src/http.ts"
+      - "sparky-desktop/source/apps/server/src/server.ts"
+      - "sparky-desktop/source/apps/server/src/mcp/McpHttpServer.ts"
+      - "sparky-desktop/source/apps/web/src/customization*"
+      - "sparky-desktop/source/apps/web/src/components/customization/**"
+      - "sparky-desktop/source/apps/web/src/components/settings/CustomizationEditor.tsx"
+      - "sparky-desktop/source/packages/shared/src/customization*"
+      - ".github/workflows/customization-mods-pr.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-tests:
+    name: Schema, persistence, agent and client customization checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Test manifest schema and CSS safeguards
+        run: pnpm exec vp test run packages/shared/src/customization.test.ts
+      - name: Test server-side persistence and optimistic concurrency
+        run: pnpm --filter t3 exec vp test run src/customizationStore.test.ts
+      - name: Test authenticated renderer synchronization
+        run: pnpm --filter @sparky/web exec vp test run --project unit src/customization.test.ts
+      - name: Check server types in changed modules
+        shell: bash
+        run: |
+          if pnpm --filter t3 typecheck >/tmp/server-types.log 2>&1; then
+            cat /tmp/server-types.log
+          else
+            cat /tmp/server-types.log
+            grep 'error TS' /tmp/server-types.log | grep -E '^src/(customizationStore|http[.]ts|server[.]ts|mcp/McpHttpServer[.]ts|mcp/toolkits/customization/)' > /tmp/changed-errors.log || true
+            if [ -s /tmp/changed-errors.log ]; then
+              echo "::error::Changed server code introduced compiler errors."
+              exit 1
+            fi
+            echo "::warning::Server typecheck has failures in other source files; see output."
+          fi
+      - name: Check web types in changed modules
+        shell: bash
+        run: |
+          if pnpm --filter @sparky/web typecheck >/tmp/web-types.log 2>&1; then
+            cat /tmp/web-types.log
+          else
+            cat /tmp/web-types.log
+            grep 'error TS' /tmp/web-types.log | grep -E '^src/(customization[.]|AppRoot[.]tsx|components/customization/|components/settings/(CustomizationEditor|AppearanceSettings)[.]tsx)' > /tmp/changed-errors.log || true
+            if [ -s /tmp/changed-errors.log ]; then
+              echo "::error::Changed web code introduced compiler errors."
+              exit 1
+            fi
+            echo "::warning::Web typecheck has failures in other source files; see output."
+          fi

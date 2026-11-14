@@ -93,7 +93,7 @@ describe("local encrypted credential vault", () => {
     const filename = path.join(mock.directory, "sparky-secret-vault-v1.json");
     const valid = JSON.parse(await fs.readFile(filename, "utf8"));
     for (const entries of [
-      [{ ...valid.entries[0], metadata: { ...valid.entries[0].metadata, origin: "https://another-site.test" } }],
+      [{ ...valid.entries[0], metadata: { ...valid.entries[0].metadata, origin: "http://another-site.test" } }],
       [{ ...valid.entries[0], metadata: { ...valid.entries[0].metadata, kind: "passkey" } }],
       [valid.entries[0], valid.entries[0]],
     ]) {

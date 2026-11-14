@@ -1,0 +1,47 @@
+name: Saved credential vault verification
+
+on:
+  pull_request:
+    paths:
+      - "sparky-desktop/source/apps/desktop/src/secrets/**"
+      - "sparky-desktop/source/apps/desktop/src/preview/**"
+      - "sparky-desktop/source/apps/server/src/mcp/toolkits/preview/**"
+      - "sparky-desktop/source/apps/server/src/provider/CodexDeveloperInstructions.ts"
+      - "sparky-desktop/source/packages/contracts/src/secrets.ts"
+      - "sparky-desktop/source/packages/contracts/src/previewAutomation.ts"
+      - "sparky-desktop/source/pnpm-lock.yaml"
+      - ".github/workflows/vault-security.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  vault-tests:
+    name: Test encrypted vault and protected browser policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Test vault encryption and origin isolation
+        run: pnpm --filter @sparky/desktop exec vp test run src/secrets/SecretVault.test.ts
+      - name: Test protected-browser interaction policy
+        run: pnpm --filter @sparky/desktop exec vp test run src/preview/SecretProtectionPolicy.test.ts
+      - name: Test agent-facing credential tool schemas
+        run: pnpm --filter t3 exec vp test run src/mcp/toolkits/preview/tools.test.ts

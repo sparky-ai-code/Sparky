@@ -34,31 +34,40 @@ function hash(value: SparkyCustomization): string {
 export function readCustomization(stateDir: string): CustomizationSnapshot {
   const path = customizationFilePath(stateDir);
   const empty = { customization: DEFAULT_CUSTOMIZATION, revision: hash(DEFAULT_CUSTOMIZATION), path };
-  let stat: NodeFS.Stats;
+  let fd: number | undefined;
   try {
-    stat = NodeFS.lstatSync(path);
+    // Refuse links and special files before opening; O_NOFOLLOW closes the
+    // symlink-swap race between lstat and open on supported platforms.
+    const stat = NodeFS.lstatSync(path);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_CUSTOMIZATION_BYTES) {
+      return { ...empty, error: "The customization file must be a regular file within the size limit." };
+    }
+    fd = NodeFS.openSync(path, NodeFS.constants.O_RDONLY |
+      (NodeFS.constants.O_NOFOLLOW ?? 0) | (NodeFS.constants.O_NONBLOCK ?? 0));
+    if (!NodeFS.fstatSync(fd).isFile()) {
+      return { ...empty, error: "The customization file must be a regular file." };
+    }
+    // Read at most one byte past the limit, even if another process grows
+    // the file between stat and read.
+    const bytes = Buffer.allocUnsafe(MAX_CUSTOMIZATION_BYTES + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const count = NodeFS.readSync(fd, bytes, length, bytes.length - length, null);
+      if (count === 0) break;
+      length += count;
+    }
+    if (length > MAX_CUSTOMIZATION_BYTES) {
+      return { ...empty, error: "The customization file is too large." };
+    }
+    const customization = parseCustomization(JSON.parse(bytes.toString("utf8", 0, length)) as unknown);
+    return { customization, path, revision: hash(customization) };
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       return empty;
     }
-    return { ...empty, error: "Could not read the customization file." };
-  }
-  // Do not follow symlinked config files, devices or unbounded files.
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_CUSTOMIZATION_BYTES) {
-    return { ...empty, error: "The customization file is not a regular file within the size limit." };
-  }
-  try {
-    const raw = NodeFS.readFileSync(path, "utf8");
-    if (Buffer.byteLength(raw) > MAX_CUSTOMIZATION_BYTES) {
-      return { ...empty, error: "The customization file is too large." };
-    }
-    const customization = parseCustomization(JSON.parse(raw) as unknown);
-    return { customization, path, revision: hash(customization) };
-  } catch (error) {
-    return {
-      ...empty,
-      error: error instanceof Error ? error.message : "Invalid customization file.",
-    };
+    return { ...empty, error: error instanceof Error ? error.message : "Could not read the customization file." };
+  } finally {
+    if (fd !== undefined) NodeFS.closeSync(fd);
   }
 }
 
@@ -73,8 +82,11 @@ export function writeCustomization(
 ): CustomizationSnapshot {
   const customization = parseCustomization(input);
   const current = readCustomization(stateDir);
-  if (expectedRevision !== undefined && expectedRevision !== "*" &&
-    (current.error !== undefined || expectedRevision !== current.revision)) {
+  if (expectedRevision === "*") {
+    if (hash(customization) !== hash(DEFAULT_CUSTOMIZATION)) {
+      throw new Error("Only resetting to default may bypass revision checks.");
+    }
+  } else if (!expectedRevision || current.error !== undefined || expectedRevision !== current.revision) {
     throw new CustomizationConflictError();
   }
   const path = current.path;

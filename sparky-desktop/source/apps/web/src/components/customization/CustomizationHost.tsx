@@ -25,14 +25,23 @@ export function CustomizationHost() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!expanded) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [expanded]);
+
   // Safe mode is intentionally independent of the saved mod: it must remain
   // reachable even if an agent-generated stylesheet obscures core controls.
   if (isCustomizationSafeMode() || customization.panels.length === 0) return null;
 
   return (
-    <aside data-sparky-mods className="fixed bottom-4 right-4 z-40 flex max-w-[min(22rem,calc(100vw-2rem))] flex-col items-end gap-2">
+    <aside data-sparky-mods aria-label="Sparky mods" className="fixed bottom-4 right-4 z-40 flex max-w-[min(22rem,calc(100vw-2rem))] flex-col items-end gap-2">
       {expanded ? (
-        <div className="max-h-[min(70vh,36rem)] w-80 max-w-full overflow-y-auto rounded-xl border border-border bg-card p-3 text-card-foreground shadow-2xl">
+        <div id="sparky-mods-panel" role="region" aria-label="Mod actions" className="max-h-[min(70vh,36rem)] w-80 max-w-full overflow-y-auto rounded-xl border border-border bg-card p-3 text-card-foreground shadow-2xl">
           <p className="mb-3 text-xs font-semibold">Sparky mods · {customization.name}</p>
           {customization.panels.map((panel) => (
             <section className="mb-3 space-y-2 last:mb-0" key={panel.id}>
@@ -78,7 +87,8 @@ export function CustomizationHost() {
       <button
         type="button"
         aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
+        aria-controls="sparky-mods-panel"
+        onClick={() => { setFeedback(""); setExpanded((value) => !value); }}
         className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2 text-xs font-semibold text-card-foreground shadow-lg hover:bg-accent"
       >
         <PanelsTopLeftIcon className="size-4" />

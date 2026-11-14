@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vite-plus/test";
 import { DEFAULT_CUSTOMIZATION } from "@sparky/shared/customization";
 import {
   CustomizationConflictError, customizationFilePath, readCustomization, writeCustomization,
-} from "./customizationStore";
+} from "./customizationStore.ts";
 
 const roots: string[] = [];
 function tmp(): string {

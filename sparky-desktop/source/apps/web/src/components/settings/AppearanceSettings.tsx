@@ -8,6 +8,7 @@ import {
   readAppearance,
 } from "../../appearance";
 import { useTheme } from "../../hooks/useTheme";
+import { CustomizationEditor } from "./CustomizationEditor";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
@@ -116,6 +117,7 @@ export function AppearanceSettingsPanel() {
         <SettingsRow title="Compact layout" description="Reduce spacing in settings and navigation for a denser workspace." className="py-2.5"
           control={<Switch aria-label="Compact layout" checked={appearance.compact} onCheckedChange={(checked) => update({ compact: checked })} />} />
       </SettingsSection>
+      <CustomizationEditor />
       <div className="flex justify-end pb-6"><Button variant="outline" size="sm" onClick={() => { setMode("system"); update({ ...DEFAULT_APPEARANCE }); }}><RotateCcwIcon className="size-3.5" />Reset appearance</Button></div>
     </SettingsPageContainer>
   );

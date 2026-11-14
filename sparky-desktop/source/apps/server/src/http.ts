@@ -27,6 +27,7 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { OtlpTracer } from "effect/unstable/observability";
 
 import * as ServerConfig from "./config.ts";
+import { readCustomization, writeCustomization, CustomizationConflictError } from "./customizationStore.ts";
 import { ASSET_ROUTE_PREFIX, resolveAsset } from "./assets/AssetAccess.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -221,6 +222,54 @@ export const sparkyCodexAuthRouteLayer = Layer.mergeAll(
       return yield* sparkyCodexAuthResponse("--codex-logout");
     }),
   ),
+);
+
+
+const CUSTOMIZATION_PATH = "/api/sparky/customization";
+
+const customizationAuthFailures = {
+  EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+  EnvironmentInternalError: HttpServerRespondable.toResponse,
+  EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+} as const;
+
+const noStore = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
+
+export const sparkyCustomizationRouteLayer = Layer.mergeAll(
+  HttpRouter.add("GET", CUSTOMIZATION_PATH, Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    const config = yield* ServerConfig.ServerConfig;
+    return HttpServerResponse.jsonUnsafe(readCustomization(config.stateDir), { headers: noStore });
+  }).pipe(Effect.catchTags(customizationAuthFailures))),
+  HttpRouter.add("PUT", CUSTOMIZATION_PATH, Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const config = yield* ServerConfig.ServerConfig;
+    const length = Number(request.headers["content-length"] ?? "0");
+    if (length > 64 * 1024) {
+      return HttpServerResponse.jsonUnsafe({ error: "Customization payload exceeds 64 KiB." }, { status: 413, headers: noStore });
+    }
+    const body = yield* request.json.pipe(
+      Effect.orElseSucceed(() => null),
+    );
+    if (typeof body !== "object" || body === null || Array.isArray(body) || !("customization" in body)) {
+      return HttpServerResponse.jsonUnsafe({ error: "Expected a customization JSON object." }, { status: 400, headers: noStore });
+    }
+    const input = body as Record<string, unknown>;
+    const expected = typeof input.expectedRevision === "string" ? input.expectedRevision : undefined;
+    try {
+      return HttpServerResponse.jsonUnsafe(
+        writeCustomization(config.stateDir, input.customization, expected),
+        { headers: noStore },
+      );
+    } catch (error) {
+      const conflict = error instanceof CustomizationConflictError;
+      return HttpServerResponse.jsonUnsafe(
+        { error: error instanceof Error ? error.message : "Invalid customization." },
+        { status: conflict ? 409 : 400, headers: noStore },
+      );
+    }
+  }).pipe(Effect.catchTags(customizationAuthFailures))),
 );
 
 export const serverEnvironmentHttpApiLayer = HttpApiBuilder.group(

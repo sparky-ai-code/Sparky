@@ -3,6 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { AccountAuthProvider } from "./account/AccountAuthProvider";
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { PluginAuthorizationCardHost } from "./components/plugins/PluginAuthorizationCardHost";
+import { CustomizationHost } from "./components/customization/CustomizationHost";
 import { PreviewAutomationHosts } from "./components/preview/PreviewAutomationHosts";
 import { AppAtomRegistryProvider } from "./rpc/atomRegistry";
 import type { AppRouter } from "./router";
@@ -17,6 +18,7 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
     <AppAtomRegistryProvider>
       <AccountAuthProvider>
         <RouterProvider router={router} />
+        <CustomizationHost />
         <PluginAuthorizationCardHost />
       </AccountAuthProvider>
       <PreviewAutomationHosts />

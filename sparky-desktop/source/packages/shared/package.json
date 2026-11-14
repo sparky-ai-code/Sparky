@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./customization": {
+      "types": "./src/customization.ts",
+      "import": "./src/customization.ts"
+    },
     "./projectFavicon": {
       "types": "./src/projectFavicon.ts",
       "import": "./src/projectFavicon.ts"

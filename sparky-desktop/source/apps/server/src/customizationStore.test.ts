@@ -3,7 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
-import { DEFAULT_CUSTOMIZATION } from "@sparky/shared/customization";
+import { DEFAULT_CUSTOMIZATION, MAX_CUSTOMIZATION_BYTES } from "@sparky/shared/customization";
 import {
   CustomizationConflictError, customizationFilePath, readCustomization, writeCustomization,
 } from "./customizationStore.ts";
@@ -58,5 +58,23 @@ describe("customization persistence", () => {
     NodeFS.writeFileSync(customizationFilePath(dir), "{broken");
     expect(readCustomization(dir).error).toBeDefined();
     expect(readCustomization(dir).customization).toEqual(DEFAULT_CUSTOMIZATION);
+  });
+
+  it("requires a revision and restricts force writes to resetting", () => {
+    const dir = tmp();
+    expect(() => writeCustomization(dir, DEFAULT_CUSTOMIZATION)).toThrow(CustomizationConflictError);
+    expect(() => writeCustomization(dir, { ...DEFAULT_CUSTOMIZATION, name: "Unsafe" }, "*"))
+      .toThrow("Only resetting");
+    const revision = readCustomization(dir).revision;
+    expect(writeCustomization(dir, { ...DEFAULT_CUSTOMIZATION, name: "Safe" }, revision)
+      .customization.name).toBe("Safe");
+  });
+
+  it("rejects files larger than the manifest limit", () => {
+    const dir = tmp();
+    NodeFS.writeFileSync(customizationFilePath(dir), "x".repeat(MAX_CUSTOMIZATION_BYTES + 1));
+    const result = readCustomization(dir);
+    expect(result.error).toBeDefined();
+    expect(result.customization).toEqual(DEFAULT_CUSTOMIZATION);
   });
 });

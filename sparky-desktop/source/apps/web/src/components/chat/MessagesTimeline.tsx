@@ -2425,6 +2425,20 @@ export function resolveWorkEntryToolIconName(
 ): WorkEntryIconName | undefined {
   if (isSecretsToolName(toolName)) return "key-round";
   switch (toolName?.trim().toLowerCase()) {
+    case "sparky_threads_list":
+      return "messages-square";
+    case "sparky_project_branches":
+      return "folder-git";
+    case "sparky_thread_models":
+      return "brain";
+    case "sparky_thread_read":
+      return "eye";
+    case "sparky_thread_create":
+      return "file-plus-2";
+    case "sparky_thread_message":
+      return "message-circle";
+    case "sparky_thread_steer":
+      return "zap";
     case "sparky_mcp_list_tools":
       return "list-checks";
     case "sparky_mcp_setup_server":
@@ -2530,6 +2544,22 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  switch (workEntry.toolName?.trim().toLowerCase()) {
+    case "sparky_threads_list":
+      return "List threads";
+    case "sparky_project_branches":
+      return "List project branches";
+    case "sparky_thread_models":
+      return "List thread models";
+    case "sparky_thread_read":
+      return "Read thread";
+    case "sparky_thread_create":
+      return "Create thread";
+    case "sparky_thread_message":
+      return "Message thread";
+    case "sparky_thread_steer":
+      return "Steer thread";
+  }
   if (isSecretsToolName(workEntry.toolName)) {
     return /secrets_list$/i.test(workEntry.toolName ?? "") ? "Find saved logins" : "Use saved login";
   }

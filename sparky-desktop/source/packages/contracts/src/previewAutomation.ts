@@ -46,6 +46,7 @@ export const PREVIEW_AUTOMATION_OPERATIONS = [
   ...PREVIEW_AUTOMATION_V1_OPERATIONS,
   "resize",
   "githubPullRequestComments",
+  "threadCollaboration",
   "secretsList",
   "secretsUse",
 ] as const;

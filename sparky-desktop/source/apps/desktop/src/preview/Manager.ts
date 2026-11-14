@@ -2237,6 +2237,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       { operation: "automationType.encodeText", tabId },
       input.text,
     );
+    const expectedOriginJson = input.expectedOrigin === undefined ? null : yield* encodeJson(
+      { operation: "saved-login.encodeOrigin", tabId },
+      input.expectedOrigin,
+    );
+    const documentMarkerJson = input.documentMarker === undefined ? null : yield* encodeJson(
+      { operation: "saved-login.encodeDocumentMarker", tabId },
+      input.documentMarker,
+    );
     const result = yield* evaluateWithDebugger<
       | { ok: true }
       | { originMismatch: true }
@@ -2248,8 +2256,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       send,
       `(() => {
           try {
-            if (${input.expectedOrigin === undefined ? "false" : `location.origin !== ${JSON.stringify(input.expectedOrigin)}`} ||
-                ${input.documentMarker === undefined ? "false" : `globalThis.__sparkyProtectedDocument !== ${JSON.stringify(input.documentMarker)}`}) {
+            if (${expectedOriginJson === null ? "false" : `location.origin !== ${expectedOriginJson}`} ||
+                ${documentMarkerJson === null ? "false" : `globalThis.__sparkyProtectedDocument !== ${documentMarkerJson}`}) {
               return { originMismatch: true };
             }
             const element = ${locatorJson ? `(() => { const injected = globalThis.__t3PlaywrightInjected; return injected.querySelector(injected.parseSelector(${locatorJson}), document, true); })()` : "document.activeElement"};
@@ -2646,12 +2654,20 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           return yield* new PreviewOperationError({ operation: "saved-login.empty", tabId, cause: "Saved password is missing." });
         }
         if (input.email) {
-          yield* typeIntoAutomationTarget(tabId, send, {
+          const fillUsername = typeIntoAutomationTarget(tabId, send, {
             locator: input.emailLocator ?? "css=input[type=email], input[autocomplete=username], input[name=email], input[name=username]",
             text: input.email,
             clear: true,
             expectedOrigin: input.origin,
           });
+          // A multi-step login often has no username field on its password
+          // page. Skip only a missing *default* selector; explicitly requested
+          // username locators must still fail so mistakes are observable.
+          if (input.emailLocator === undefined) {
+            yield* fillUsername.pipe(Effect.catchTag("PreviewAutomationTargetNotFoundError", () => Effect.void));
+          } else {
+            yield* fillUsername;
+          }
         }
         const locator = input.passwordLocator ?? "css=input[type=password]";
         // Protect BEFORE injecting the secret, but let the agent correct username locators first.
@@ -2667,12 +2683,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         // Pin the current document BEFORE masking. A same-origin navigation
         // during any subsequent await destroys this marker and cancels fill.
         const documentMarker = (yield* nextCounter(actionSequenceRef)).toString(36);
+        const [savedOriginJson, savedDocumentMarkerJson] = yield* Effect.all([
+          encodeJson({ operation: "saved-login.encodeOrigin", tabId }, input.origin),
+          encodeJson({ operation: "saved-login.encodeDocumentMarker", tabId }, documentMarker),
+        ]);
         const markerInstalled = yield* evaluateWithDebugger<boolean>(
           tabId,
           send,
           `(() => {
-            if (location.origin !== ${JSON.stringify(input.origin)}) return false;
-            globalThis.__sparkyProtectedDocument = ${JSON.stringify(documentMarker)};
+            if (location.origin !== ${savedOriginJson}) return false;
+            globalThis.__sparkyProtectedDocument = ${savedDocumentMarkerJson};
             return true;
           })()`,
           true,

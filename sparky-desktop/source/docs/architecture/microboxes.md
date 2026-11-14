@@ -11,9 +11,15 @@ panel tab label is **"Boxes"**.
   create, list, screenshot and input operation checks its current value.
 - Separate `microboxesInternetEnabled` switch (off by default). The host
   uses user-mode NAT when requested; no networking for other boxes.
-- Host runtime detection and explicit, privileged Electron confirmation for
-  WinGet on Windows, Homebrew on macOS and selected Linux package managers.
-  Host setup checks binaries but does **not** imply a guest image exists.
+- Enabling Microboxes automatically checks for both the QEMU host emulator and
+  disk utility and installs missing prerequisites using WinGet on Windows,
+  Homebrew on macOS, or a supported Linux package manager. The settings page
+  displays an "Installing requirements…" spinner. Operating-system elevation
+  authorization may still be required; the app no longer adds its own dialog.
+- The installer bundles an architecture-matched checksum-verified Linux guest.
+  First use verifies the guest manifest and SHA256SUMS, then installs the immutable,
+  content-addressed revision without requiring a local folder picker. The installer
+  build fails rather than silently shipping without the guest.
 - Server-managed VM processes, bounded RAM/CPU, maximum four live boxes,
   sparse copy-on-write guest disks rather than full disk copies,
   per-thread ownership and cleanup on server shutdown, opt-out or thread deletion.
@@ -25,8 +31,13 @@ panel tab label is **"Boxes"**.
   `box_drag`, `box_stop`, `box_destroy`. The agent's authenticated thread identity is
   used; a tool caller cannot select a different thread. Tools may be visible
   in discovery while disabled, but every action is denied server-side.
-- WebSocket RPC methods and typed client atoms for the same operations. Users
-  can install guest images from local folders and manage them in the Boxes tab.
+- WebSocket RPC methods and typed client atoms for the same operations.
+  The Boxes tab lists agent-created boxes and shows the guest display; it does
+  not expose a manual creation form, image selector, or CPU/memory controls.
+  The agent may omit `imageId` in `box_create` to select the built-in guest;
+  advanced callers can still select an installed image explicitly.
+- Turning internet access off stops previously online boxes; the permission
+  check also denies creating any new online box without the global opt-in.
 - Workspace-scoped `artifactRelativePath` in `box_create` copies a single
   installer under 2 GiB and attaches it as a read-only virtual FAT USB device.
 - Buildroot image scripts and CI workflow for independent x86-64 and ARM64
@@ -50,8 +61,10 @@ Guest files are stored under the backend's server data directory in
 `microboxes/boxes/<box-uuid>/`.
 
 The guest image format is `image.json` with an `id`, `name`, `kind`,
-`architecture`, `file`, and `kernel` for direct Linux boot. Files are
-copied from a chosen folder after validating identifiers, realpaths and size.
+`architecture`, `file`, and `kernel` for direct Linux boot. The
+built-in image is copied from the installer resources after validating
+identifiers, realpaths, SHA-256 checksums and size. The low-level import
+operation remains available for internal development and tests.
 
 The VM process gets a reduced host environment, excluding provider keys and
 authorization tokens. The backend refuses host paths outside the selected
@@ -63,9 +76,10 @@ working directory. No guest remote display port or SSH port is opened.
 - **Boot verification:** CI compilation is in progress; a successful Buildroot
   build does not prove its GUI comes up on every host, and the image must be
   tested under real Windows, macOS and Linux hosts.
-- **Automatic, signed guest-image installation:** currently users select an
-  image folder. Production should retrieve an authenticated, checksum-pinned
-  release artifact directly through Sparky, showing exact stages and errors.
+- **Sign/release provenance:** installer workflows now bundle a guest built
+  from the same source and require checksum validation and a boot/input smoke
+  test. Additional release signing and host-platform verification remain
+  necessary before claiming production readiness.
 - **Better computer-use semantics:** current controls are screenshot/pixel and
   keyboard based, not a semantic native accessibility tree. Implement the
   guest `sparky-boxd` authentication and accessibility bridge for stable
@@ -100,10 +114,12 @@ bash microboxes/os/build-aarch64.sh
 Both scripts use pinned Buildroot tag `2026.08.1`. The workflow
 `.github/workflows/microboxes-guest-image.yml` at the repository root runs
 the two builds as matrix jobs and uploads non-publication test artifacts.
-The settings image-folder picker can import the generated directories.
-A separate CI job attempts a real guest boot using the same sparse disk overlay
-format as the server and uploads a PNG screenshot as evidence. An image build
-passing alone is not proof of a functioning graphical desktop.
+The reusable `.github/workflows/microboxes-installer-images.yml` workflow
+builds both architectures, verifies image checksums, and boots the graphical
+desktop with mouse and keyboard input before publishing installer build
+artifacts. All desktop packaging paths consume those verified images. The
+server then imports the bundled architecture-matched image automatically.
+A compile alone is not proof of a functioning graphical desktop.
 
 ## Installer testing
 

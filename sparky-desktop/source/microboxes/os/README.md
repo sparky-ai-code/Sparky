@@ -8,16 +8,18 @@ client applications, with Pixman software rendering.
 Build on Linux with `bash microboxes/os/build-x86_64.sh` (x86-64) or
 `bash microboxes/os/build-aarch64.sh` (ARM64). Both scripts use the pinned
 Buildroot 2026.08.1 release and produce a kernel (`bzImage` or `Image`),
-ext filesystem, `image.json` and `SHA256SUMS`. The resulting guest image
-can be imported from Settings → Microboxes, or installed under
-`microboxes/images/sparky-micro-<architecture>` in the server data directory.
+ext filesystem, `image.json` and `SHA256SUMS`. The resulting guest image is embedded into Sparky installers and automatically
+imported on first use. No image download, extraction or Settings import button
+is required. A copy is installed under the server data directory as a
+checksum-derived revision rather than a single mutable image identity.
 
 ARM64 uses the virtual AArch64 machine with a 64-bit CPU definition, and
 initially requires software rasterization through Weston/Pixman.
 
-GitHub Actions can build and upload this image as an artifact without publishing
-a release. A separate signed distribution mechanism is required before the
-desktop app can provide one-click guest image downloads.
+The installer workflow builds and smoke-tests the Linux guest, checks SHA-256
+integrity, and bundles the architecture-matched image in the desktop
+application's `microboxes` resources. Distribution signing, provenance and
+native host acceptance still need to be validated before production release.
 
 The image is configured to boot directly into a graphical Weston session
 with a Foot Wayland terminal (as a readily keyboard/mouse-controllable test
@@ -37,14 +39,13 @@ guest operating systems. The Sparky Micro Linux image does not run .exe, .msi,
 
 ### Required guest image revision
 
-Rebuilding Sparky's Windows installer does **not** update the guest filesystem. The
-Linux guest image built by GitHub Actions must be downloaded separately, extracted
-and imported using Settings → Microboxes. Current official images include
-`"boxImageVersion": 2`. The backend intentionally rejects older guest images
-without this revision, because they can show a Buildroot text login instead of a
-controllable desktop. Delete boxes using the old image before importing an updated
-image folder, then create a new box. A successful compile alone does **not** certify
-the image: its graphical boot smoke test must pass as well.
+Rebuilding Sparky's installer now **includes** the newly boot-verified Linux
+guest. Installing Sparky and then enabling Microboxes is sufficient to prepare
+the guest without manual image selection. Current official images include
+`"boxImageVersion": 2`; older login-only images are rejected. Each content
+revision is independently installed, preserving existing box disks until they
+are removed. A successful compile alone does **not** certify the image: its
+graphical boot-and-input smoke test must pass as well.
 
 ### Wayland display readiness
 

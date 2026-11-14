@@ -62,8 +62,22 @@ async function sha256File(file: string): Promise<string> {
   for await (const chunk of createReadStream(file)) hash.update(chunk);
   return hash.digest("hex");
 }
-function versionedMicroboxId(manifest: GuestManifest, rootfsHash: string): string {
+function legacyMicroboxId(manifest: GuestManifest, rootfsHash: string): string {
+  // Previous verified guest revisions were identified by the rootfs alone.
   return `${manifest.id}-v${CURRENT_SPARKY_MICRO_IMAGE_VERSION}-${rootfsHash.slice(0, 12)}`;
+}
+
+function versionedMicroboxId(manifest: GuestManifest, checksums: Map<string, string>): string {
+  const rootfsHash = checksums.get(manifest.file);
+  const kernelHash = manifest.kernel ? checksums.get(manifest.kernel) : "";
+  if (!rootfsHash || kernelHash === undefined) {
+    throw new MicroboxHostError("invalid-input", "Guest image checksums are incomplete.");
+  }
+  // A kernel-only patch must create a NEW immutable guest revision. Otherwise
+  // an installed box could silently keep booting an older, incompatible kernel.
+  const fingerprint = createHash("sha256").update(rootfsHash).update(":")
+    .update(kernelHash).digest("hex");
+  return `${manifest.id}-v${CURRENT_SPARKY_MICRO_IMAGE_VERSION}-${fingerprint.slice(0, 12)}`;
 }
 function assertCurrentSparkyMicroImage(manifest: GuestManifest): void {
   if (OFFICIAL_MICRO_IMAGE_ID.test(manifest.id) &&
@@ -286,7 +300,7 @@ export class HostBoxManager {
             `The Linux guest file ${name} differs from its checksum. Re-extract the ZIP.`);
         }
       }
-      installedId = versionedMicroboxId(manifest, checksums.get(manifest.file)!);
+      installedId = versionedMicroboxId(manifest, checksums);
       files.push("SHA256SUMS");
     }
     let unpackedBytes = 0;
@@ -425,7 +439,8 @@ export class HostBoxManager {
         throw new MicroboxHostError("image-missing", "Installed Linux guest checksums are missing.");
       }));
       const rootHash = sums.get(manifest.file);
-      if (!rootHash || id !== versionedMicroboxId(manifest, rootHash)) {
+      if (!rootHash || (id !== versionedMicroboxId(manifest, sums) &&
+          id !== legacyMicroboxId(manifest, rootHash))) {
         throw new MicroboxHostError("image-missing", "The installed Linux guest identity is inconsistent.");
       }
     }

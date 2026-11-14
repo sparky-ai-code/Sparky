@@ -121,14 +121,43 @@ describe("Microboxes image import", () => {
       const secondImage = await manager.importImage(download);
       expect(firstImage.imageId).not.toBe(secondImage.imageId);
       expect(secondImage.imageId).toMatch(/^sparky-micro-x86_64-v2-[0-9a-f]{12}$/u);
-      expect((await manager.images()).map((image) => image.imageId))
-        .toEqual([secondImage.imageId, firstImage.imageId]);
+      const listed = (await manager.images()).map((image) => image.imageId);
+      expect(listed).toHaveLength(2);
+      expect(listed).toEqual(expect.arrayContaining([firstImage.imageId, secondImage.imageId]));
       expect(await readFile(Path.join(root, "installed", "images", firstImage.imageId, "rootfs.ext2"), "utf8"))
         .toBe("version 1");
       expect(await readFile(Path.join(root, "installed", "images", secondImage.imageId, "rootfs.ext2"), "utf8"))
         .toBe("version 2");
       expect(await readFile(Path.join(root, "installed", "images", secondImage.imageId, "bzImage"), "utf8"))
         .toBe("kernel 2");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("creates a new immutable revision when the kernel alone changes", async () => {
+    const root = await mkdtemp(Path.join(tmpdir(), "sparky-box-kernel-revision-"));
+    const source = Path.join(root, "guest");
+    try {
+      await mkdir(source);
+      await writeFile(Path.join(source, "image.json"), JSON.stringify({
+        id: "sparky-micro-x86_64", name: "Sparky Micro Linux",
+        kind: "linux-kernel", architecture: "x86_64",
+        file: "rootfs.ext2", kernel: "bzImage", boxImageVersion: 2,
+      }));
+      await writeFile(Path.join(source, "rootfs.ext2"), "unchanged filesystem");
+      await writeFile(Path.join(source, "bzImage"), "old kernel");
+      await writeImageSums(source, ["bzImage", "rootfs.ext2", "image.json"]);
+      const manager = new HostBoxManager(Path.join(root, "installed"));
+      const first = await manager.importImage(source);
+      await writeFile(Path.join(source, "bzImage"), "new kernel with VFAT");
+      await writeImageSums(source, ["bzImage", "rootfs.ext2", "image.json"]);
+      const second = await manager.importImage(source);
+      expect(second.imageId).not.toBe(first.imageId);
+      expect(await readFile(Path.join(root, "installed", "images", first.imageId, "bzImage"), "utf8"))
+        .toBe("old kernel");
+      expect(await readFile(Path.join(root, "installed", "images", second.imageId, "bzImage"), "utf8"))
+        .toBe("new kernel with VFAT");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

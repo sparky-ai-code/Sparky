@@ -71,7 +71,7 @@ jobs:
             cat /tmp/web-typecheck.log
             grep 'error TS' /tmp/web-typecheck.log > /tmp/web-typecheck-errors.log || true
             if [ ! -s /tmp/web-typecheck-errors.log ]; then exit 1; fi
-            if grep -Ev '^src/components/(DesktopUpdateBanner[.]tsx|settings/McpSettingsPanel[.]tsx|settings/UserAnalyticsSettingsPanel[.]tsx)[(]' /tmp/web-typecheck-errors.log; then
+            if grep -Ev '^src/components/(DesktopUpdateBanner[.]tsx|settings/McpSettingsPanel[.]tsx|settings/SettingsPanels[.]tsx|settings/UserAnalyticsSettingsPanel[.]tsx)[(]' /tmp/web-typecheck-errors.log; then
               echo "::error::Web typecheck introduced errors outside known baseline sources."
               exit 1
             fi

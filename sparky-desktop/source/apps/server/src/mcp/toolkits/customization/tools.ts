@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool } from "effect/unstable/ai";
 
 export const ReadCustomizationTool = Tool.make("sparky_customization_read", {
   description:
@@ -26,4 +26,3 @@ export const ApplyCustomizationTool = Tool.make("sparky_customization_apply", {
   .annotate(Tool.OpenWorld, false)
   .annotate(Tool.Destructive, true);
 
-export const CustomizationToolkit = Toolkit.make(ReadCustomizationTool, ApplyCustomizationTool);

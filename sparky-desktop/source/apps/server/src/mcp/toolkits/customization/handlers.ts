@@ -1,5 +1,6 @@
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -12,7 +13,9 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { ApplyCustomizationTool, ReadCustomizationTool } from "./tools.ts";
 
 type Invocation = McpInvocationContext.McpInvocationScope;
-type Invoke = (payload: unknown, scope: Invocation) => Effect.Effect<unknown, unknown>;
+type Invoke = (payload: unknown, scope: Invocation) => Effect.Effect<unknown, Error>;
+
+class CustomizationToolError extends Data.TaggedError("CustomizationToolError")<{ readonly message: string }> {}
 
 const result = (value: unknown, isError: boolean): McpSchema.CallToolResult =>
   new McpSchema.CallToolResult({
@@ -35,11 +38,11 @@ export const registerCustomizationTools = Effect.fn("McpCustomizationTools.regis
       const input = yield* Schema.decodeUnknownEffect(ApplyCustomizationTool.parametersSchema)(payload);
       const source = Option.getOrNull(yield* projection.getThreadShellById(scope.threadId));
       if (!source || source.runtimeMode !== "full-access" || source.interactionMode === "plan") {
-        return yield* Effect.fail(new Error("Customizing the app requires an active thread in Full access mode."));
+        return yield* Effect.fail(new CustomizationToolError({ message: "Customizing the app requires an active thread in Full access mode." }));
       }
       return yield* Effect.try({
         try: () => writeCustomization(config.stateDir, input.customization, input.expectedRevision),
-        catch: (cause) => new Error(cause instanceof Error ? cause.message : "Could not save customization."),
+        catch: (cause) => new CustomizationToolError({ message: cause instanceof Error ? cause.message : "Could not save customization." }),
       });
     });
 

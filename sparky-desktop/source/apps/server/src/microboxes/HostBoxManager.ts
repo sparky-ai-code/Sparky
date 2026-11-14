@@ -502,17 +502,23 @@ export class HostBoxManager {
   }
 
   async create(input: MicroboxCreateInput, workspaceRoot?: string): Promise<MicroboxStatus> {
+    // Public create input may omit imageId; the Microboxes service resolves
+    // its bundled default before reaching this host-management boundary.
+    const imageId = input.imageId;
+    if (!imageId) {
+      throw new MicroboxHostError("image-missing", "No guest image was selected for this box.");
+    }
     if (this.deletedThreads.has(input.threadId)) {
       throw new MicroboxHostError("forbidden", "This chat thread no longer exists.");
     }
     if (this.stopping) throw new MicroboxHostError("busy", "Microboxes are shutting down.");
-    if (this.updatingImages.has(input.imageId)) throw new MicroboxHostError("busy", "This image is being updated.");
+    if (this.updatingImages.has(imageId)) throw new MicroboxHostError("busy", "This image is being updated.");
     if (this.boxes.size + this.creating >= MAX_BOXES) {
       throw new MicroboxHostError("limit", "Stop an existing box first (maximum four).");
     }
     this.creating += 1;
     try {
-    const { manifest, directory: imageDir } = await this.image(input.imageId);
+    const { manifest, directory: imageDir } = await this.image(imageId);
     const boxId = randomUUID();
     const directory = Path.join(this.root, "boxes", boxId);
     const memoryMiB = input.memoryMiB ?? (manifest.kind === "linux-kernel" ? 512 : 2048);
@@ -630,7 +636,7 @@ export class HostBoxManager {
       const status: MutableStatus = {
         boxId,
         threadId: input.threadId,
-        imageId: input.imageId,
+        imageId: imageId,
         name: input.name || manifest.name,
         state: "starting",
         memoryMiB, cpus,

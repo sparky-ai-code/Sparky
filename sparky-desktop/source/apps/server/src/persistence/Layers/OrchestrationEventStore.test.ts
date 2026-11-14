@@ -115,6 +115,44 @@ layer("OrchestrationEventStore", (it) => {
     }),
   );
 
+  it.effect("replays across the 500-event page boundary without mixing threads", () =>
+    Effect.gen(function* () {
+      const store = yield* OrchestrationEventStore;
+      const threadId = ThreadId.make("thread-multipage-A");
+      const otherThreadId = ThreadId.make("thread-multipage-B");
+      const now = "2026-01-01T00:00:00.000Z";
+      const append = (id: string, aggregateId: ThreadId) =>
+        store.append({
+          type: "thread.meta-updated",
+          eventId: EventId.make(id),
+          aggregateKind: "thread",
+          aggregateId,
+          occurredAt: now,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: { threadId: aggregateId, title: id, updatedAt: now },
+        });
+
+      const firstPage = yield* Effect.forEach(
+        Array.from({ length: 500 }, (_, index) => index),
+        (index) => append(`event-page-A-${index}`, threadId),
+        { concurrency: 1 },
+      );
+      yield* append("event-page-B", otherThreadId);
+      const tail = yield* append("event-page-A-500", threadId);
+
+      const events = yield* Stream.runCollect(
+        store.readThreadFromSequence(threadId, 0, tail.sequence),
+      );
+      assert.equal(events.length, 501);
+      assert.equal(events[0]?.eventId, firstPage[0]?.eventId);
+      assert.equal(events[499]?.eventId, firstPage[499]?.eventId);
+      assert.equal(events[500]?.eventId, tail.eventId);
+    }),
+  );
+
   it.effect("fails with PersistenceDecodeError when stored json is invalid", () =>
     Effect.gen(function* () {
       const eventStore = yield* OrchestrationEventStore;

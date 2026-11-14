@@ -79,6 +79,7 @@ import {
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as MemoryStore from "./memoryStore.ts";
+import * as SkillStore from "./skillStore.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -375,6 +376,9 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.memoryAdd, AuthOrchestrationOperateScope],
   [WS_METHODS.memoryUpdate, AuthOrchestrationOperateScope],
   [WS_METHODS.memoryDelete, AuthOrchestrationOperateScope],
+  [WS_METHODS.skillList, AuthOrchestrationReadScope],
+  [WS_METHODS.skillSave, AuthOrchestrationOperateScope],
+  [WS_METHODS.skillDelete, AuthOrchestrationOperateScope],
   [WS_METHODS.cloudGetRelayClientStatus, AuthRelayWriteScope],
   [WS_METHODS.cloudInstallRelayClient, AuthRelayWriteScope],
   [WS_METHODS.sourceControlLookupRepository, AuthOrchestrationReadScope],
@@ -501,6 +505,7 @@ const makeWsRpcLayer = (
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
       const memoryStore = yield* MemoryStore.MemoryStoreService;
+      const skillStore = yield* SkillStore.SkillStoreService;
       const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
       const automaticGitFetchInterval = serverSettings.getSettings.pipe(
         Effect.map((settings) => settings.automaticGitFetchInterval),
@@ -1693,6 +1698,12 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.memoryDelete, memoryStore.remove(input), {
             "rpc.aggregate": "memory",
           }),
+        [WS_METHODS.skillList]: (_input) =>
+          observeRpcEffect(WS_METHODS.skillList, skillStore.list(), { "rpc.aggregate": "skills" }),
+        [WS_METHODS.skillSave]: (input) =>
+          observeRpcEffect(WS_METHODS.skillSave, skillStore.save(input), { "rpc.aggregate": "skills" }),
+        [WS_METHODS.skillDelete]: (input) =>
+          observeRpcEffect(WS_METHODS.skillDelete, skillStore.remove(input), { "rpc.aggregate": "skills" }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) =>
           observeRpcEffect(
             WS_METHODS.serverDiscoverSourceControl,
@@ -2287,6 +2298,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provideMerge(ServerConfig.layer(config)),
               Layer.provideMerge(MemoryStore.layer),
+              Layer.provideMerge(SkillStore.layer),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(
                   Layer.provide(

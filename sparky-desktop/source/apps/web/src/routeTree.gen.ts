@@ -21,6 +21,7 @@ import { Route as SettingsPluginsRouteImport } from './routes/settings.plugins'
 import { Route as SettingsPersonalizeRouteImport } from './routes/settings.personalize'
 import { Route as SettingsModelsRouteImport } from './routes/settings.models'
 import { Route as SettingsMemoryRouteImport } from './routes/settings.memory'
+import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
 import { Route as SettingsMcpRouteImport } from './routes/settings.mcp'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsInstructionsRouteImport } from './routes/settings.instructions'
@@ -91,6 +92,11 @@ const SettingsMemoryRoute = SettingsMemoryRouteImport.update({
   path: '/memory',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsSkillsRoute = SettingsSkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsMcpRoute = SettingsMcpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
@@ -159,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
+  '/settings/skills': typeof SettingsSkillsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/personalize': typeof SettingsPersonalizeRoute
   '/settings/plugins': typeof SettingsPluginsRoute
@@ -181,6 +188,7 @@ export interface FileRoutesByTo {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
+  '/settings/skills': typeof SettingsSkillsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/personalize': typeof SettingsPersonalizeRoute
   '/settings/plugins': typeof SettingsPluginsRoute
@@ -206,6 +214,7 @@ export interface FileRoutesById {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
+  '/settings/skills': typeof SettingsSkillsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/personalize': typeof SettingsPersonalizeRoute
   '/settings/plugins': typeof SettingsPluginsRoute
@@ -232,6 +241,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/mcp'
     | '/settings/memory'
+    | '/settings/skills'
     | '/settings/models'
     | '/settings/personalize'
     | '/settings/plugins'
@@ -254,6 +264,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/mcp'
     | '/settings/memory'
+    | '/settings/skills'
     | '/settings/models'
     | '/settings/personalize'
     | '/settings/plugins'
@@ -278,6 +289,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/mcp'
     | '/settings/memory'
+    | '/settings/skills'
     | '/settings/models'
     | '/settings/personalize'
     | '/settings/plugins'
@@ -382,6 +394,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsMemoryRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/skills': {
+      id: '/settings/skills'
+      path: '/skills'
+      fullPath: '/settings/skills'
+      preLoaderRoute: typeof SettingsSkillsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/mcp': {
       id: '/settings/mcp'
       path: '/mcp'
@@ -479,6 +498,7 @@ interface SettingsRouteChildren {
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsMcpRoute: typeof SettingsMcpRoute
   SettingsMemoryRoute: typeof SettingsMemoryRoute
+  SettingsSkillsRoute: typeof SettingsSkillsRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsPersonalizeRoute: typeof SettingsPersonalizeRoute
   SettingsPluginsRoute: typeof SettingsPluginsRoute
@@ -495,6 +515,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsMcpRoute: SettingsMcpRoute,
   SettingsMemoryRoute: SettingsMemoryRoute,
+  SettingsSkillsRoute: SettingsSkillsRoute,
   SettingsModelsRoute: SettingsModelsRoute,
   SettingsPersonalizeRoute: SettingsPersonalizeRoute,
   SettingsPluginsRoute: SettingsPluginsRoute,

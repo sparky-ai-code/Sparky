@@ -363,5 +363,17 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:memory:delete",
       tag: WS_METHODS.memoryDelete,
     }),
+    skillList: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:skills:list",
+      tag: WS_METHODS.skillList,
+    }),
+    skillSave: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:save",
+      tag: WS_METHODS.skillSave,
+    }),
+    skillDelete: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:delete",
+      tag: WS_METHODS.skillDelete,
+    }),
   };
 }

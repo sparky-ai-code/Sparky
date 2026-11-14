@@ -11,6 +11,7 @@ import {
   PlugZapIcon,
   SearchIcon,
   Settings2Icon,
+  SparklesIcon,
 } from "lucide-react";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 
@@ -36,6 +37,7 @@ export type SettingsSectionPath =
   | "/settings/plugins"
   | "/settings/mcp"
   | "/settings/memory"
+  | "/settings/skills"
   | "/settings/analytics"
   | "/settings/archived";
 
@@ -62,6 +64,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   { label: "Plugins", section: "AI & tools", to: "/settings/plugins", icon: PlugZapIcon },
   { label: "MCP", section: "AI & tools", to: "/settings/mcp", icon: McpIcon },
   { label: "Memory", section: "AI & tools", to: "/settings/memory", icon: BrainIcon },
+  { label: "Skills", section: "AI & tools", to: "/settings/skills", icon: SparklesIcon },
   {
     label: "Usage",
     section: "Data",

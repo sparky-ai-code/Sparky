@@ -142,6 +142,7 @@ import {
   MemoryListResult,
   MemoryUpdateInput,
 } from "./memory.ts";
+import { Skill, SkillDeleteInput, SkillError, SkillListResult, SkillSaveInput } from "./skill.ts";
 import {
   McpServerConnectionStatus,
   ServerSettings,
@@ -236,6 +237,9 @@ export const WS_METHODS = {
   memoryAdd: "memory.add",
   memoryUpdate: "memory.update",
   memoryDelete: "memory.delete",
+  skillList: "skill.list",
+  skillSave: "skill.save",
+  skillDelete: "skill.delete",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -374,6 +378,24 @@ export const WsMemoryDeleteRpc = Rpc.make(WS_METHODS.memoryDelete, {
   payload: MemoryDeleteInput,
   success: Schema.Struct({ deleted: Schema.Boolean }),
   error: Schema.Union([MemoryError, EnvironmentAuthorizationError]),
+});
+
+export const WsSkillListRpc = Rpc.make(WS_METHODS.skillList, {
+  payload: Schema.Struct({}),
+  success: SkillListResult,
+  error: Schema.Union([SkillError, EnvironmentAuthorizationError]),
+});
+
+export const WsSkillSaveRpc = Rpc.make(WS_METHODS.skillSave, {
+  payload: SkillSaveInput,
+  success: Skill,
+  error: Schema.Union([SkillError, EnvironmentAuthorizationError]),
+});
+
+export const WsSkillDeleteRpc = Rpc.make(WS_METHODS.skillDelete, {
+  payload: SkillDeleteInput,
+  success: Schema.Struct({ deleted: Schema.Boolean }),
+  error: Schema.Union([SkillError, EnvironmentAuthorizationError]),
 });
 
 export const WsCloudGetRelayClientStatusRpc = Rpc.make(WS_METHODS.cloudGetRelayClientStatus, {
@@ -765,6 +787,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsMemoryAddRpc,
   WsMemoryUpdateRpc,
   WsMemoryDeleteRpc,
+  WsSkillListRpc,
+  WsSkillSaveRpc,
+  WsSkillDeleteRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsSourceControlLookupRepositoryRpc,

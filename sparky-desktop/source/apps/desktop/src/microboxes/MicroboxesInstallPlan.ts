@@ -29,9 +29,9 @@ export async function selectMicroboxesInstallPlan(
   }
   if (platform !== "linux") return null;
   const managerOptions: readonly InstallPlan[] = [
-    { executable: "apt-get", args: ["install", "-y", "qemu-system"] },
-    { executable: "dnf", args: ["install", "-y", "qemu-system-x86"] },
-    { executable: "pacman", args: ["-S", "--noconfirm", "qemu-system-x86", "qemu-system-aarch64"] },
+    { executable: "apt-get", args: ["install", "-y", "qemu-system", "qemu-utils"] },
+    { executable: "dnf", args: ["install", "-y", "qemu-system-x86", "qemu-img"] },
+    { executable: "pacman", args: ["-S", "--noconfirm", "qemu-system-x86", "qemu-system-aarch64", "qemu-img"] },
     { executable: "zypper", args: ["--non-interactive", "install", "qemu"] },
   ];
   for (const plan of managerOptions) {

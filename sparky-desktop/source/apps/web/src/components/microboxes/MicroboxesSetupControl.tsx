@@ -53,7 +53,7 @@ export function MicroboxesSetupControl({ enabled }: { enabled: boolean }) {
       </div>
     );
   }
-  if (error || state.status === "error" || state.status === "unsupported") {
+  if (state.status !== "engine-ready") {
     return (
       <p role="alert" className="text-xs text-destructive">
         {error ?? state.detail ?? "Automatic Microboxes setup isn't supported on this device."}

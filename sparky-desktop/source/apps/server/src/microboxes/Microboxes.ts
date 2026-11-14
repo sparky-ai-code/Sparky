@@ -117,7 +117,10 @@ export const layer = Layer.effect(
     yield* settings.streamChanges.pipe(
       Stream.runForEach((next) =>
         next.microboxesEnabled
-          ? Effect.sync(() => manager.resume())
+          ? Effect.promise(async () => {
+              manager.resume();
+              if (!next.microboxesInternetEnabled) await manager.stopNetworkedBoxes();
+            })
           : Effect.promise(() => manager.stopAll()),
       ),
       Effect.forkScoped,

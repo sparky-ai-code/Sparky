@@ -885,6 +885,16 @@ export class HostBoxManager {
     }));
   }
 
+  /** Disabling guest internet revokes it from already-running guests too. */
+  async stopNetworkedBoxes(): Promise<void> {
+    const online = [...this.boxes.values()].filter(
+      (box) => box.status.internet && box.status.state !== "stopped",
+    );
+    await Promise.all(online.map((box) =>
+      this.stop(box.status.threadId, box.status.boxId)
+    ));
+  }
+
   resume(): void {
     this.stopping = false;
   }

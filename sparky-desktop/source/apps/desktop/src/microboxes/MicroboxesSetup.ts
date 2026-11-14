@@ -31,20 +31,22 @@ async function canRun(executable: string, args: readonly string[] = ["--version"
 }
 
 async function runtimeInstalled(): Promise<boolean> {
-  const candidates = [binary];
-  if (host === "windows") {
-    const executable = `${binary}.exe`;
-    candidates.push(
-      Path.join(process.env.ProgramFiles ?? "C:\\Program Files", "qemu", executable),
-      Path.join(process.env.LOCALAPPDATA ?? "", "Programs", "QEMU", executable),
-    );
-  } else if (host === "macos") {
-    candidates.push(`/opt/homebrew/bin/${binary}`, `/usr/local/bin/${binary}`);
+  // VM boot requires both the system emulator and the disk utility.
+  for (const name of [binary, "qemu-img"]) {
+    const candidates = [name];
+    if (host === "windows") {
+      candidates.push(
+        Path.join(process.env.ProgramFiles ?? "C:\\Program Files", "qemu", `${name}.exe`),
+        Path.join(process.env.LOCALAPPDATA ?? "", "Programs", "QEMU", `${name}.exe`),
+      );
+    } else if (host === "macos") {
+      candidates.push(`/opt/homebrew/bin/${name}`, `/usr/local/bin/${name}`);
+    }
+    if (!(await Promise.all(candidates.map((candidate) => canRun(candidate)))).some(Boolean)) {
+      return false;
+    }
   }
-  for (const candidate of candidates) {
-    if (await canRun(candidate)) return true;
-  }
-  return false;
+  return true;
 }
 
 const publicState = (

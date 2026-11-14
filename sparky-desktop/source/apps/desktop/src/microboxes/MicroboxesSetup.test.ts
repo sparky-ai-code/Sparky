@@ -27,6 +27,13 @@ describe("Sparky Microboxes host setup", () => {
     ).toBe("apt-get");
   });
 
+  it("installs the disk utility as well as the Linux emulator", async () => {
+    const apt = await selectMicroboxesInstallPlan("linux", available("apt-get"), true);
+    expect(apt?.args).toContain("qemu-utils");
+    const dnf = await selectMicroboxesInstallPlan("linux", available("dnf"), true);
+    expect(dnf?.args).toContain("qemu-img");
+  });
+
   it("never tries to install components without a supported manager", async () => {
     expect(await selectMicroboxesInstallPlan("unsupported", available("winget"))).toBeNull();
     expect(await selectMicroboxesInstallPlan("windows", available())).toBeNull();

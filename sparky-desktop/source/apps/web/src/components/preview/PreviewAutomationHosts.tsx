@@ -44,6 +44,17 @@ import { useAtomCommand } from "~/state/use-atom-command";
 
 import { previewBridge } from "./previewBridge";
 import {
+  threadRelayCreateWorktree,
+  threadRelayDispatch,
+  threadRelayRead,
+  threadRelayRefs,
+  threadRelayRemoveWorktree,
+  threadRelayServerConfig,
+  threadRelayShell,
+  threadRelayStatus,
+} from "./threadCollaborationCommands";
+import { runThreadCollaboration } from "./threadCollaborationRelay";
+import {
   PreviewAutomationNavigationTimeoutError,
   PreviewAutomationOperationError,
   PreviewAutomationOverlayTimeoutError,
@@ -271,6 +282,7 @@ export function PreviewAutomationHosts() {
 
 function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId }) {
   const { environmentId } = props;
+  const { environments: connectedEnvironments } = useEnvironments();
   const registry = useContext(RegistryContext);
   const [automationClientId] = useState(createPreviewAutomationClientId);
   const initialAutomationHost = useMemo<PreviewAutomationHostState>(
@@ -302,6 +314,14 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
     previewEnvironment.focusAutomationHost,
     "preview automation host focus",
   );
+  const loadRelayShell = useAtomCommand(threadRelayShell, { reportFailure: false });
+  const loadRelayThread = useAtomCommand(threadRelayRead, { reportFailure: false });
+  const loadRelayConfig = useAtomCommand(threadRelayServerConfig, { reportFailure: false });
+  const listRelayRefs = useAtomCommand(threadRelayRefs, { reportFailure: false });
+  const getRelayStatus = useAtomCommand(threadRelayStatus, { reportFailure: false });
+  const createRelayWorktree = useAtomCommand(threadRelayCreateWorktree, { reportFailure: false });
+  const removeRelayWorktree = useAtomCommand(threadRelayRemoveWorktree, { reportFailure: false });
+  const dispatchRelayCommand = useAtomCommand(threadRelayDispatch, { reportFailure: false });
   const [automationConnectionAtom] = useState(() => Atom.make<string | null>(null));
   // Keep deduplication across consumer atom rebuilds during React rerenders.
   const [processedAutomationRequestIds] = useState(() => new Set<string>());
@@ -309,6 +329,37 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
 
   const handleRequest = useCallback(
     async (request: PreviewAutomationRequest): Promise<unknown> => {
+      if (request.operation === "threadCollaboration") {
+        // The desktop host is authenticated separately to each registered
+        // backend. Forward only the explicit thread operations in the relay
+        // dispatcher, never a model-provided URL, token, or arbitrary command.
+        const unwrap = async <T, E>(
+          pending: Promise<import("@sparky/client-runtime/state/runtime").AtomCommandResult<T, E>>,
+        ): Promise<T> => {
+          const result = await pending;
+          if (result._tag === "Failure") return raiseAtomCommandFailure(result);
+          return result.value;
+        };
+        return await runThreadCollaboration(request.input, {
+          environmentIds: connectedEnvironments.map((entry) => entry.environmentId),
+          shell: (target) =>
+            unwrap(loadRelayShell({ environmentId: target, input: {} })),
+          thread: (target, threadId) =>
+            unwrap(loadRelayThread({ environmentId: target, input: { threadId } })),
+          serverConfig: (target) =>
+            unwrap(loadRelayConfig({ environmentId: target, input: {} })),
+          refs: (target, input) =>
+            unwrap(listRelayRefs({ environmentId: target, input })),
+          status: (target, cwd) =>
+            unwrap(getRelayStatus({ environmentId: target, input: { cwd } })),
+          createWorktree: (target, input) =>
+            unwrap(createRelayWorktree({ environmentId: target, input })),
+          removeWorktree: (target, cwd, path) =>
+            unwrap(removeRelayWorktree({ environmentId: target, input: { cwd, path } })),
+          dispatch: (target, command) =>
+            unwrap(dispatchRelayCommand({ environmentId: target, input: command })),
+        });
+      }
       if (request.operation === "githubPullRequestComments") {
         const githubBridge = window.desktopBridge as
           | (typeof window.desktopBridge & {
@@ -576,7 +627,22 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
         });
       }
     },
-    [environmentId, listPreviews, open, registry, resize],
+    [
+      environmentId,
+      connectedEnvironments,
+      loadRelayShell,
+      loadRelayThread,
+      loadRelayConfig,
+      listRelayRefs,
+      getRelayStatus,
+      createRelayWorktree,
+      removeRelayWorktree,
+      dispatchRelayCommand,
+      listPreviews,
+      open,
+      registry,
+      resize,
+    ],
   );
   const [requestHandlerAtom] = useState(() => Atom.make({ handle: handleRequest }));
   const setRequestHandler = useAtomSet(requestHandlerAtom);

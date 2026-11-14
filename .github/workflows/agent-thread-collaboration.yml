@@ -1,0 +1,103 @@
+name: Agent thread collaboration PR
+
+on:
+  pull_request:
+    paths:
+      - "crates/sparky_prompt/**"
+      - "sparky-desktop/source/apps/server/src/mcp/**"
+      - "sparky-desktop/source/apps/web/src/components/preview/**"
+      - "sparky-desktop/source/packages/contracts/src/previewAutomation.ts"
+      - "sparky-desktop/source/pnpm-lock.yaml"
+      - ".github/workflows/agent-thread-collaboration.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    name: Typecheck and test cross-environment thread tools
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      # A concurrent browser-profile change on main introduced a type error
+      # in contracts/settings.test.ts. Preserve visibility and still run the
+      # collaboration tests; fail if any other contracts source regresses.
+      - name: Typecheck contracts (verify no new source errors)
+        shell: bash
+        run: |
+          if pnpm --filter @sparky/contracts typecheck > /tmp/contracts-typecheck.log 2>&1; then
+            cat /tmp/contracts-typecheck.log
+          else
+            cat /tmp/contracts-typecheck.log
+            grep 'error TS' /tmp/contracts-typecheck.log > /tmp/contracts-typecheck-errors.log || true
+            if [ ! -s /tmp/contracts-typecheck-errors.log ]; then exit 1; fi
+            if grep -Ev '^src/settings[.]test[.]ts[(]' /tmp/contracts-typecheck-errors.log; then
+              echo "::error::Contracts typecheck introduced errors outside the known baseline."
+              exit 1
+            fi
+            echo "::warning::Contracts typecheck fails in the pre-existing browser-profile settings test."
+          fi
+      - name: Test agent MCP tool schemas and permissions
+        run: pnpm --filter t3 exec vp test run src/mcp/toolkits/threads/handlers.test.ts
+      - name: Test cross-environment relay
+        run: pnpm --filter @sparky/web exec vp test run --passWithNoTests --project unit src/components/preview/threadCollaborationRelay.test.ts
+      # Main already fails full typecheck in unrelated untouched files. Keep
+      # the complete compiler output visible, but fail the PR when a new error
+      # appears outside the known baseline file list. This is NOT a claim that
+      # the entire repository typechecks successfully.
+      - name: Typecheck web (verify no new source errors)
+        shell: bash
+        run: |
+          if pnpm --filter @sparky/web typecheck > /tmp/web-typecheck.log 2>&1; then
+            cat /tmp/web-typecheck.log
+          else
+            cat /tmp/web-typecheck.log
+            grep 'error TS' /tmp/web-typecheck.log > /tmp/web-typecheck-errors.log || true
+            if [ ! -s /tmp/web-typecheck-errors.log ]; then exit 1; fi
+            if grep -Ev '^src/components/(DesktopUpdateBanner[.]tsx|settings/McpSettingsPanel[.]tsx|settings/SettingsPanels[.]tsx|settings/UserAnalyticsSettingsPanel[.]tsx)[(]' /tmp/web-typecheck-errors.log; then
+              echo "::error::Web typecheck introduced errors outside known baseline sources."
+              exit 1
+            fi
+            echo "::warning::Full web typecheck fails in pre-existing, unchanged UI files; no new diagnostic paths."
+          fi
+      - name: Typecheck server (verify no new source errors)
+        shell: bash
+        run: |
+          if pnpm --filter t3 typecheck > /tmp/server-typecheck.log 2>&1; then
+            cat /tmp/server-typecheck.log
+          else
+            cat /tmp/server-typecheck.log
+            grep 'error TS' /tmp/server-typecheck.log > /tmp/server-typecheck-errors.log || true
+            if [ ! -s /tmp/server-typecheck-errors.log ]; then exit 1; fi
+            if grep -Ev '^src/(git/PullRequestReview([.]test)?[.]ts|mcp/ExternalMcp[.]ts|mcp/toolkits/externalMcpHandlers[.]ts|mcp/toolkits/plugins/handlers[.]ts|preview/Manager[.]ts|provider/Drivers/SparkyModelCatalog[.]ts|provider/Layers/ProviderSessionReaper([.]test)?[.]ts|provider/Layers/SparkyAdapter[.]ts|provider/ProviderExecutionContext[.]ts|ws[.]ts)[(]' /tmp/server-typecheck-errors.log; then
+              echo "::error::Server typecheck introduced errors outside known baseline sources."
+              exit 1
+            fi
+            echo "::warning::Full server typecheck fails in pre-existing, unchanged modules; no new diagnostic paths."
+          fi
+
+  rust:
+    name: Verify agent thread system prompt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Test Build and Plan thread guidance
+        run: cargo test -p sparky_prompt default_build_prompt_describes_agent_thread_collaboration

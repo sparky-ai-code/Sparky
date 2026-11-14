@@ -33,6 +33,7 @@ import {
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
 import { HtmlRenderToolkit, HtmlRenderToolkitHandlersLive } from "./toolkits/htmlRender.ts";
+import { registerThreadTools } from "./toolkits/threads/handlers.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -303,7 +304,10 @@ const HtmlRenderToolkitRegistrationLive = McpServer.toolkit(HtmlRenderToolkit).p
   Layer.provide(HtmlRenderToolkitHandlersLive),
 );
 
+export const ThreadToolkitRegistrationLive = Layer.effectDiscard(registerThreadTools());
+
 const ToolkitRegistrationLive = Layer.mergeAll(
+  ThreadToolkitRegistrationLive,
   PreviewToolkitRegistrationLive,
   HtmlRenderToolkitRegistrationLive,
   ExternalMcpToolkitRegistrationLive,

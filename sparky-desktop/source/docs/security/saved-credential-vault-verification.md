@@ -38,8 +38,10 @@ dedicated disposable account on a trusted local HTTPS login test fixture:
    document navigation, it can resume but must not replay console/network
    events from the password-bearing page.
 6. Test a queued snapshot/JavaScript inspection competing with autofill, and a
-   redirect between lookup and insertion. They must not leak or fill the
-   password into a different origin.
+   redirect between lookup and insertion (including a same-origin reload).
+   They must not leak or fill the password into a different document.
+   After any `preview_evaluate` on the page, `secrets_use` must fail until
+   a full navigation clears preinstalled JavaScript observers.
 7. Edit a login without replacing its password, then replace the password,
    remove it, and restart Sparky. Verify persistence/revocation.
 8. Test a real site WebAuthn passkey flow: the OS prompt must require user

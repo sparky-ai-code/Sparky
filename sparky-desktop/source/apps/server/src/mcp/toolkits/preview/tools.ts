@@ -200,7 +200,7 @@ export const SecretsListTool = readonlyBrowserTool(
 
 export const SecretsUseTool = browserTool(
   Tool.make("secrets_use", {
-    description: "Select a reusable saved login by name or ID in the Sparky vault, without revealing its password. Exact site match required. The desktop fills email and password while the agent is blocked from inspecting the credential-bearing page. After the site performs a full document navigation, normal browser inspection resumes. Passkey sign-in still needs native user confirmation. Never request or print a password.",
+    description: "Select a reusable saved login by name or ID in the Sparky vault, without revealing its password. Exact site match required. The desktop fills email and password while the agent is blocked from inspecting the credential-bearing page. After the site performs a full document navigation, normal browser inspection resumes. If preview_evaluate was used on this document, reload it before secrets_use so planted JavaScript listeners cannot observe the password. While protected, only click a simple sign-in button (role=button[name='Sign in'], css=button[type=submit]) or known coordinates: inspecting, typing, scrolling, pressing keys, and recording are blocked. Passkey sign-in still needs native user confirmation. Never request or print a password.",
     parameters: Schema.Struct({
       tabId: Schema.optional(PreviewTabId).annotate({ description: "Optional collaborative browser tab identifier. Defaults to the current tab." }),
       id: Schema.optional(Schema.String).annotate({ description: "Optional credential ID from secrets_list. Provide ID or name, not both." }),

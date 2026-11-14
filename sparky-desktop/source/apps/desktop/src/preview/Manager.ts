@@ -1368,6 +1368,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     if (!tab) return;
     yield* cancelPickElement(tabId);
     yield* Ref.update(protectedTabsRef, (tabs) => { const next = new Set(tabs); next.delete(tabId); return next; });
+    yield* Ref.update(evaluatedTabsRef, (tabs) => { const next = new Set(tabs); next.delete(tabId); return next; });
     if (tab.webContentsId != null) {
       yield* Effect.all(
         [detachControlSession(tab.webContentsId), detachListeners(tab.webContentsId)],
@@ -2663,6 +2664,26 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         yield* Ref.update(diagnosticsRef, (diagnostics) =>
           replaceMap(diagnostics, (copy) => { copy.delete(wc.id); }),
         );
+        // Pin the current document BEFORE masking. A same-origin navigation
+        // during any subsequent await destroys this marker and cancels fill.
+        const documentMarker = (yield* nextCounter(actionSequenceRef)).toString(36);
+        const markerInstalled = yield* evaluateWithDebugger<boolean>(
+          tabId,
+          send,
+          `(() => {
+            if (location.origin !== ${JSON.stringify(input.origin)}) return false;
+            globalThis.__sparkyProtectedDocument = ${JSON.stringify(documentMarker)};
+            return true;
+          })()`,
+          true,
+        );
+        if (!markerInstalled) {
+          return yield* new PreviewOperationError({
+            operation: "saved-login.origin",
+            tabId,
+            cause: "The browser navigated before a secure fill could start.",
+          });
+        }
         // Apply masking before the password appears in the page, including reveal-password controls.
         yield* ensurePlaywrightInjected(tabId, send);
         const locatorJson = yield* encodeJson({ operation: "saved-login.locator", tabId }, locator);
@@ -2676,14 +2697,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           "input[type=password], [data-sparky-protected-credential] { filter: blur(14px) !important; -webkit-text-security: disc !important; }",
           { cssOrigin: "user" },
         ));
-        // Reloads (including same-origin reloads) destroy this document-local
-        // marker. The actual password insertion checks it atomically in the
-        // SAME Runtime.evaluate call as the DOM edit.
-        const documentMarker = (yield* nextCounter(actionSequenceRef)).toString(36);
-        yield* evaluateWithDebugger(tabId, send,
-          `(() => { globalThis.__sparkyProtectedDocument = ${JSON.stringify(documentMarker)}; return true; })()`,
-          true,
-        );
+        // Verify the marker atomically inside the same script that inserts
+        // the password. A redirect cannot move it to an unmasked document.
         yield* typeIntoAutomationTarget(tabId, send, {
           locator,
           text: input.password,

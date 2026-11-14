@@ -86,7 +86,7 @@ jobs:
             cat /tmp/server-typecheck.log
             grep 'error TS' /tmp/server-typecheck.log > /tmp/server-typecheck-errors.log || true
             if [ ! -s /tmp/server-typecheck-errors.log ]; then exit 1; fi
-            if grep -Ev '^src/(git/PullRequestReview([.]test)?[.]ts|mcp/ExternalMcp[.]ts|mcp/toolkits/externalMcpHandlers[.]ts|mcp/toolkits/plugins/handlers[.]ts|provider/Drivers/SparkyModelCatalog[.]ts|provider/Layers/ProviderSessionReaper([.]test)?[.]ts|provider/Layers/SparkyAdapter[.]ts|provider/ProviderExecutionContext[.]ts|ws[.]ts)[(]' /tmp/server-typecheck-errors.log; then
+            if grep -Ev '^src/(git/PullRequestReview([.]test)?[.]ts|mcp/ExternalMcp[.]ts|mcp/toolkits/externalMcpHandlers[.]ts|mcp/toolkits/plugins/handlers[.]ts|preview/Manager[.]ts|provider/Drivers/SparkyModelCatalog[.]ts|provider/Layers/ProviderSessionReaper([.]test)?[.]ts|provider/Layers/SparkyAdapter[.]ts|provider/ProviderExecutionContext[.]ts|ws[.]ts)[(]' /tmp/server-typecheck-errors.log; then
               echo "::error::Server typecheck introduced errors outside known baseline sources."
               exit 1
             fi

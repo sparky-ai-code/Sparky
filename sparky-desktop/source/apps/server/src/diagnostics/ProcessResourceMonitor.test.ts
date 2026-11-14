@@ -6,6 +6,14 @@ import * as Option from "effect/Option";
 import * as ProcessResourceMonitor from "./ProcessResourceMonitor.ts";
 
 describe("ProcessResourceMonitor", () => {
+  it("coalesces timer and UI-triggered samples while allowing the next poll", () => {
+    expect(ProcessResourceMonitor.shouldStartProcessResourceSample(0, 100_000)).toBe(true);
+    expect(ProcessResourceMonitor.shouldStartProcessResourceSample(100_000, 100_001)).toBe(false);
+    expect(ProcessResourceMonitor.shouldStartProcessResourceSample(100_000, 104_999)).toBe(false);
+    expect(ProcessResourceMonitor.shouldStartProcessResourceSample(100_000, 105_000)).toBe(true);
+    expect(ProcessResourceMonitor.shouldStartProcessResourceSample(100_000, 99_000)).toBe(true);
+  });
+
   it("avoids continuous process enumeration when resource history is not being viewed", () => {
     expect(ProcessResourceMonitor.shouldSampleProcessResources(0, 100_000)).toBe(false);
     expect(ProcessResourceMonitor.shouldSampleProcessResources(100_000, 105_000)).toBe(true);

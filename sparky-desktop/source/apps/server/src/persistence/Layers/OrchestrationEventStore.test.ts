@@ -143,8 +143,8 @@ layer("OrchestrationEventStore", (it) => {
       yield* append("event-page-B", otherThreadId);
       const tail = yield* append("event-page-A-500", threadId);
 
-      const events = yield* Stream.runCollect(
-        store.readThreadFromSequence(threadId, 0, tail.sequence),
+      const events = Array.from(
+        yield* Stream.runCollect(store.readThreadFromSequence(threadId, 0, tail.sequence)),
       );
       assert.equal(events.length, 501);
       assert.equal(events[0]?.eventId, firstPage[0]?.eventId);

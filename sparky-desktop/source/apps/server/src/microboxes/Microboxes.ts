@@ -68,8 +68,8 @@ export const layer = Layer.effect(
       ?? Path.resolve(Path.dirname(process.execPath),
         process.platform === "darwin" ? "../Resources" : "resources");
     const bundledImage = Path.join(resourcesDir, "microboxes", `sparky-micro-${arch}`);
-    let imageSetup: Promise<void> | null = null;
-    const ensureBundledImage = (): Promise<void> => {
+    let imageSetup: Promise<string> | null = null;
+    const ensureBundledImage = (): Promise<string> => {
       if (imageSetup) return imageSetup;
       imageSetup = (async () => {
         if (!(await Fs.stat(Path.join(bundledImage, "image.json")).then(
@@ -77,11 +77,16 @@ export const layer = Layer.effect(
         ))) {
           // Local development and installations upgraded from earlier builds
           // may have a verified user-level guest without a packaged asset.
-          if ((await manager.images()).length > 0) return;
+          // For local development, keep supporting a previously installed
+          // native guest without a production Electron resources directory.
+          const existing = (await manager.images()).find((image) =>
+            image.architecture === arch && image.kind === "linux-kernel"
+          );
+          if (existing) return existing.imageId;
           throw new MicroboxHostError("image-missing",
             "Sparky's built-in Linux guest is missing. Reinstall Sparky to restore Microboxes.");
         }
-        await manager.importImage(bundledImage);
+        return (await manager.importImage(bundledImage)).imageId;
       })();
       return imageSetup;
     };
@@ -142,8 +147,8 @@ export const layer = Layer.effect(
                 )
               : Effect.tryPromise({
                   try: async () => {
-                    await ensureBundledImage();
-                    return manager.create(input, workspaceRoot);
+                    const imageId = input.imageId ?? await ensureBundledImage();
+                    return manager.create({ ...input, imageId }, workspaceRoot);
                   },
                   catch: wrapError,
                 }),

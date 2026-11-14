@@ -10,7 +10,7 @@ export const MicroboxImportImageInput = Schema.Struct({
 
 export const MicroboxCreateInput = Schema.Struct({
   threadId: ThreadId,
-  imageId: ImageId,
+  imageId: Schema.optionalKey(ImageId),
   name: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(80))),
   memoryMiB: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 256, maximum: 8192 }))),
   cpus: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 4 }))),

@@ -17,7 +17,7 @@ const mutate = <T extends Tool.Any>(tool: T): T =>
   make(tool).annotate(Tool.Destructive, true) as T;
 
 export const BoxImagesTool = readonly(Tool.make("box_images", {
-  description: "List installed guest operating system images. Use one of these image IDs with box_create.",
+  description: "List available guest systems. Normally omit imageId when creating a box; Sparky chooses its bundled Linux desktop automatically.",
   parameters: empty, success: Schema.Array(MicroboxImage), failure: MicroboxError, dependencies,
 }).annotate(Tool.Title, "List Microboxes images"));
 export const BoxListTool = readonly(Tool.make("box_list", {
@@ -25,7 +25,7 @@ export const BoxListTool = readonly(Tool.make("box_list", {
   parameters: empty, success: Schema.Array(MicroboxStatus), failure: MicroboxError, dependencies,
 }).annotate(Tool.Title, "List graphical boxes"));
 export const BoxCreateTool = mutate(Tool.make("box_create", {
-  description: "Start an isolated GUI virtual machine from a previously installed image. This tool only works after the user explicitly enables Sparky Microboxes. Use artifactRelativePath to attach a compiled installer from your thread workspace as a read-only virtual USB disk during boot; click the installer in the guest GUI to test it. Internet access is separately opt-in and disabled by default.",
+  description: "Start the built-in isolated Linux graphical desktop. The image is selected automatically; specify imageId only to use a different installed system. This tool only works after the user explicitly enables Sparky Microboxes. Use artifactRelativePath to attach a compiled installer from your thread workspace as a read-only virtual USB disk during boot; click the installer in the guest GUI to test it. Internet access is separately opt-in and disabled by default.",
   parameters: Schema.Struct({
     imageId: MicroboxCreateInput.fields.imageId,
     name: Schema.optionalKey(Schema.String),

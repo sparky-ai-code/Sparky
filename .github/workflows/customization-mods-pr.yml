@@ -46,31 +46,20 @@ jobs:
         run: pnpm --filter t3 exec vp test run src/customizationStore.test.ts
       - name: Test authenticated renderer synchronization
         run: pnpm --filter @sparky/web exec vp test run --project unit src/customization.test.ts
-      - name: Check server types in changed modules
+      - name: Typecheck modified server and renderer modules
         shell: bash
         run: |
-          if pnpm --filter t3 typecheck >/tmp/server-types.log 2>&1; then
-            cat /tmp/server-types.log
-          else
-            cat /tmp/server-types.log
-            grep 'error TS' /tmp/server-types.log | grep -E '^src/(customizationStore|http[.]ts|server[.]ts|mcp/McpHttpServer[.]ts|mcp/toolkits/customization/)' > /tmp/changed-errors.log || true
-            if [ -s /tmp/changed-errors.log ]; then
-              echo "::error::Changed server code introduced compiler errors."
+          check_changed_types() {
+            local package="$1" scope="$2" pattern="$3"
+            if pnpm --filter "$package" typecheck > /tmp/types.log 2>&1; then
+              echo "$scope typecheck passed."
+            elif grep 'error TS' /tmp/types.log | grep -E "$pattern" > /tmp/changed-errors.log; then
+              cat /tmp/changed-errors.log
+              echo "::error::$scope has TypeScript errors in modified modules."
               exit 1
+            else
+              echo "::warning::$scope has pre-existing TypeScript errors outside the modified modules."
             fi
-            echo "::warning::Server typecheck has failures in other source files; see output."
-          fi
-      - name: Check web types in changed modules
-        shell: bash
-        run: |
-          if pnpm --filter @sparky/web typecheck >/tmp/web-types.log 2>&1; then
-            cat /tmp/web-types.log
-          else
-            cat /tmp/web-types.log
-            grep 'error TS' /tmp/web-types.log | grep -E '^src/(customization[.]|AppRoot[.]tsx|components/customization/|components/settings/(CustomizationEditor|AppearanceSettings)[.]tsx)' > /tmp/changed-errors.log || true
-            if [ -s /tmp/changed-errors.log ]; then
-              echo "::error::Changed web code introduced compiler errors."
-              exit 1
-            fi
-            echo "::warning::Web typecheck has failures in other source files; see output."
-          fi
+          }
+          check_changed_types t3 server '^src/(customizationStore|http[.]ts|server[.]ts|mcp/McpHttpServer[.]ts|mcp/toolkits/customization/)'
+          check_changed_types @sparky/web renderer '^src/(customization[.]|AppRoot[.]tsx|components/customization/|components/settings/(CustomizationEditor|AppearanceSettings)[.]tsx)'

@@ -2,7 +2,6 @@
 import { execFile as execFileCallback } from "node:child_process";
 import * as Path from "node:path";
 import { promisify } from "node:util";
-import { dialog } from "electron";
 import type { DesktopMicroboxesSetupState } from "@sparky/contracts";
 import { selectMicroboxesInstallPlan } from "./MicroboxesInstallPlan.ts";
 
@@ -58,7 +57,7 @@ export async function getMicroboxesSetupState(): Promise<DesktopMicroboxesSetupS
   if (await runtimeInstalled()) {
     return publicState(
       "engine-ready",
-      "Core components are installed. A Microboxes guest image is still required before you can start a box.",
+      "Microboxes requirements are ready. The Linux desktop is bundled with Sparky.",
     );
   }
   const plan = await selectMicroboxesInstallPlan(
@@ -83,21 +82,8 @@ async function executeSetup(): Promise<DesktopMicroboxesSetupState> {
   );
   if (!plan) return getMicroboxesSetupState();
 
-  // Confirmation must live in the privileged process, not only in the renderer.
-  const approval = await dialog.showMessageBox({
-    type: "question",
-    title: "Set up Sparky Microboxes",
-    message: "Set up Sparky Microboxes on this computer?",
-    detail:
-      "Sparky will install virtualization components using your system's trusted software manager. " +
-      "Your operating system may request administrator approval. A guest image is installed separately.",
-    buttons: ["Cancel", "Set up Sparky Microboxes"],
-    defaultId: 0,
-    cancelId: 0,
-    noLink: true,
-  });
-  if (approval.response !== 1) return getMicroboxesSetupState();
-
+  // Opting in through Settings is the user's setup request. OS elevation dialogs,
+  // when required by the package manager, remain under operating-system control.
   try {
     await execFile(plan.executable, [...plan.args], {
       timeout: 20 * 60_000,
@@ -112,7 +98,7 @@ async function executeSetup(): Promise<DesktopMicroboxesSetupState> {
     }
     return publicState(
       "engine-ready",
-      "Core components are installed. A Microboxes guest image is still required before you can start a box.",
+      "Microboxes requirements are ready. The Linux desktop is bundled with Sparky.",
     );
   } catch {
     // Never return internal package-manager details to the renderer.

@@ -1,0 +1,45 @@
+name: Performance optimization regression checks
+
+on:
+  pull_request:
+    paths:
+      - 'sparky-desktop/source/apps/server/src/diagnostics/**'
+      - 'sparky-desktop/source/apps/server/src/terminal/**'
+      - 'sparky-desktop/source/apps/server/src/orchestration/threadResumeStrategy*'
+      - 'sparky-desktop/source/apps/server/src/ws.ts'
+      - 'sparky-desktop/source/pnpm-lock.yaml'
+      - '.github/workflows/performance-regression-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  performance-tests:
+    name: Targeted performance and replay regression tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Test process diagnostics and sample coalescing
+        run: pnpm --filter t3 exec vp test run src/diagnostics/ProcessResourceMonitor.test.ts
+      - name: Test bounded thread replay
+        run: pnpm --filter t3 exec vp test run src/orchestration/threadResumeStrategy.test.ts
+      - name: Test terminal monitoring behavior
+        run: pnpm --filter t3 exec vp test run src/terminal/Manager.test.ts

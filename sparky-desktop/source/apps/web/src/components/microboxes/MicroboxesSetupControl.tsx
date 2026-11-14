@@ -42,6 +42,9 @@ export function MicroboxesSetupControl({ enabled }: { enabled: boolean }) {
   if (!bridge) {
     return <p role="status" className="text-xs text-muted-foreground">Microboxes require the desktop app.</p>;
   }
+  if (error) {
+    return <p role="alert" className="text-xs text-destructive">{error}</p>;
+  }
   if (busy || !state || state.status === "installing") {
     return (
       <div role="status" aria-live="polite" className="flex items-center gap-2 text-xs text-muted-foreground">

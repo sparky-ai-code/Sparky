@@ -305,6 +305,21 @@ export class HostBoxManager {
     }
     const imagesDir = Path.join(this.root, "images");
     const target = Path.join(imagesDir, installedId);
+    // A packaged image is copied only once. Preserve running/stopped boxes
+    // when the installer provides the exact same content-addressed revision.
+    if (OFFICIAL_MICRO_IMAGE_ID.test(manifest.id) &&
+        await Fs.stat(target).then((stat) => stat.isDirectory(), () => false)) {
+      try {
+        await this.image(installedId);
+        return {
+          imageId: installedId, name: manifest.name,
+          kind: manifest.kind, architecture: manifest.architecture,
+        };
+      } catch {
+        // A damaged/incomplete install should be repaired through the usual
+        // atomic install path, subject to the existing in-use safety gate.
+      }
+    }
     // Upgrade in place, but never change the backing file under a live or
     // stopped box's copy-on-write disk. The user must delete those boxes first.
     if (this.updatingImages.has(manifest.id)) {

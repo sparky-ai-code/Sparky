@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - Host lifecycle belongs to the server process.
 import * as Path from "node:path";
+import * as Fs from "node:fs/promises";
 import type {
   MicroboxCreateInput, MicroboxImage, MicroboxStatus, MicroboxSnapshot, MicroboxTarget,
 } from "@sparky/contracts";
@@ -59,6 +60,32 @@ export const layer = Layer.effect(
     const manager = new HostBoxManager(Path.join(config.baseDir, "microboxes"));
     yield* Effect.addFinalizer(() => Effect.promise(() => manager.stopAll()));
 
+    // The installer carries an architecture-matched, boot-tested guest image.
+    // Import it once per backend lifetime, before image discovery or box creation.
+    // The existing import validation enforces the image version and SHA256SUMS.
+    const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
+    const resourcesDir = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath
+      ?? Path.resolve(Path.dirname(process.execPath),
+        process.platform === "darwin" ? "../Resources" : "resources");
+    const bundledImage = Path.join(resourcesDir, "microboxes", `sparky-micro-${arch}`);
+    let imageSetup: Promise<void> | null = null;
+    const ensureBundledImage = (): Promise<void> => {
+      if (imageSetup) return imageSetup;
+      imageSetup = (async () => {
+        if (!(await Fs.stat(Path.join(bundledImage, "image.json")).then(
+          (stat) => stat.isFile(), () => false
+        ))) {
+          // Local development and installations upgraded from earlier builds
+          // may have a verified user-level guest without a packaged asset.
+          if ((await manager.images()).length > 0) return;
+          throw new MicroboxHostError("image-missing",
+            "Sparky's built-in Linux guest is missing. Reinstall Sparky to restore Microboxes.");
+        }
+        await manager.importImage(bundledImage);
+      })();
+      return imageSetup;
+    };
+
     const enabled = Effect.gen(function* () {
       const current = yield* settings.getSettings.pipe(Effect.mapError(wrapError));
       if (!current.microboxesEnabled) {
@@ -97,7 +124,7 @@ export const layer = Layer.effect(
     );
 
     return Microboxes.of({
-      images: guarded(() => manager.images()),
+      images: guarded(async () => { await ensureBundledImage(); return manager.images(); }),
       importImage: (path) => guarded(() => manager.importImage(path)),
       list,
       create: (input, workspaceRoot) =>
@@ -110,7 +137,13 @@ export const layer = Layer.effect(
                     message: "Enable internet access for Microboxes before creating an online box.",
                   }),
                 )
-              : Effect.tryPromise({ try: () => manager.create(input, workspaceRoot), catch: wrapError }),
+              : Effect.tryPromise({
+                  try: async () => {
+                    await ensureBundledImage();
+                    return manager.create(input, workspaceRoot);
+                  },
+                  catch: wrapError,
+                }),
           ),
         ),
       status: ({ threadId, boxId }) =>

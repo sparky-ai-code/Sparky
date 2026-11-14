@@ -118,7 +118,6 @@ export function AppearanceSettingsPanel() {
           control={<Switch aria-label="Compact layout" checked={appearance.compact} onCheckedChange={(checked) => update({ compact: checked })} />} />
       </SettingsSection>
       <CustomizationEditor />
-      <div className="flex justify-end pb-6"><Button variant="outline" size="sm" onClick={() => { setMode("system"); update({ ...DEFAULT_APPEARANCE }); }}><RotateCcwIcon className="size-3.5" />Reset appearance</Button></div>
     </SettingsPageContainer>
   );
 }

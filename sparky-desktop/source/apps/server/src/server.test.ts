@@ -5663,6 +5663,44 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("uses a snapshot instead of unbounded thread replay for a stale cursor", () =>
+    Effect.gen(function* () {
+      const thread = makeDefaultOrchestrationReadModel().threads[0]!;
+      let replayCalls = 0;
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            latestSequence: Effect.succeed(10_050),
+            readEvents: () => {
+              replayCalls += 1;
+              return Stream.empty;
+            },
+          },
+          projectionSnapshotQuery: {
+            getThreadDetailSnapshot: () =>
+              Effect.succeed(Option.some({ snapshotSequence: 10_050, thread })),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({
+            threadId: defaultThreadId,
+            afterSequence: 1,
+            requestCompletionMarker: true,
+          }).pipe(Stream.take(2), Stream.runCollect),
+        ),
+      );
+
+      assert.equal(items[0]?.kind, "snapshot");
+      assert.equal(items[0]?.kind === "snapshot" ? items[0].snapshot.snapshotSequence : null, 10_050);
+      assert.deepEqual(items[1], { kind: "synchronized" });
+      assert.equal(replayCalls, 0);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("buffers shell events published while the fallback snapshot loads", () =>
     Effect.gen(function* () {
       const liveEvents = yield* PubSub.unbounded<OrchestrationEvent>();

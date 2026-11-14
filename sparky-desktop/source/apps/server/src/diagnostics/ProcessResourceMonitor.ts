@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import * as ProcessDiagnostics from "./ProcessDiagnostics.ts";
@@ -23,6 +24,11 @@ const SAMPLING_IDLE_TIMEOUT_MS = 60_000;
 
 export function shouldSampleProcessResources(lastReadAtMs: number, nowMs: number): boolean {
   return lastReadAtMs > 0 && nowMs - lastReadAtMs <= SAMPLING_IDLE_TIMEOUT_MS;
+}
+
+/** Coalesce rapid reads and background ticks into at most one process scan per interval. */
+export function shouldStartProcessResourceSample(lastStartedAtMs: number, nowMs: number): boolean {
+  return lastStartedAtMs <= 0 || nowMs < lastStartedAtMs || nowMs - lastStartedAtMs >= SAMPLE_INTERVAL_MS;
 }
 const RETENTION_MS = 60 * 60_000;
 const MAX_RETAINED_SAMPLES = 20_000;
@@ -299,6 +305,8 @@ export const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const state = yield* Ref.make<MonitorState>({ samples: [], lastFailure: null });
   const lastHistoryReadAtMs = yield* Ref.make(0);
+  const lastSampleStartedAtMs = yield* Ref.make(0);
+  const samplePermit = yield* Semaphore.make(1);
 
   const recordSamplingFailure = (cause: {
     readonly _tag: ServerProcessResourceHistoryFailureTagType;
@@ -311,9 +319,15 @@ export const make = Effect.gen(function* () {
       }),
     }));
 
-  const sampleOnce = Effect.gen(function* () {
+  const sampleOnce = samplePermit.withPermit(Effect.gen(function* () {
     const sampledAt = yield* DateTime.now;
     const sampledAtMs = DateTime.toEpochMillis(sampledAt);
+    if (!shouldStartProcessResourceSample(yield* Ref.get(lastSampleStartedAtMs), sampledAtMs)) {
+      return;
+    }
+    // Record the start before the potentially slow OS query. Concurrent readers
+    // wait for this sample and reuse it rather than spawning duplicate probes.
+    yield* Ref.set(lastSampleStartedAtMs, sampledAtMs);
     const rows = yield* ProcessDiagnostics.readProcessRows.pipe(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
@@ -335,7 +349,7 @@ export const make = Effect.gen(function* () {
       ProcessDiagnosticsNotDescendantError: recordSamplingFailure,
       ProcessDiagnosticsSignalFailedError: recordSamplingFailure,
     }),
-  );
+  ));
 
   // The monitor service exists for the lifetime of the backend, but process
   // enumeration is needed only while a client is viewing resource history.

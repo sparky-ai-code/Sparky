@@ -293,6 +293,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       {
         onExpectedFailure: setStreamError,
         retryExpectedFailureAfter: "250 millis",
+        // Retry a dropped per-thread stream even when the shared socket
+        // stays open. Resume from the latest applied event sequence.
+        onTransportFailure: setStreamError,
+        retryTransportFailureAfter: "1 second",
+        retryUnexpectedCompletionAfter: "1 second",
         resubscribe: foregroundResubscriptions,
       },
     ).pipe(Stream.runForEach(applyItem)),

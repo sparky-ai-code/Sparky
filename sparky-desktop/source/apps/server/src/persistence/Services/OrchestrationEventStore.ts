@@ -9,7 +9,7 @@
  *
  * @module OrchestrationEventStore
  */
-import { OrchestrationEvent } from "@sparky/contracts";
+import { type ThreadId, OrchestrationEvent } from "@sparky/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
@@ -52,6 +52,17 @@ export interface OrchestrationEventStoreShape {
    * @returns Stream containing all stored events.
    */
   readonly readAll: () => Stream.Stream<OrchestrationEvent, OrchestrationEventStoreError>;
+
+  /**
+   * Replay just one thread's persisted events, bounded by a captured head sequence.
+   * Uses the (aggregate_kind, stream_id, sequence) index instead of decoding
+   * every other thread's events during reconnect.
+   */
+  readonly readThreadFromSequence: (
+    threadId: ThreadId,
+    sequenceExclusive: number,
+    throughSequenceInclusive: number,
+  ) => Stream.Stream<OrchestrationEvent, OrchestrationEventStoreError>;
 }
 
 /**

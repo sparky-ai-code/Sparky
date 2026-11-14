@@ -6,6 +6,90 @@ import * as Option from "effect/Option";
 import * as ProcessResourceMonitor from "./ProcessResourceMonitor.ts";
 
 describe("ProcessResourceMonitor", () => {
+  it("avoids continuous process enumeration when resource history is not being viewed", () => {
+    expect(ProcessResourceMonitor.shouldSampleProcessResources(0, 100_000)).toBe(false);
+    expect(ProcessResourceMonitor.shouldSampleProcessResources(100_000, 105_000)).toBe(true);
+    expect(ProcessResourceMonitor.shouldSampleProcessResources(100_000, 160_000)).toBe(true);
+    expect(ProcessResourceMonitor.shouldSampleProcessResources(100_000, 160_001)).toBe(false);
+  });
+
+  it.effect("places a sample at the window end in the final resource bucket", () =>
+    Effect.sync(() => {
+      const readAt = DateTime.makeUnsafe("2026-05-05T10:00:20.000Z");
+      const sampledAtMs = DateTime.toEpochMillis(readAt);
+      const samples = ProcessResourceMonitor.collectMonitoredSamples({
+        serverPid: 100,
+        sampledAt: readAt,
+        sampledAtMs,
+        rows: [
+          {
+            pid: 100,
+            ppid: 1,
+            pgid: 100,
+            status: "R",
+            cpuPercent: 15,
+            rssBytes: 1024,
+            elapsed: "00:10",
+            command: "sparky server",
+          },
+        ],
+      });
+      const result = ProcessResourceMonitor.aggregateProcessResourceHistory({
+        samples,
+        readAt,
+        readAtMs: sampledAtMs,
+        windowMs: 20_000,
+        bucketMs: 10_000,
+        lastFailure: null,
+      });
+      expect(result.buckets).toHaveLength(2);
+      expect(result.buckets[0]?.maxCpuPercent).toBe(0);
+      expect(result.buckets[1]?.maxCpuPercent).toBe(15);
+    }),
+  );
+
+  it.effect("keeps the latest process sample when input history is out of order", () =>
+    Effect.sync(() => {
+      const early = DateTime.makeUnsafe("2026-05-05T10:00:00.000Z");
+      const late = DateTime.makeUnsafe("2026-05-05T10:00:05.000Z");
+      const row = {
+        pid: 100,
+        ppid: 1,
+        pgid: 100,
+        status: "R",
+        cpuPercent: 10,
+        rssBytes: 1_024,
+        elapsed: "00:10",
+        command: "sparky server",
+      };
+      const samples = [
+        ...ProcessResourceMonitor.collectMonitoredSamples({
+          serverPid: 100,
+          rows: [{ ...row, cpuPercent: 20, rssBytes: 2_048 }],
+          sampledAt: late,
+          sampledAtMs: DateTime.toEpochMillis(late),
+        }),
+        ...ProcessResourceMonitor.collectMonitoredSamples({
+          serverPid: 100,
+          rows: [row],
+          sampledAt: early,
+          sampledAtMs: DateTime.toEpochMillis(early),
+        }),
+      ];
+      const result = ProcessResourceMonitor.aggregateProcessResourceHistory({
+        samples,
+        readAt: late,
+        readAtMs: DateTime.toEpochMillis(late),
+        windowMs: 60_000,
+        bucketMs: 10_000,
+        lastFailure: null,
+      });
+      expect(result.topProcesses[0]?.currentCpuPercent).toBe(20);
+      expect(result.topProcesses[0]?.maxRssBytes).toBe(2_048);
+      expect(result.topProcesses[0]?.sampleCount).toBe(2);
+    }),
+  );
+
   it.effect("samples the server root process and descendants", () =>
     Effect.sync(() => {
       const sampledAt = DateTime.makeUnsafe("2026-05-05T10:00:00.000Z");

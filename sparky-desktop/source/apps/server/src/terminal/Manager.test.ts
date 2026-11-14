@@ -30,6 +30,12 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as TerminalManager from "./Manager.ts";
 import * as PtyAdapter from "./PtyAdapter.ts";
 
+it("uses a less aggressive default process scan cadence on Windows", () => {
+  expect(TerminalManager.defaultSubprocessPollIntervalMs("win32")).toBe(5_000);
+  expect(TerminalManager.defaultSubprocessPollIntervalMs("linux")).toBe(2_000);
+  expect(TerminalManager.defaultSubprocessPollIntervalMs("darwin")).toBe(2_000);
+});
+
 class WaitForConditionError extends Data.TaggedError("WaitForConditionError")<{
   readonly message: string;
 }> {}

@@ -391,7 +391,7 @@ export async function runThreadCollaboration(
         createdAt,
       });
     } catch (error) {
-      if (createdWorktreePath) {
+      if (createdWorktreePath && project) {
         await transport.removeWorktree(target, project.workspaceRoot, createdWorktreePath).catch(() => {});
       }
       throw error;

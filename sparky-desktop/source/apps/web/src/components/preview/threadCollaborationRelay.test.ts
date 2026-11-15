@@ -4,6 +4,7 @@ import type {
   OrchestrationShellSnapshot,
   OrchestrationThread,
   ServerConfig,
+  UNSCOPED_CHAT_PROJECT_ID,
   VcsListRefsResult,
   VcsStatusResult,
 } from "@sparky/contracts";
@@ -24,6 +25,7 @@ const source = {
 function makeTransport(options?: {
   readonly targetMode?: "approval-required" | "full-access";
   readonly running?: boolean;
+  readonly nonGit?: boolean;
   readonly environments?: ReadonlyArray<string>;
   readonly projectDefaultModelSelection?: { readonly instanceId: string; readonly model: string };
 }) {
@@ -56,15 +58,15 @@ function makeTransport(options?: {
     thread: async () => thread,
     serverConfig: async () => ({ providers: [] }) as unknown as ServerConfig,
     refs: async () => ({
-      isRepo: true,
-      totalCount: 2,
+      isRepo: !options?.nonGit,
+      totalCount: options?.nonGit ? 0 : 2,
       nextCursor: null,
       refs: [
         { name: "main", worktreePath: "/remote/project" },
         { name: "feature", worktreePath: "/remote/project/.worktrees/feature" },
       ],
     }) as unknown as VcsListRefsResult,
-    status: async () => ({ refName: "main" }) as unknown as VcsStatusResult,
+    status: async () => ({ isRepo: !options?.nonGit, refName: options?.nonGit ? null : "main" }) as unknown as VcsStatusResult,
     createWorktree: async () => ({
       worktree: { refName: "agent/new", path: "/remote/project/.worktrees/agent-new" },
     }),
@@ -274,6 +276,141 @@ describe("cross-environment agent thread collaboration", () => {
       type: "thread.turn.start",
       modelSelection: source.modelSelection,
     });
+  });
+
+  it("creates and starts remote threads in non-Git folders without workspace flags", async () => {
+    const { transport, dispatch } = makeTransport({ nonGit: true });
+    const createWorktree = vi.fn(async () => { throw new Error("worktrees must not be used"); });
+    const result = await runThreadCollaboration({
+      operation: "create",
+      payload: {
+        environmentId: "remote-env", projectId: "remote-project",
+        title: "Plain folder", initialMessage: "Inspect files in this folder",
+      },
+      source,
+    }, {
+      ...transport,
+      createWorktree,
+      serverConfig: async () => ({
+        providers: [{
+          instanceId: "codex", enabled: true, availability: "available",
+          models: [{ slug: "gpt-6", capabilities: { optionDescriptors: [] } }],
+        }],
+      }) as unknown as ServerConfig,
+    });
+    expect(result).toMatchObject({
+      environmentId: "remote-env", projectId: "remote-project",
+      branch: null, worktreePath: null, turnRequested: true,
+      runtimeMode: "approval-required",
+    });
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(dispatch.mock.calls[0]?.[1]).toMatchObject({
+      type: "thread.create", branch: null, worktreePath: null,
+      projectId: "remote-project",
+    });
+    expect(dispatch.mock.calls[1]?.[1]).toMatchObject({ type: "thread.turn.start" });
+    expect(createWorktree).not.toHaveBeenCalled();
+  });
+
+  it("does not require the Git executable to spawn a normal remote thread", async () => {
+    const { transport, dispatch } = makeTransport();
+    const result = await runThreadCollaboration({
+      operation: "create",
+      payload: { environmentId: "remote-env", projectId: "remote-project", title: "No Git" },
+      source,
+    }, {
+      ...transport,
+      status: async () => { throw new Error("Git executable not found"); },
+      refs: async () => { throw new Error("Git refs must not be requested"); },
+      serverConfig: async () => ({
+        providers: [{
+          instanceId: "codex", enabled: true, availability: "available",
+          models: [{ slug: "gpt-6", capabilities: { optionDescriptors: [] } }],
+        }],
+      }) as unknown as ServerConfig,
+    });
+    expect(result).toMatchObject({ branch: null, worktreePath: null, turnRequested: false });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch.mock.calls[0]?.[1]).toMatchObject({
+      type: "thread.create", branch: null, worktreePath: null,
+    });
+  });
+
+  it("preserves the current branch of a Git project", async () => {
+    const { transport, dispatch } = makeTransport();
+    await runThreadCollaboration({
+      operation: "create",
+      payload: {
+        environmentId: "remote-env", projectId: "remote-project",
+        title: "Git project", workspaceMode: "current", branch: "main",
+      },
+      source,
+    }, {
+      ...transport,
+      serverConfig: async () => ({
+        providers: [{
+          instanceId: "codex", enabled: true, availability: "available",
+          models: [{ slug: "gpt-6", capabilities: { optionDescriptors: [] } }],
+        }],
+      }) as unknown as ServerConfig,
+    });
+    expect(dispatch.mock.calls[0]?.[1]).toMatchObject({
+      type: "thread.create", branch: "main", worktreePath: null,
+    });
+  });
+
+  it("keeps explicit branch/worktree modes Git-only", async () => {
+    const { transport, dispatch } = makeTransport({ nonGit: true });
+    const providerTransport = {
+      ...transport,
+      serverConfig: async () => ({
+        providers: [{
+          instanceId: "codex", enabled: true, availability: "available",
+          models: [{ slug: "gpt-6", capabilities: { optionDescriptors: [] } }],
+        }],
+      }) as unknown as ServerConfig,
+    };
+    await expect(runThreadCollaboration({
+      operation: "create",
+      payload: {
+        environmentId: "remote-env", projectId: "remote-project",
+        title: "Invalid branch", workspaceMode: "current", branch: "main",
+      },
+      source,
+    }, providerTransport)).rejects.toThrow("Omit branch");
+    await expect(runThreadCollaboration({
+      operation: "create",
+      payload: {
+        environmentId: "remote-env", projectId: "remote-project",
+        title: "Invalid worktree", workspaceMode: "new", baseBranch: "main",
+      },
+      source,
+    }, providerTransport)).rejects.toThrow("Git worktree modes require a Git repository");
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("can create project-free remote threads without calling Git", async () => {
+    const { transport, dispatch } = makeTransport();
+    const result = await runThreadCollaboration({
+      operation: "create",
+      payload: {
+        environmentId: "remote-env", projectId: UNSCOPED_CHAT_PROJECT_ID,
+        title: "Project-free peer",
+      },
+      source,
+    }, {
+      ...transport,
+      status: async () => { throw new Error("project-free thread must not check Git"); },
+      refs: async () => { throw new Error("project-free thread must not list Git branches"); },
+      serverConfig: async () => ({
+        providers: [{
+          instanceId: "codex", enabled: true, availability: "available",
+          models: [{ slug: "gpt-6", capabilities: { optionDescriptors: [] } }],
+        }],
+      }) as unknown as ServerConfig,
+    });
+    expect(result).toMatchObject({ projectId: UNSCOPED_CHAT_PROJECT_ID, branch: null });
+    expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
   it("rejects worktree spoofing rather than checking out an arbitrary path", async () => {

@@ -1,10 +1,10 @@
+import { UNSCOPED_CHAT_PROJECT_ID } from "@sparky/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import type {
   ClientOrchestrationCommand,
   OrchestrationShellSnapshot,
   OrchestrationThread,
   ServerConfig,
-  UNSCOPED_CHAT_PROJECT_ID,
   VcsListRefsResult,
   VcsStatusResult,
 } from "@sparky/contracts";

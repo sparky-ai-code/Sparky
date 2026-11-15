@@ -799,6 +799,8 @@ mod tests {
         assert!(build.contains("all its currently connected backend environments"));
         assert!(build.contains("source environment ID"));
         assert!(build.contains("Never use cross-thread tools to bypass Plan mode"));
+        assert!(build.contains("Git is not required"));
+        assert!(build.contains("plain non-Git folder or project-free chat"));
 
         let plan = PromptBuilder::new(directory.path().to_string_lossy())
             .with_plan_mode(true)

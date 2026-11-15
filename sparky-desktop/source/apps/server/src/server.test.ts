@@ -5702,6 +5702,91 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("uses a snapshot instead of unbounded thread replay for a stale cursor", () =>
+    Effect.gen(function* () {
+      const thread = makeDefaultOrchestrationReadModel().threads[0]!;
+      let replayCalls = 0;
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            latestSequence: Effect.succeed(10_050),
+            readEvents: () => {
+              replayCalls += 1;
+              return Stream.empty;
+            },
+          },
+          projectionSnapshotQuery: {
+            getThreadDetailSnapshot: () =>
+              Effect.succeed(Option.some({ snapshotSequence: 10_050, thread })),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({
+            threadId: defaultThreadId,
+            afterSequence: 1,
+            requestCompletionMarker: true,
+          }).pipe(Stream.take(2), Stream.runCollect),
+        ),
+      );
+
+      assert.equal(items[0]?.kind, "snapshot");
+      assert.equal(items[0]?.kind === "snapshot" ? items[0].snapshot.snapshotSequence : null, 10_050);
+      assert.deepEqual(items[1], { kind: "synchronized" });
+      assert.equal(replayCalls, 0);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("short thread replay uses the indexed event store without global scans", () =>
+    Effect.gen(function* () {
+      let indexedReads = 0;
+      let globalReads = 0;
+      let snapshots = 0;
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            latestSequence: Effect.succeed(20),
+            readThreadEvents: (threadId, afterSequence, throughSequence) => {
+              assert.equal(threadId, defaultThreadId);
+              assert.equal(afterSequence, 10);
+              assert.equal(throughSequence, 20);
+              indexedReads += 1;
+              return Stream.empty;
+            },
+            readEvents: () => {
+              globalReads += 1;
+              return Stream.empty;
+            },
+          },
+          projectionSnapshotQuery: {
+            getThreadDetailSnapshot: () => {
+              snapshots += 1;
+              return Effect.succeed(Option.none());
+            },
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({
+            threadId: defaultThreadId,
+            afterSequence: 10,
+            requestCompletionMarker: true,
+          }).pipe(Stream.take(1), Stream.runCollect),
+        ),
+      );
+      assert.deepEqual(items[0], { kind: "synchronized" });
+      assert.equal(indexedReads, 1);
+      assert.equal(globalReads, 0);
+      assert.equal(snapshots, 0);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("buffers shell events published while the fallback snapshot loads", () =>
     Effect.gen(function* () {
       const liveEvents = yield* PubSub.unbounded<OrchestrationEvent>();

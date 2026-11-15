@@ -315,6 +315,45 @@ describe("MessagesTimeline", () => {
     }
   });
 
+  it("renders Sparky thread tools with readable labels and icons", () => {
+    const tools = [
+      ["sparky_threads_list", "List threads", "messages-square"],
+      ["sparky_project_branches", "List project branches", "folder-git"],
+      ["sparky_thread_models", "List thread models", "brain"],
+      ["sparky_thread_read", "Read thread", "eye"],
+      ["sparky_thread_create", "Create thread", "file-plus-corner"],
+      ["sparky_thread_message", "Message thread", "message-circle"],
+      ["sparky_thread_steer", "Steer thread", "zap"],
+    ] as const;
+
+    for (const [name, label, icon] of tools) {
+      const markup = renderToStaticMarkup(
+        <MessagesTimeline
+          {...buildProps()}
+          timelineEntries={[
+            {
+              id: `entry-${name}`,
+              kind: "work",
+              createdAt: MESSAGE_CREATED_AT,
+              entry: {
+                id: `work-${name}`,
+                createdAt: MESSAGE_CREATED_AT,
+                label: name,
+                tone: "tool",
+                toolName: name,
+                itemType: "dynamic_tool_call",
+              },
+            },
+          ]}
+        />,
+      );
+
+      expect(markup).toContain(`lucide-${icon}`);
+      expect(markup).toContain(label);
+      expect(markup).not.toContain(name);
+    }
+  });
+
   it("labels plugin calls with the provider integration and logo", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

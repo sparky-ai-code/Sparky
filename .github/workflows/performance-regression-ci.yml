@@ -43,6 +43,8 @@ jobs:
         run: pnpm --filter t3 exec vp test run src/orchestration/threadResumeStrategy.test.ts
       - name: Test terminal monitoring behavior
         run: pnpm --filter t3 exec vp test run src/terminal/Manager.test.ts
+      - name: Test indexed replay without global scanning
+        run: pnpm --filter t3 exec vp test run src/server.test.ts -t 'short thread replay uses the indexed event store'
       - name: Test stale thread resume fallback over WebSocket
         run: pnpm --filter t3 exec vp test run src/server.test.ts -t 'uses a snapshot instead of unbounded thread replay'
       - name: Test live thread events during a snapshot

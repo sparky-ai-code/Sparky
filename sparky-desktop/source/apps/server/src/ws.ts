@@ -1496,21 +1496,20 @@ const makeWsRpcLayer = (
               );
               const bufferedLiveStream = Stream.fromQueue(liveBuffer);
 
-              // Attach the live listener first (above), then replay only a bounded
-              // persisted range. A stale cache must not force the server to decode
-              // every event from every thread, or hold an ever-growing live buffer.
-              // Fall back to a projected thread snapshot for large/invalid gaps.
+              // Attach the live listener before either replay or snapshot loading.
+              // Small gaps are read through the indexed per-thread stream, not
+              // through a global event scan. A large global backlog (or invalid
+              // cursor) instead receives a full projected snapshot. Neither path
+              // drops events published during catch-up: the live tail is buffered.
               if (input.afterSequence !== undefined) {
                 const afterSequence = input.afterSequence;
-                const replayLimit = threadDetailReplayLimit(
-                  afterSequence,
-                  yield* orchestrationEngine.latestSequence,
-                );
+                const headSequence = yield* orchestrationEngine.latestSequence;
+                const replayLimit = threadDetailReplayLimit(afterSequence, headSequence);
                 if (replayLimit !== null) {
                   const catchUpStream = orchestrationEngine
-                    .readEvents(afterSequence, replayLimit)
+                    .readThreadEvents(input.threadId, afterSequence, headSequence)
                     .pipe(
-                      Stream.filter(isThisThreadDetailEvent),
+                      Stream.filter(isThreadDetailEvent),
                       coalesceThreadDetailStream,
                       Stream.map((event) => ({ kind: "event" as const, event })),
                       Stream.mapError(

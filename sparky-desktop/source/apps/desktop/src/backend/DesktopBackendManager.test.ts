@@ -279,6 +279,76 @@ describe("DesktopBackendManager", () => {
     ),
   );
 
+  it.effect("restarts a live child that never reaches HTTP readiness", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const starts = yield* Queue.unbounded<number>();
+        const attempts = yield* Ref.make(0);
+        const closed = yield* Queue.unbounded<void>();
+        const firstProbe = yield* Deferred.make<void>();
+        const spawnerLayer = Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() =>
+            Effect.gen(function* () {
+              const scope = yield* Scope.Scope;
+              const attempt = yield* Ref.updateAndGet(attempts, (value) => value + 1);
+              const childExited = yield* Deferred.make<void>();
+              // Closing this fake child's scope must also settle exitCode,
+              // just like a real child exiting after SIGTERM.
+              yield* Scope.addFinalizer(
+                scope,
+                Deferred.succeed(childExited, undefined).pipe(
+                  Effect.andThen(Queue.offer(closed, undefined)),
+                  Effect.asVoid,
+                ),
+              );
+              yield* Queue.offer(starts, attempt);
+              return makeProcess({
+                exitCode: Deferred.await(childExited).pipe(
+                  Effect.as(ChildProcessSpawner.ExitCode(0)),
+                ),
+                kill: () => Deferred.succeed(childExited, undefined).pipe(Effect.asVoid),
+              });
+            }),
+          ),
+        );
+        const instance = yield* makeTestInstance({
+          spawnerLayer,
+          config: {
+            ...baseConfig,
+            // Avoid simulating 600 individual readiness probes to hit the
+            // production one-minute deadline in this fake-clock test.
+            readinessTimeout: Duration.millis(250),
+          },
+          httpClientLayer: httpClientLayer((request) =>
+            Deferred.succeed(firstProbe, undefined).pipe(
+              Effect.as(responseForRequest(request, 503)),
+            ),
+          ),
+        });
+
+        yield* instance.start;
+        assert.equal(yield* Queue.take(starts), 1);
+        yield* Deferred.await(firstProbe);
+        assert.isFalse((yield* instance.snapshot).ready);
+
+        yield* TestClock.adjust(Duration.millis(250));
+        // Readiness timeout must close the hung child before scheduling a retry.
+        yield* Queue.take(closed);
+        for (let i = 0; i < 100; i += 1) {
+          if ((yield* instance.snapshot).restartScheduled) break;
+          yield* Effect.yieldNow;
+        }
+        assert.isTrue((yield* instance.snapshot).restartScheduled);
+        assert.isFalse((yield* instance.snapshot).ready);
+
+        yield* TestClock.adjust(Duration.millis(500));
+        assert.equal(yield* Queue.take(starts), 2);
+        yield* instance.stop();
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
+
   it.effect("starts the configured backend and closes the scoped process on stop", () =>
     Effect.scoped(
       Effect.gen(function* () {

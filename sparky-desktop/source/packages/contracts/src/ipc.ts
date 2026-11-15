@@ -590,8 +590,10 @@ export const DesktopPreviewPointerEventSchema: Schema.Codec<DesktopPreviewPointe
  * can attach.
  */
 export interface DesktopPreviewWebviewConfig {
-  /** `persist:t3code-preview` (or whatever the desktop chose). */
+  /** Stable persistent browser profile partition, shared across preview environments. */
   partition: string;
+  /** In-memory preview profile. Has no persist: prefix, so logins vanish on app exit. */
+  temporaryPartition: string;
   /**
    * Canonical `<webview webpreferences="...">` string. Encodes the security
    * posture (sandboxed but contextIsolation off so the picker preload can
@@ -609,6 +611,7 @@ export interface DesktopPreviewWebviewConfig {
 export const DesktopPreviewWebviewConfigSchema: Schema.Codec<DesktopPreviewWebviewConfig> =
   Schema.Struct({
     partition: Schema.String,
+    temporaryPartition: Schema.String,
     webPreferences: Schema.String,
     preloadUrl: Schema.NullOr(Schema.String),
   });

@@ -85,6 +85,8 @@ export interface DesktopBackendStartConfig {
   readonly bootstrap: DesktopBackendBootstrapValue;
   readonly bootstrapDelivery: DesktopBackendBootstrapDelivery;
   readonly httpBaseUrl: URL;
+  /** Optional override for backend readiness deadlines, including tests. */
+  readonly readinessTimeout?: Duration.Duration;
   readonly captureOutput: boolean;
   readonly preflightFailure: Option.Option<PreflightFailure>;
   // Present for a WSL run after the configured/default distro has been
@@ -144,10 +146,12 @@ class BackendProcessSpawnError extends Schema.TaggedErrorClass<BackendProcessSpa
   }
 }
 
-type BackendProcessError = BackendProcessBootstrapEncodeError | BackendProcessSpawnError;
+type BackendProcessError =
+  | BackendProcessBootstrapEncodeError
+  | BackendProcessSpawnError
+  | BackendTimeoutError;
 
 interface RunBackendProcessOptions extends DesktopBackendStartConfig {
-  readonly readinessTimeout?: Duration.Duration;
   readonly onStarted?: (pid: number) => Effect.Effect<void>;
   readonly onReady?: () => Effect.Effect<void>;
   readonly onReadinessFailure?: (error: BackendTimeoutError) => Effect.Effect<void>;
@@ -368,16 +372,22 @@ const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     yield* drainBackendOutput("stdout", handle.stdout, onOutput).pipe(Effect.forkScoped);
     yield* drainBackendOutput("stderr", handle.stderr, onOutput).pipe(Effect.forkScoped);
   }
-  yield* waitForHttpReady(
+  // A still-running child that never becomes HTTP-ready must not occupy the
+  // active slot forever. Race the child's exit against startup readiness;
+  // on success keep watching the child, and on timeout restart the run.
+  const awaitReadiness = waitForHttpReady(
     options.httpBaseUrl,
     options.readinessTimeout ?? DEFAULT_BACKEND_READINESS_TIMEOUT,
   ).pipe(
     Effect.tap(() => options.onReady?.() ?? Effect.void),
-    Effect.catch((error) => options.onReadinessFailure?.(error) ?? Effect.void),
-    Effect.forkScoped,
+    Effect.tapError((error) => options.onReadinessFailure?.(error) ?? Effect.void),
+    Effect.andThen(Effect.never),
   );
 
-  return describeProcessExit(yield* Effect.result(handle.exitCode));
+  return yield* Effect.raceFirst(
+    Effect.result(handle.exitCode).pipe(Effect.map(describeProcessExit)),
+    awaitReadiness,
+  );
 });
 
 // Factory for one pooled backend instance. The returned instance owns
@@ -671,11 +681,13 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(HttpClient.HttpClient, httpClient),
           Scope.provide(runScope),
+          // Close the old child's scope before making a restart eligible.
+          // This avoids a new backend racing with an old port/socket owner.
+          Effect.ensuring(Scope.close(runScope, Exit.void).pipe(Effect.ignore)),
           Effect.matchEffect({
             onFailure: (error) => finalizeRun(error.message),
             onSuccess: (exit) => finalizeRun(exit.reason),
           }),
-          Effect.ensuring(Scope.close(runScope, Exit.void).pipe(Effect.ignore)),
         );
 
         const fiber = yield* Effect.forkIn(program, parentScope);

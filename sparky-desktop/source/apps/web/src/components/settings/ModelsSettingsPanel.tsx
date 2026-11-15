@@ -64,9 +64,13 @@ async function codexAuthRequest(path = "", method = "GET"): Promise<CodexAuthSta
   try {
     response = await fetchPrimaryEnvironment(requestUrl, {
       method,
-      signal: AbortSignal.timeout(path === "/login" ? 15 * 60_000 : 20_000),
+      // Slightly longer than the backend 60-minute deadline, so it can return a useful error.
+      signal: AbortSignal.timeout(path === "/login" ? 65 * 60_000 : 20_000),
     });
   } catch (cause) {
+    if (path === "/login" && cause instanceof Error && cause.name === "TimeoutError") {
+      throw new Error("ChatGPT sign-in timed out. Start sign-in again from Models settings.", { cause });
+    }
     const detail = cause instanceof Error ? cause.message : String(cause);
     throw new Error(
       `Could not reach the local ChatGPT authentication service (${detail}). Restart the app and try again.`,

@@ -63,6 +63,9 @@ export const ClientSettingsSchema = Schema.Struct({
   profileImage: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   focusMode: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  persistentBrowserProfileEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(

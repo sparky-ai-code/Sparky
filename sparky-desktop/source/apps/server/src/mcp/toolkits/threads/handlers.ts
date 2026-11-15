@@ -6,6 +6,7 @@ import {
   isProviderAvailable,
   ProjectId,
   ThreadId,
+  UNSCOPED_CHAT_PROJECT_ID,
   type OrchestrationThread,
   type OrchestrationThreadShell,
   type VcsRef,
@@ -84,6 +85,13 @@ export function canAgentSendThreadMessage(
   };
   return source.interactionMode !== "plan" &&
     permissions[source.runtimeMode] >= permissions[target.runtimeMode];
+}
+
+// Git metadata is optional for threads running in an ordinary project folder.
+export function resolveCurrentWorkspaceBranch(
+  status: { readonly isRepo: boolean; readonly refName: string | null } | null,
+): string | null {
+  return status?.isRepo ? status.refName : null;
 }
 
 export function resolveExistingWorktreeRef(
@@ -383,12 +391,21 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
       const input = yield* Schema.decodeUnknownEffect(CreateThreadTool.parametersSchema)(payload);
       const source = yield* requireMutableSource(scope);
       if (input.environmentId && input.environmentId !== scope.environmentId) {
+        if (!input.projectId) {
+          return yield* Effect.fail(
+            invalid("Specify a projectId from sparky_threads_list when creating a thread in another environment."),
+          );
+        }
         return yield* relay("create", input, scope, source);
       }
-      const project = Option.getOrNull(
-        yield* projection.getProjectShellById(ProjectId.make(input.projectId)),
-      );
-      if (!project) {
+      // Omitted projectId uses the calling thread's project, including project-free chats.
+      const projectId = input.projectId ?? source.projectId;
+      const project = projectId === UNSCOPED_CHAT_PROJECT_ID
+        ? null
+        : Option.getOrNull(
+            yield* projection.getProjectShellById(ProjectId.make(projectId)),
+          );
+      if (!project && projectId !== UNSCOPED_CHAT_PROJECT_ID) {
         return yield* Effect.fail(
           invalid("Project not found in this environment. Call sparky_threads_list first."),
         );
@@ -439,24 +456,44 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
       let worktreePath: string | null = null;
       let createdWorktreePath: string | null = null;
 
-      if (input.workspaceMode === "current") {
-        const status = yield* git.status({ cwd: project.workspaceRoot });
-        branch = status.refName;
+      const workspaceMode = input.workspaceMode ?? "current";
+      if (!project && (workspaceMode !== "current" || input.branch || input.baseBranch || input.worktreePath)) {
+        return yield* Effect.fail(
+          invalid("Project-free threads have no Git checkout. Use workspaceMode=current without branch or worktree options."),
+        );
+      }
+
+      if (workspaceMode === "current") {
         if (input.worktreePath) {
           return yield* Effect.fail(
             invalid("Use workspaceMode=existing when specifying a worktree path."),
           );
         }
+        if (input.baseBranch) {
+          return yield* Effect.fail(
+            invalid("baseBranch is only used with workspaceMode=new."),
+          );
+        }
+        if (project) {
+          // Git status enriches metadata but must never prevent a normal thread.
+          const status = yield* git.status({ cwd: project.workspaceRoot }).pipe(
+            Effect.catchAll(() => Effect.succeed(null)),
+          );
+          branch = resolveCurrentWorkspaceBranch(status);
+        }
         if (input.branch && input.branch !== branch) {
           return yield* Effect.fail(
-            invalid("Current checkout is on a different branch; use a new worktree instead."),
+            invalid("The requested branch is not the project's current Git branch. Omit branch for non-Git folders, or select an existing/new Git worktree."),
           );
         }
       } else {
-        const requestedRef = input.workspaceMode === "new" ? input.baseBranch : input.branch;
+        if (!project) {
+          return yield* Effect.fail(invalid("A Git project is required for worktree modes."));
+        }
+        const requestedRef = workspaceMode === "new" ? input.baseBranch : input.branch;
         if (!requestedRef) {
           return yield* Effect.fail(
-            invalid(input.workspaceMode === "new"
+            invalid(workspaceMode === "new"
               ? "A baseBranch is required when creating a new worktree."
               : "An exact branch is required when reusing a worktree."),
           );
@@ -466,13 +503,18 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
           query: requestedRef,
           limit: 100,
         });
+        if (!refs.isRepo) {
+          return yield* Effect.fail(
+            invalid("Git worktree modes require a Git repository. Use workspaceMode=current for ordinary folders."),
+          );
+        }
         const ref = refs.refs.find((candidate) => candidate.name === requestedRef);
         if (!ref) {
           return yield* Effect.fail(
             invalid("Branch was not found in the selected project's Git repository."),
           );
         }
-        if (input.workspaceMode === "existing") {
+        if (workspaceMode === "existing") {
           const existing = input.worktreePath
             ? resolveExistingWorktreeRef(refs.refs, ref.name, input.worktreePath, project.workspaceRoot)
             : null;
@@ -510,7 +552,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
           type: "thread.create",
           commandId: newCommandId(),
           threadId,
-          projectId: project.id,
+          projectId: ProjectId.make(projectId),
           title: input.title.trim(),
           modelSelection,
           runtimeMode: source.runtimeMode,
@@ -558,7 +600,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
       return {
         environmentId: scope.environmentId,
         threadId,
-        projectId: project.id,
+        projectId: ProjectId.make(projectId),
         branch,
         worktreePath,
         modelSelection,

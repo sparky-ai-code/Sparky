@@ -7,6 +7,7 @@ import { useEffect, useMemo } from "react";
 import { isElectron } from "~/env";
 import { useTheme } from "~/hooks/useTheme";
 import { useActivePreviewSessions } from "~/previewStateStore";
+import { useClientSettings, useClientSettingsHydrated } from "~/hooks/useSettings";
 
 import { readPreviewAnnotationTheme } from "./annotationTheme";
 import { useBrowserPointerStore } from "./browserPointerStore";
@@ -15,6 +16,11 @@ import { HostedBrowserWebview } from "./HostedBrowserWebview";
 export function ElectronBrowserHost() {
   const { resolvedTheme } = useTheme();
   const previewByThreadKey = useActivePreviewSessions();
+  // Do not mount signed-in webviews before the saved privacy preference loads.
+  const clientSettingsHydrated = useClientSettingsHydrated();
+  const persistentBrowserProfileEnabled = useClientSettings(
+    (settings) => settings.persistentBrowserProfileEnabled,
+  );
   const sessions = useMemo(
     () =>
       Object.entries(previewByThreadKey).flatMap(([threadKey, previewState]) => {
@@ -71,14 +77,17 @@ export function ElectronBrowserHost() {
     });
   }, []);
 
-  if (!isElectron) return null;
+  if (!isElectron || !clientSettingsHydrated) return null;
   return (
     <div className="contents" data-electron-browser-host>
       {sessions.map(({ threadRef, snapshot, zoomFactor }) => {
         const url = snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;
+        // Electron cannot change a webview partition in place. Remount on
+        // profile changes to switch all tabs immediately.
         return (
           <HostedBrowserWebview
-            key={snapshot.tabId}
+            key={`${snapshot.tabId}:${persistentBrowserProfileEnabled ? "persistent" : "temporary"}`}
+            persistentBrowserProfileEnabled={persistentBrowserProfileEnabled}
             threadRef={threadRef}
             tabId={snapshot.tabId}
             initialUrl={url}

@@ -33,6 +33,17 @@ describe("ClientSettings word wrap", () => {
   });
 });
 
+describe("ClientSettings browser profile persistence", () => {
+  it("enables persistent sessions by default for existing installations", () => {
+    expect(decodeClientSettings({}).persistentBrowserProfileEnabled).toBe(true);
+  });
+
+  it("decodes temporary browser preference and persists updates", () => {
+    expect(decodeClientSettings({ persistentBrowserProfileEnabled: false }).persistentBrowserProfileEnabled).toBe(false);
+    expect(decodeClientSettingsPatch({ persistentBrowserProfileEnabled: false }).persistentBrowserProfileEnabled).toBe(false);
+  });
+});
+
 describe("ClientSettings focus mode", () => {
   it("defaults focus mode off for existing settings", () => {
     expect(decodeClientSettings({}).focusMode).toBe(false);

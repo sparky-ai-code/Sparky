@@ -27,7 +27,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import { makeDrainableWorker } from "@sparky/shared/DrainableWorker";
+import { makePartitionedDrainableWorker } from "@sparky/shared/DrainableWorker";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
@@ -1982,11 +1982,15 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  // Keep persistence/lifecycle processing one event at a time. Assistant text
-  // is coalesced at the WebSocket boundary, where it cannot delay terminal or
-  // tool events. Batching this worker makes `drain` wait on a timer and can
-  // leave a terminal event behind a never-flushed batch during shutdown.
-  const worker = yield* makeDrainableWorker(processInputSafely);
+  // Preserve lifecycle ordering for each thread, but do not serialize
+  // independent provider streams behind a slow thread or large tool event.
+  // Four scope-bound lanes cap concurrency; orchestrationEngine.dispatch still
+  // serializes authoritative database mutations.
+  const worker = yield* makePartitionedDrainableWorker(
+    processInputSafely,
+    (input) => (input.source === "runtime" ? input.event.threadId : input.event.payload.threadId),
+    4,
+  );
 
   const start: ProviderRuntimeIngestionShape["start"] = () =>
     Effect.gen(function* () {

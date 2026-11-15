@@ -1,4 +1,4 @@
-import { CommandId, EventId, ProjectId } from "@sparky/contracts";
+import { CommandId, EventId, ProjectId, ThreadId } from "@sparky/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -69,6 +69,90 @@ layer("OrchestrationEventStore", (it) => {
     }),
   );
 
+  it.effect("reads only one thread's events through a bounded resume cursor", () =>
+    Effect.gen(function* () {
+      const eventStore = yield* OrchestrationEventStore;
+      const threadA = ThreadId.make("thread-resume-A");
+      const threadB = ThreadId.make("thread-resume-B");
+      const now = "2026-01-01T00:00:00.000Z";
+      const appendTitleUpdate = (eventId: string, threadId: ThreadId, title: string) =>
+        eventStore.append({
+          type: "thread.meta-updated",
+          eventId: EventId.make(eventId),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: { threadId, title, updatedAt: now },
+        });
+
+      const first = yield* appendTitleUpdate("event-thread-A-1", threadA, "first");
+      const unrelated = yield* appendTitleUpdate("event-thread-B-1", threadB, "other");
+      const latest = yield* appendTitleUpdate("event-thread-A-2", threadA, "latest");
+
+      const beforeLatest = yield* Stream.runCollect(
+        eventStore.readThreadFromSequence(threadA, 0, unrelated.sequence),
+      );
+      assert.deepEqual(
+        Array.from(beforeLatest, (event) => event.eventId),
+        [first.eventId],
+      );
+
+      const resumed = yield* Stream.runCollect(
+        eventStore.readThreadFromSequence(threadA, first.sequence, latest.sequence),
+      );
+      assert.deepEqual(
+        Array.from(resumed, (event) => event.eventId),
+        [latest.eventId],
+      );
+      const beyondHead = yield* Stream.runCollect(
+        eventStore.readThreadFromSequence(threadA, latest.sequence, latest.sequence),
+      );
+      assert.equal(beyondHead.length, 0);
+    }),
+  );
+
+  it.effect("replays across the 500-event page boundary without mixing threads", () =>
+    Effect.gen(function* () {
+      const store = yield* OrchestrationEventStore;
+      const threadId = ThreadId.make("thread-multipage-A");
+      const otherThreadId = ThreadId.make("thread-multipage-B");
+      const now = "2026-01-01T00:00:00.000Z";
+      const append = (id: string, aggregateId: ThreadId) =>
+        store.append({
+          type: "thread.meta-updated",
+          eventId: EventId.make(id),
+          aggregateKind: "thread",
+          aggregateId,
+          occurredAt: now,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: { threadId: aggregateId, title: id, updatedAt: now },
+        });
+
+      const firstPage = yield* Effect.forEach(
+        Array.from({ length: 500 }, (_, index) => index),
+        (index) => append(`event-page-A-${index}`, threadId),
+        { concurrency: 1 },
+      );
+      yield* append("event-page-B", otherThreadId);
+      const tail = yield* append("event-page-A-500", threadId);
+
+      const events = Array.from(
+        yield* Stream.runCollect(store.readThreadFromSequence(threadId, 0, tail.sequence)),
+      );
+      assert.equal(events.length, 501);
+      assert.equal(events[0]?.eventId, firstPage[0]?.eventId);
+      assert.equal(events[499]?.eventId, firstPage[499]?.eventId);
+      assert.equal(events[500]?.eventId, tail.eventId);
+    }),
+  );
+
   it.effect("fails with PersistenceDecodeError when stored json is invalid", () =>
     Effect.gen(function* () {
       const eventStore = yield* OrchestrationEventStore;
@@ -106,8 +190,15 @@ layer("OrchestrationEventStore", (it) => {
         )
       `;
 
+      // Other tests may have appended hundreds of valid events; query the
+      // corrupt row directly rather than assuming it appears in the first page.
+      const inserted = yield* sql<{ readonly sequence: number }>`
+        SELECT sequence FROM orchestration_events
+        WHERE event_id = ${EventId.make("evt-store-invalid-json")}
+      `;
+      assert.equal(inserted.length, 1);
       const replayResult = yield* Effect.result(
-        Stream.runCollect(eventStore.readFromSequence(0, 10)),
+        Stream.runCollect(eventStore.readFromSequence(inserted[0]!.sequence - 1, 1)),
       );
       assert.equal(replayResult._tag, "Failure");
       if (replayResult._tag === "Failure") {

@@ -10,7 +10,7 @@
  *
  * @module OrchestrationEngineService
  */
-import type { AuthSessionId, OrchestrationCommand, OrchestrationEvent } from "@sparky/contracts";
+import type { AuthSessionId, OrchestrationCommand, OrchestrationEvent, ThreadId } from "@sparky/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
@@ -50,6 +50,12 @@ export interface OrchestrationEngineShape {
    * Dispatch is serialized through an internal queue and deduplicated via
    * command receipts.
    */
+  readonly readThreadEvents: (
+    threadId: ThreadId,
+    fromSequenceExclusive: number,
+    throughSequenceInclusive: number,
+  ) => Stream.Stream<OrchestrationEvent, OrchestrationEventStoreError, never>;
+
   readonly dispatch: (
     command: OrchestrationCommand,
     context?: OrchestrationDispatchContext,

@@ -1,0 +1,78 @@
+name: Runtime recovery regression checks
+
+on:
+  pull_request:
+    paths:
+      - 'sparky-desktop/source/apps/desktop/src/backend/**'
+      - 'sparky-desktop/source/apps/server/src/**'
+      - 'sparky-desktop/source/packages/client-runtime/src/**'
+      - 'sparky-desktop/source/packages/shared/src/**'
+      - 'sparky-desktop/source/pnpm-lock.yaml'
+      - '.github/workflows/runtime-recovery-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recovery:
+    name: Recovery regression tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Test client reconnection and thread synchronization
+        run: pnpm --filter @sparky/client-runtime exec vp test run src/connection/supervisor.test.ts src/rpc/client.test.ts src/state/threads-sync.test.ts src/state/shell-sync.test.ts
+      - name: Test partitioned worker fairness
+        run: pnpm --filter @sparky/shared exec vp test run src/DrainableWorker.test.ts
+      - name: Test provider reactor and runtime ingestion
+        run: pnpm --filter t3 exec vp test run src/orchestration/Layers/ProviderCommandReactor.test.ts src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
+      - name: Test indexed event replay
+        run: pnpm --filter t3 exec vp test run src/persistence/Layers/OrchestrationEventStore.test.ts
+      - name: Test stale thread cursor recovery over WebSocket
+        run: pnpm --filter t3 exec vp test run src/server.test.ts -t 'reloads thread state when a resume cursor is ahead'
+      - name: Test desktop backend lifecycle
+        run: pnpm --filter @sparky/desktop exec vp test run src/backend/DesktopBackendManager.test.ts
+  typecheck:
+    name: Client/server typecheck (full project)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Typecheck client runtime
+        if: always()
+        run: pnpm --filter @sparky/client-runtime typecheck
+      - name: Typecheck server
+        if: always()
+        run: pnpm --filter t3 typecheck

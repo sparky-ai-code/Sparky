@@ -566,7 +566,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
       // If persistence rejects the creation, undo only the worktree made by this call.
       yield* createCommand.pipe(
         Effect.catch((error) =>
-          createdWorktreePath
+          createdWorktreePath && project
             ? git.removeWorktree({ cwd: project.workspaceRoot, path: createdWorktreePath }).pipe(
                 Effect.ignore,
                 Effect.andThen(Effect.fail(error)),

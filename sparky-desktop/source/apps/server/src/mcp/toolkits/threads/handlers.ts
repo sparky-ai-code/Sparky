@@ -477,7 +477,7 @@ export const registerThreadTools = Effect.fn("McpThreadTools.register")(function
         if (project) {
           // Git status enriches metadata but must never prevent a normal thread.
           const status = yield* git.status({ cwd: project.workspaceRoot }).pipe(
-            Effect.catchAll(() => Effect.succeed(null)),
+            Effect.catch(() => Effect.succeed(null)),
           );
           branch = resolveCurrentWorkspaceBranch(status);
         }

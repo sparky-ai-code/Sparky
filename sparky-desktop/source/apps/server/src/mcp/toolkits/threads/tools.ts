@@ -27,7 +27,7 @@ export const ListThreadsTool = Tool.make("sparky_threads_list", {
 
 export const ProjectBranchesTool = Tool.make("sparky_project_branches", {
   description:
-    "List Git branches and existing worktree paths for a project ID in the selected environment, including worktrees that have no Sparky thread yet. Use this before creating a thread with an explicit branch or worktree.",
+    "List Git branches and registered worktree paths when a project uses Git. This is optional for ordinary thread creation: folders without Git can spawn threads using workspaceMode=current (or omitting workspaceMode).",
   parameters: Schema.Struct({
     environmentId: Schema.optional(Schema.String),
     projectId: NonEmptyText,
@@ -78,12 +78,12 @@ export const ReadThreadTool = Tool.make("sparky_thread_read", {
 
 export const CreateThreadTool = Tool.make("sparky_thread_create", {
   description:
-    "Create a thread in any project on a connected backend; pass environmentId from sparky_threads_list to target a different environment. Select the model and its provider-supported reasoning/context traits in modelSelection.options; discover valid model IDs and option choices with sparky_thread_models. workspaceMode=current keeps the checkout unchanged; existing reuses the exact listed branch/worktree; new creates an isolated worktree from required baseBranch with optional branch name. Use sparky_project_branches to discover refs. Set initialMessage to start the new agent immediately; otherwise it remains idle. The initial message includes the calling agent's reply address (threadId and environmentId), so the new agent can message its creator.",
+    "Create a thread in any project, including folders without Git. Omit projectId to use the calling thread\'s project (including project-free chats); provide a projectId from sparky_threads_list for another backend environment. Omit workspaceMode (defaults to current) to use the project folder directly, with no branch/worktree required; this works even when Git is unavailable. existing/new require a Git repository and registered branch/worktree information from sparky_project_branches. existing reuses an exact listed branch and worktree; new creates an isolated Git worktree from required baseBranch with optional branch name. Use sparky_thread_models to select provider-supported model/reasoning/context options. Set initialMessage to start the new agent immediately; otherwise it remains idle. Its first message includes the calling agent\'s reply address (threadId and environmentId).",
   parameters: Schema.Struct({
     environmentId: Schema.optional(Schema.String),
-    projectId: NonEmptyText,
+    projectId: Schema.optional(NonEmptyText),
     title: NonEmptyText,
-    workspaceMode: WorkspaceMode,
+    workspaceMode: Schema.optional(WorkspaceMode),
     branch: Schema.optional(NonEmptyText),
     baseBranch: Schema.optional(NonEmptyText),
     worktreePath: Schema.optional(NonEmptyText),

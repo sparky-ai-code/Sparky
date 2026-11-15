@@ -5,7 +5,9 @@ import {
   isProviderAvailable,
   MessageId,
   ModelSelection,
+  ProjectId,
   ThreadId,
+  UNSCOPED_CHAT_PROJECT_ID,
   type ClientOrchestrationCommand,
   type OrchestrationShellSnapshot,
   type OrchestrationThread,
@@ -48,7 +50,7 @@ const CreateInput = Schema.Struct({
   environmentId: Schema.String,
   projectId: Schema.String,
   title: Schema.String,
-  workspaceMode: WorkspaceMode,
+  workspaceMode: Schema.optional(WorkspaceMode),
   branch: Schema.optional(Schema.String),
   baseBranch: Schema.optional(Schema.String),
   worktreePath: Schema.optional(Schema.String),
@@ -299,7 +301,7 @@ export async function runThreadCollaboration(
     const input = Schema.decodeUnknownSync(CreateInput)(request.payload);
     const snapshot = await transport.shell(target);
     const project = snapshot.projects.find((candidate) => candidate.id === input.projectId);
-    if (!project) throw new Error("Project does not exist in the destination environment.");
+    if (!project && input.projectId !== UNSCOPED_CHAT_PROJECT_ID) throw new Error("Project does not exist in the destination environment.");
     // Inherit the originating agent's provider/model unless explicitly overridden.
     // A destination project's default may use API keys rather than the caller's OAuth.
     const modelSelection = input.modelSelection ?? access.modelSelection;
@@ -325,22 +327,34 @@ export async function runThreadCollaboration(
     let branch: string | null = null;
     let worktreePath: string | null = null;
     let createdWorktreePath: string | null = null;
-    if (input.workspaceMode === "current") {
-      if (input.worktreePath) throw new Error("Current checkout cannot specify a separate worktree.");
-      const status = await transport.status(target, project.workspaceRoot);
-      branch = status.refName;
+    const workspaceMode = input.workspaceMode ?? "current";
+    if (!project && (workspaceMode !== "current" || input.branch || input.baseBranch || input.worktreePath)) {
+      throw new Error("Project-free threads have no Git checkout. Use workspaceMode=current without branch or worktree options.");
+    }
+    if (workspaceMode === "current") {
+      if (input.worktreePath) throw new Error("Current project folder cannot specify a worktree.");
+      if (input.baseBranch) throw new Error("baseBranch is only used with workspaceMode=new.");
+      if (project) {
+        // A missing Git installation or failed status check cannot block normal thread creation.
+        const status = await transport.status(target, project.workspaceRoot).catch(() => null);
+        branch = status?.isRepo ? status.refName : null;
+      }
       if (input.branch && input.branch !== branch) {
-        throw new Error("The current checkout is on a different branch.");
+        throw new Error("The requested branch is not the current Git branch. Omit branch for non-Git folders.");
       }
     } else {
-      const requestedRef = input.workspaceMode === "new" ? input.baseBranch : input.branch;
+      if (!project) throw new Error("A Git project is required for worktree modes.");
+      const requestedRef = workspaceMode === "new" ? input.baseBranch : input.branch;
       if (!requestedRef) {
-        throw new Error(input.workspaceMode === "new" ? "baseBranch is required." : "branch is required.");
+        throw new Error(workspaceMode === "new" ? "baseBranch is required." : "branch is required.");
       }
       const refs = await transport.refs(target, { cwd: project.workspaceRoot, query: requestedRef, limit: 100 });
+      if (!refs.isRepo) {
+        throw new Error("Git worktree modes require a Git repository. Use workspaceMode=current for ordinary folders.");
+      }
       const ref = refs.refs.find((candidate) => candidate.name === requestedRef);
       if (!ref) throw new Error("Branch was not found in the destination Git repository.");
-      if (input.workspaceMode === "existing") {
+      if (workspaceMode === "existing") {
         if (!input.worktreePath || ref.worktreePath !== input.worktreePath ||
           input.worktreePath === project.workspaceRoot) {
           throw new Error("Existing worktree path must match the selected Git ref exactly.");
@@ -367,7 +381,7 @@ export async function runThreadCollaboration(
         type: "thread.create",
         commandId: commandId(),
         threadId,
-        projectId: project.id,
+        projectId: ProjectId.make(input.projectId),
         title: nonEmpty(input.title, "title"),
         modelSelection,
         runtimeMode: access.runtimeMode,
@@ -377,7 +391,7 @@ export async function runThreadCollaboration(
         createdAt,
       });
     } catch (error) {
-      if (createdWorktreePath) {
+      if (createdWorktreePath && project) {
         await transport.removeWorktree(target, project.workspaceRoot, createdWorktreePath).catch(() => {});
       }
       throw error;
@@ -399,7 +413,7 @@ export async function runThreadCollaboration(
     }
     return {
       environmentId: target,
-      threadId, projectId: project.id, branch, worktreePath, modelSelection,
+      threadId, projectId: ProjectId.make(input.projectId), branch, worktreePath, modelSelection,
       runtimeMode: access.runtimeMode, interactionMode: access.interactionMode,
       turnRequested: Boolean(input.initialMessage),
       note: input.initialMessage

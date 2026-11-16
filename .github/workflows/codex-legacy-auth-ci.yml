@@ -1,0 +1,33 @@
+name: Legacy Codex OAuth
+on:
+  pull_request:
+    paths:
+      - "crates/sparky_ai/**"
+      - "crates/sparky_cli/**"
+      - "sparky-desktop/source/apps/web/src/components/settings/ModelsSettingsPanel.tsx"
+      - ".github/workflows/codex-legacy-auth-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "crates/sparky_ai/**"
+      - "crates/sparky_cli/**"
+      - ".github/workflows/codex-legacy-auth-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  rust-codex:
+    name: Run Sparky AI provider and OAuth regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: true
+      - name: Test Codex OAuth and Responses provider
+        run: cargo test --locked -p sparky_ai
+      - name: Type-check Sparky CLI integration
+        run: cargo check --locked -p sparky_cli

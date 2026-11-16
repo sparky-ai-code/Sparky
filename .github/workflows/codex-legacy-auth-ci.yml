@@ -1,0 +1,62 @@
+name: Legacy Codex OAuth
+on:
+  pull_request:
+    paths:
+      - "crates/sparky_ai/**"
+      - "crates/sparky_cli/**"
+      - "sparky-desktop/source/apps/web/src/components/settings/ModelsSettingsPanel.tsx"
+      - "sparky-desktop/source/apps/server/src/provider/Drivers/SparkyModelCatalog.ts"
+      - "sparky-desktop/source/apps/server/src/provider/Drivers/SparkyModelCatalog.test.ts"
+      - "sparky-desktop/source/apps/server/src/provider/Drivers/SparkyDriver.ts"
+      - ".github/workflows/codex-legacy-auth-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "crates/sparky_ai/**"
+      - "crates/sparky_cli/**"
+      - ".github/workflows/codex-legacy-auth-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  rust-codex:
+    name: Run Sparky AI provider and OAuth regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: true
+      - name: Test Codex OAuth and Responses provider
+        run: cargo test --locked -p sparky_ai
+      - name: Type-check Sparky CLI integration
+        run: cargo check --locked -p sparky_cli
+
+  model-discovery:
+    name: Verify ChatGPT provider and model discovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install desktop dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Test Codex authentication and model discovery
+        run: pnpm --filter t3 exec vp test run src/provider/Drivers/SparkyModelCatalog.test.ts

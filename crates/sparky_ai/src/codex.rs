@@ -1,4 +1,4 @@
-use crate::codex_auth::valid_codex_credentials;
+use crate::codex_auth::{refresh_codex_after_unauthorized, valid_codex_credentials, CodexCredentials};
 use crate::provider::{CompletionOptions, EventStream, LlmProvider};
 use crate::types::{AssistantMessageEvent, ContentPart, Message, Role, ToolCall, UsageStats};
 use async_trait::async_trait;
@@ -57,10 +57,21 @@ impl CodexProvider {
         }
 
         let mut input = Vec::new();
+        let mut first_system_message_seen = false;
+        let instructions = messages.iter()
+            .find(|message| matches!(message.role, Role::System))
+            .map(Message::text)
+            .filter(|text| !text.trim().is_empty())
+            .unwrap_or_else(|| "You are a helpful assistant.".into());
         for message in messages {
             match message.role {
                 Role::System => {
-                    input.push(json!({ "role": "developer", "content": message.text() }))
+                    // The Codex backend expects the initial system message in
+                    // the top-level instructions, not as a Responses input item.
+                    if first_system_message_seen {
+                        input.push(json!({ "role": "developer", "content": message.text() }));
+                    }
+                    first_system_message_seen = true;
                 }
                 Role::User | Role::Custom(_) => {
                     input.push(json!({ "role": "user", "content": input_content(message) }))
@@ -111,6 +122,7 @@ impl CodexProvider {
             .collect::<Vec<_>>();
         let mut body = json!({
             "model": options.model,
+            "instructions": instructions,
             "input": input,
             "tools": tools,
             "text": { "verbosity": "low" },
@@ -132,6 +144,25 @@ impl CodexProvider {
         body
     }
 
+    fn build_request(
+        &self,
+        credentials: &CodexCredentials,
+        request_body: &Value,
+    ) -> reqwest::RequestBuilder {
+        self.client
+            .post("https://chatgpt.com/backend-api/codex/responses")
+            .bearer_auth(&credentials.access)
+            .header("chatgpt-account-id", &credentials.account_id)
+            .header("OpenAI-Beta", "responses=experimental")
+            .header("originator", "sparky")
+            .header("Accept", "text/event-stream")
+            .header(
+                "User-Agent",
+                concat!("sparky-rust/", env!("CARGO_PKG_VERSION")),
+            )
+            .json(request_body)
+    }
+
     async fn send(
         &self,
         messages: &[Message],
@@ -140,29 +171,24 @@ impl CodexProvider {
         let request_body = Self::request_body(messages, options, true);
         for attempt in 1..=MAX_CODEX_ATTEMPTS {
             let credentials = valid_codex_credentials().await?;
-            let response = self
-                .client
-                .post("https://api.openai.com/v1/responses")
-                .bearer_auth(credentials.access)
-                .header("Accept", "text/event-stream")
-                .header(
-                    "User-Agent",
-                    concat!("sparky-rust/", env!("CARGO_PKG_VERSION")),
-                )
-                .json(&request_body)
-                .send()
-                .await;
+            let response = self.build_request(&credentials, &request_body).send().await;
             match response {
                 Ok(response) if response.status().is_success() => return Ok(response),
                 Ok(response) => {
                     let status = response.status();
-                    let retryable = status.as_u16() == 408
-                        || status.as_u16() == 429
-                        || status.is_server_error();
+                    // A token can be revoked before its recorded expiry.
+                    // Rotate once on 401, but do not retry a forbidden request.
+                    if status == reqwest::StatusCode::UNAUTHORIZED && attempt < MAX_CODEX_ATTEMPTS {
+                        refresh_codex_after_unauthorized(&credentials.access).await?;
+                        continue;
+                    }
                     let body = response.text().await.unwrap_or_default();
+                    let retryable = (status.as_u16() == 408
+                        || status.as_u16() == 429
+                        || status.is_server_error())
+                        && !is_terminal_codex_quota_error(&body);
                     if retryable && attempt < MAX_CODEX_ATTEMPTS {
-                        tokio::time::sleep(std::time::Duration::from_secs(1 << (attempt - 1)))
-                            .await;
+                        tokio::time::sleep(Duration::from_secs(1 << (attempt - 1))).await;
                         continue;
                     }
                     let detail = provider_error_detail(&body);
@@ -172,7 +198,7 @@ impl CodexProvider {
                     if attempt < MAX_CODEX_ATTEMPTS
                         && (error.is_connect() || error.is_timeout()) =>
                 {
-                    tokio::time::sleep(std::time::Duration::from_secs(1 << (attempt - 1))).await;
+                    tokio::time::sleep(Duration::from_secs(1 << (attempt - 1))).await;
                 }
                 Err(error) => {
                     anyhow::bail!(
@@ -189,6 +215,20 @@ impl Default for CodexProvider {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn is_terminal_codex_quota_error(body: &str) -> bool {
+    let text = body.to_ascii_lowercase();
+    [
+        "gousagelimiterror",
+        "freeusagelimiterror",
+        "monthly usage limit reached",
+        "insufficient_quota",
+        "available balance",
+        "out of budget",
+        "quota exceeded",
+        "billing",
+    ].iter().any(|needle| text.contains(needle))
 }
 
 fn provider_error_detail(body: &str) -> String {
@@ -543,6 +583,46 @@ mod tests {
     use super::*;
     use crate::types::ToolParamSchema;
 
+
+    #[test]
+    fn routes_subscription_requests_through_legacy_codex_backend() {
+        let provider = CodexProvider::new();
+        let credentials = CodexCredentials {
+            access: "test-access".into(),
+            refresh: "test-refresh".into(),
+            expires: 123456,
+            account_id: "acct_test".into(),
+        };
+        let request = provider.build_request(&credentials, &json!({"model": "gpt-test"}))
+            .build().unwrap();
+        assert_eq!(request.url().as_str(), "https://chatgpt.com/backend-api/codex/responses");
+        assert_eq!(request.headers()["chatgpt-account-id"].to_str().unwrap(), "acct_test");
+        assert_eq!(request.headers()["authorization"].to_str().unwrap(), "Bearer test-access");
+        assert_eq!(request.headers()["openai-beta"].to_str().unwrap(), "responses=experimental");
+        assert_eq!(request.headers()["originator"].to_str().unwrap(), "sparky");
+    }
+
+    #[test]
+    fn excludes_initial_system_input_and_preserves_later_developer_updates() {
+        let messages = vec![
+            Message::system("System instruction"),
+            Message::user("Hello"),
+            Message::system("Updated constraint"),
+        ];
+        let body = CodexProvider::request_body(&messages, &CompletionOptions::default(), true);
+        assert_eq!(body["instructions"], "System instruction");
+        assert_eq!(body["input"][0]["role"], "user");
+        assert_eq!(body["input"][1]["role"], "developer");
+        assert_eq!(body["input"][1]["content"], "Updated constraint");
+    }
+
+    #[test]
+    fn terminal_subscription_quota_does_not_retry() {
+        assert!(is_terminal_codex_quota_error(r#"{"error": "FreeUsageLimitError"}"#));
+        assert!(is_terminal_codex_quota_error("insufficient_quota"));
+        assert!(!is_terminal_codex_quota_error("temporary rate limit"));
+    }
+
     #[test]
     fn builds_codex_responses_tool_conversation() {
         let messages = vec![
@@ -573,8 +653,10 @@ mod tests {
         let body = CodexProvider::request_body(&messages, &options, false);
         assert_eq!(body["model"], "gpt-5.6-sol");
         assert_eq!(body["store"], false);
-        assert_eq!(body["input"][2]["type"], "function_call");
-        assert_eq!(body["input"][3]["type"], "function_call_output");
+        assert_eq!(body["instructions"], "You are Sparky.");
+        assert_eq!(body["input"][0]["role"], "user");
+        assert_eq!(body["input"][1]["type"], "function_call");
+        assert_eq!(body["input"][2]["type"], "function_call_output");
         assert_eq!(body["tools"][0]["name"], "read");
         assert!(body.get("max_output_tokens").is_none());
         assert_eq!(body["stream"], true);

@@ -442,52 +442,31 @@ export function ModelsSettingsPanel() {
                         </p>
                         {id === "openai" ? (
                           <div className="mt-2">
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/60 transition-colors hover:text-muted-foreground disabled:opacity-50"
-                              disabled={codexAuthBusy}
-                              onClick={() =>
-                                void updateCodexAuthentication(
-                                  codexAuth?.planUsageAuthorized ? "logout" : "login",
-                                )
-                              }
-                            >
-                              {codexAuthBusy ? (
-                                <LoaderCircleIcon className="size-3 animate-spin" />
-                              ) : codexAuth?.planUsageAuthorized ? (
-                                <CheckCircle2Icon className="size-3 text-emerald-500" />
-                              ) : null}
-                              {codexAuth?.authenticated && codexAuth.planUsageAuthorized
-                                ? "Disconnect ChatGPT plan"
-                                : codexAuthBusy
-                                  ? "Signing in to ChatGPT…"
-                                  : "Use your ChatGPT plan"}
-                            </button>
-                            {codexAuth?.planUsageAuthorized ? (
-                              <a
-                                href="https://chatgpt.com/#settings/usage"
-                                target="_blank"
-                                rel="noreferrer"
-                                className="ml-2 text-xs text-muted-foreground/60 underline-offset-2 hover:text-muted-foreground hover:underline"
-                              >
-                                Manage usage
-                              </a>
-                            ) : null}
-                            {codexAuth?.authenticated && !codexAuth.planUsageAuthorized ? (
+                            <div className="flex items-center gap-2">
                               <button
                                 type="button"
-                                className="ml-2 text-xs text-muted-foreground/60 underline-offset-2 hover:text-muted-foreground hover:underline disabled:opacity-50"
-                                disabled={codexAuthBusy}
-                                onClick={() => void updateCodexAuthentication("logout")}
+                                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/70 transition-colors hover:text-foreground disabled:opacity-50"
+                                disabled={codexAuthBusy || codexAuth?.authenticated === true}
+                                onClick={() => void updateCodexAuthentication("login")}
                               >
-                                Disconnect
+                                {codexAuthBusy ? (
+                                  <LoaderCircleIcon className="size-3 animate-spin" aria-hidden />
+                                ) : codexAuth?.authenticated ? (
+                                  <CheckCircle2Icon className="size-3 text-emerald-500" aria-hidden />
+                                ) : null}
+                                Login with ChatGPT
                               </button>
-                            ) : null}
-                            <p className="mt-1 text-xs text-muted-foreground/65">
-                              {codexAuth?.authenticated && !codexAuth.planUsageAuthorized
-                                ? "Signed in, but ChatGPT plan usage permission was not granted."
-                                : "Uses eligible OpenAI Responses API requests from your ChatGPT plan."}
-                            </p>
+                              {codexAuth?.authenticated ? (
+                                <button
+                                  type="button"
+                                  className="text-xs text-muted-foreground/60 hover:text-foreground disabled:opacity-50"
+                                  disabled={codexAuthBusy}
+                                  onClick={() => void updateCodexAuthentication("logout")}
+                                >
+                                  Disconnect
+                                </button>
+                              ) : null}
+                            </div>
                             {codexAuthError ? (
                               <p role="alert" className="mt-1 text-xs text-destructive">
                                 {codexAuthError}

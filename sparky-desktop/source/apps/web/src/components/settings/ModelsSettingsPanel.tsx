@@ -4,6 +4,7 @@ import {
   BoxesIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
+  InfoIcon,
   LoaderCircleIcon,
   SaveIcon,
   SearchIcon,
@@ -43,6 +44,7 @@ import {
   GroqLogo,
 } from "../chat/providerIconUtils";
 import { Button } from "../ui/button";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
@@ -51,6 +53,7 @@ type Logo = ComponentType<SVGProps<SVGSVGElement>>;
 const SPARKY_INSTANCE_ID = ProviderInstanceId.make("sparky");
 const SPARKY_DRIVER = ProviderDriverKind.make("sparky");
 const CODEX_AUTH_PATH = "/api/sparky/codex-auth";
+const CHATGPT_SECURITY_SETTINGS_URL = "https://chatgpt.com/#settings/Security";
 
 type CodexAuthStatus = {
   readonly authenticated: boolean;
@@ -544,6 +547,43 @@ export function ModelsSettingsPanel() {
                                 ) : null}
                                 Login with ChatGPT
                               </button>
+                              <Popover>
+                                <PopoverTrigger
+                                  render={
+                                    <button
+                                      type="button"
+                                      aria-label="ChatGPT device-code sign-in requirements"
+                                      className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                                    >
+                                      <InfoIcon className="size-3.5" aria-hidden />
+                                    </button>
+                                  }
+                                />
+                                <PopoverPopup
+                                  tooltipStyle
+                                  side="top"
+                                  align="start"
+                                  className="w-64 max-w-[calc(100vw-2rem)]"
+                                >
+                                  <div className="space-y-1.5 p-2 text-xs leading-relaxed">
+                                    <p>
+                                      To log in, enable <strong>Device code sign-in</strong> in
+                                      ChatGPT Settings → Security and login.
+                                    </p>
+                                    <p className="text-muted-foreground">
+                                      Work account? Your workspace admin may need to enable it.
+                                    </p>
+                                    <a
+                                      href={CHATGPT_SECURITY_SETTINGS_URL}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-block font-medium text-foreground underline underline-offset-2 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                                    >
+                                      Open ChatGPT security settings
+                                    </a>
+                                  </div>
+                                </PopoverPopup>
+                              </Popover>
                               {codexAuth?.authenticated ? (
                                 <button
                                   type="button"

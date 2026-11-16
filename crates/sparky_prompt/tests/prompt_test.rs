@@ -130,7 +130,9 @@ async fn custom_prompt_still_receives_workspace_instructions_and_skill_catalog()
 #[tokio::test]
 async fn built_in_authoring_skill_works_without_a_workspace_skill_installation() {
     let dir = tempfile::tempdir().unwrap();
-    let prompt = PromptBuilder::new(dir.path().to_string_lossy()).build().await;
+    let prompt = PromptBuilder::new(dir.path().to_string_lossy())
+        .build()
+        .await;
     assert!(prompt.contains("<built_in_skill name=\"document-presentation-authoring\">"));
     assert!(prompt.contains("sparky-artifacts/documents/"));
     assert!(prompt.contains("sparky-artifacts/presentations/"));

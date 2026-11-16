@@ -845,8 +845,10 @@ export async function loadCodexModels(
     );
     return CHATGPT_CODEX_MODELS.map((model) => {
       const metadata = metadataByModelId.get(model.id);
+      // Keep the supported Codex model's public name stable while adding
+      // capability metadata from the account-specific catalog.
       return metadata
-        ? (remoteModelFromRecord({ ...metadata, id: model.id, name: model.name }) ?? model)
+        ? { ...(remoteModelFromRecord({ ...metadata, id: model.id }) ?? model), name: model.name }
         : model;
     });
   } catch {
@@ -856,9 +858,6 @@ export async function loadCodexModels(
 export type CodexModelLoader = (
   environment: NodeJS.ProcessEnv,
 ) => Promise<ReadonlyArray<RemoteModel>>;
-
-const loadCodexModelsForDiscovery: CodexModelLoader = (environment) =>
-  loadCodexModels("authenticated", globalThis.fetch, environment);
 
 const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
   {
@@ -941,7 +940,7 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
 export async function discoverSparkyModels(
   environment: NodeJS.ProcessEnv,
   fetchImplementation: FetchImplementation = globalThis.fetch,
-  codexModelLoader: CodexModelLoader = loadCodexModelsForDiscovery,
+  codexModelLoader?: CodexModelLoader,
 ): Promise<SparkyModelDiscovery> {
   const configured = PROVIDERS.flatMap((provider) => {
     if (provider.prefix === "ollama-cloud" && environment.OLLAMA_CLOUD_CONFIGURED !== "true") {
@@ -963,7 +962,7 @@ export async function discoverSparkyModels(
     configured.map(async ({ provider, apiKey }) => {
       try {
         const loadedRemoteModels =
-          provider.prefix === "openai-codex"
+          provider.prefix === "openai-codex" && codexModelLoader
             ? await codexModelLoader(environment)
             : await provider.load(apiKey, fetchImplementation, environment, modelsDev);
         const remoteModels =

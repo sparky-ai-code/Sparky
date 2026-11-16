@@ -51,6 +51,7 @@ const DESKTOP_RENDERER_ORIGINS = [
 const SPARKY_CODEX_AUTH_ROUTE = "/api/sparky/codex-auth";
 const SPARKY_CODEX_USAGE_ROUTE = "/api/sparky/codex-usage";
 const CODEX_AUTH_STATUS_TIMEOUT_MS = 20_000;
+const CODEX_AUTH_DEVICE_TIMEOUT_MS = 5 * 60_000;
 // Leave enough time for manual browser approval and slow-network token exchange.
 const CODEX_AUTH_LOGIN_TIMEOUT_MS = 60 * 60_000;
 
@@ -111,12 +112,13 @@ class SparkyCodexAuthCommandError extends Data.TaggedError("SparkyCodexAuthComma
   readonly cause?: unknown;
 }> {}
 
-const runSparkyCodexAuthCommand = (argument: string) =>
+const runSparkyCodexAuthCommand = (argument: string | ReadonlyArray<string>) =>
   Effect.tryPromise({
     try: () =>
       new Promise<unknown>((resolve, reject) => {
         const binaryPath = process.env.SPARKY_BINARY_PATH?.trim() || "sparky";
-        const child = NodeChildProcess.spawn(binaryPath, [argument], {
+        const args = typeof argument === "string" ? [argument] : [...argument];
+        const child = NodeChildProcess.spawn(binaryPath, args, {
           env: process.env,
           windowsHide: true,
           shell: false,
@@ -127,7 +129,11 @@ const runSparkyCodexAuthCommand = (argument: string) =>
         let settled = false;
         let timeout: ReturnType<typeof setTimeout>;
         const timeoutMs =
-          argument === "--codex-login" ? CODEX_AUTH_LOGIN_TIMEOUT_MS : CODEX_AUTH_STATUS_TIMEOUT_MS;
+          args[0] === "--codex-login"
+            ? CODEX_AUTH_LOGIN_TIMEOUT_MS
+            : args[0] === "--codex-device-start" || args[0] === "--codex-device-poll"
+              ? CODEX_AUTH_DEVICE_TIMEOUT_MS
+              : CODEX_AUTH_STATUS_TIMEOUT_MS;
         const finish = (callback: () => void) => {
           if (settled) return;
           settled = true;
@@ -180,7 +186,7 @@ const runSparkyCodexAuthCommand = (argument: string) =>
           }),
   });
 
-const sparkyCodexAuthResponse = (argument: string) =>
+const sparkyCodexAuthResponse = (argument: string | ReadonlyArray<string>) =>
   runSparkyCodexAuthCommand(argument).pipe(
     Effect.map((status) => HttpServerResponse.jsonUnsafe(status)),
     Effect.catch((error) =>
@@ -211,6 +217,37 @@ export const sparkyCodexAuthRouteLayer = Layer.mergeAll(
     Effect.gen(function* () {
       yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
       return yield* sparkyCodexAuthResponse("--codex-login");
+    }),
+  ),
+  HttpRouter.add(
+    "POST",
+    `${SPARKY_CODEX_AUTH_ROUTE}/device/start`,
+    Effect.gen(function* () {
+      yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+      return yield* sparkyCodexAuthResponse("--codex-device-start");
+    }),
+  ),
+  HttpRouter.add(
+    "POST",
+    `${SPARKY_CODEX_AUTH_ROUTE}/device/poll`,
+    Effect.gen(function* () {
+      yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const body: unknown = yield* request.json;
+      if (
+        body === null || typeof body !== "object" || Array.isArray(body) ||
+        typeof (body as Record<string, unknown>).deviceAuthId !== "string" ||
+        typeof (body as Record<string, unknown>).userCode !== "string"
+      ) {
+        return HttpServerResponse.jsonUnsafe({ error: "Invalid ChatGPT device authorization." }, { status: 400 });
+      }
+      const { deviceAuthId, userCode } = body as { deviceAuthId: string; userCode: string };
+      if (!deviceAuthId || deviceAuthId.length > 512 || !userCode || userCode.length > 128) {
+        return HttpServerResponse.jsonUnsafe({ error: "Invalid ChatGPT device authorization." }, { status: 400 });
+      }
+      return yield* sparkyCodexAuthResponse([
+        "--codex-device-poll", deviceAuthId, "--codex-device-user-code", userCode,
+      ]);
     }),
   ),
   HttpRouter.add(

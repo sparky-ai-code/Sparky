@@ -22,7 +22,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 <h2 id="providers">Providers</h2>
 <p>Catalog checked <time datetime="2026-10-03">October 3, 2026</time>. Each provider has its own text-model listing below. Sparky also refreshes the full account-specific text catalog after you save a key in Settings, Models. Voice, audio, image, and video-only models are intentionally excluded.</p>
 <p>Official model catalogs: <a href="https://developers.openai.com/api/docs/models" target="_blank" rel="noopener">OpenAI</a>, <a href="https://platform.claude.com/docs/en/models/overview" target="_blank" rel="noopener">Anthropic</a>, <a href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noopener">Google</a>, <a href="https://fireworks.ai/models" target="_blank" rel="noopener">Fireworks</a>, and <a href="https://ollama.com/search" target="_blank" rel="noopener">Ollama Cloud</a>.</p>
-<p>Click a provider to get your API key, then add it in <strong>Settings, Models</strong>. For OpenAI, Sparky uses the official OpenAI SDK with your API key. You can also connect a ChatGPT account there to use eligible ChatGPT plan usage without an API key. Sparky discovers available models automatically, including the latest supported OpenAI and Anthropic models; the available catalog depends on your account and connection.</p>
+<p>Click a provider to get your API key, then add it in <strong>Settings, Models</strong>. For OpenAI, Sparky uses the official OpenAI SDK with your API key. You can also connect a ChatGPT account through Sparky's legacy Codex OAuth provider, separate from the OpenAI API-key provider. Sparky discovers available models automatically, including the latest supported OpenAI and Anthropic models; the available catalog depends on your account and connection.</p>
 <div class="table-scroll" role="region" aria-label="Reference table" tabindex="0"><table class="docs-table" style="margin-bottom:2rem;">
 <tr><th>Provider</th><th>Get your API key</th></tr>
 <tr><td><strong>Anthropic</strong> (Claude)</td><td><a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a></td></tr>
@@ -60,7 +60,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 </div>
 
 <h2 id="codex-oauth">ChatGPT account sign-in</h2>
-<p>To use eligible ChatGPT plan usage, go to <strong>Settings, Models</strong> and choose <strong>Use your ChatGPT plan</strong> in the OpenAI provider settings. Sign in with your ChatGPT account in the browser and approve access. This is separate from an OpenAI API key; eligible Responses API usage is billed through your ChatGPT plan and subject to its limits. You can disconnect the plan from the same settings page.</p>
+<p>To connect your ChatGPT subscription through the legacy Codex provider, go to <strong>Settings, Models</strong> and select <strong>Connect ChatGPT via Codex</strong> under OpenAI. Complete the browser-based OpenAI Codex login. This connection calls the ChatGPT Codex backend rather than the OpenAI API-key endpoint, and usage is subject to your subscription limits. Previous dynamic-client Sign in with ChatGPT sessions must be reconnected. Disconnect from the same settings page.</p>
 <p>If sign-in fails or your plan is not connected, try again from the OpenAI provider controls in Settings, Models. For API-key setup, see <a href="getting-started.html#step-2">Quickstart</a>.</p>
 
 <h2 id="switching">Switching models</h2>

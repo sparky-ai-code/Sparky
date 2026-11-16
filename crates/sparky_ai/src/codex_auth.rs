@@ -16,6 +16,10 @@ use tokio::net::{TcpListener, TcpStream};
 const OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const OAUTH_AUTHORIZE_URL: &str = "https://auth.openai.com/oauth/authorize";
 const OAUTH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
+const DEVICE_USER_CODE_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/usercode";
+const DEVICE_TOKEN_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/token";
+const DEVICE_VERIFICATION_URI: &str = "https://auth.openai.com/codex/device";
+const DEVICE_REDIRECT_URI: &str = "https://auth.openai.com/deviceauth/callback";
 const OAUTH_SCOPE: &str = "openid profile email offline_access";
 const OAUTH_CALLBACK_PORT: u16 = 1455;
 const OAUTH_CALLBACK_PATH: &str = "/auth/callback";
@@ -92,6 +96,101 @@ pub struct CodexAuthStatus {
     pub expires: Option<i64>,
     // Retained as a wire-compatible field for the desktop settings UI.
     pub plan_usage_authorized: bool,
+}
+
+// Device authorization is an independent, callback-free login path. The
+// external browser never needs to navigate to localhost:1455.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexDeviceLogin {
+    device_auth_id: String,
+    user_code: String,
+    verification_uri: &'static str,
+    interval_seconds: u64,
+    expires_in_seconds: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexDeviceLoginProgress {
+    authenticated: bool,
+    pending: bool,
+}
+
+pub async fn start_codex_device_login() -> anyhow::Result<CodexDeviceLogin> {
+    let response = oauth_http_client()?
+        .post(DEVICE_USER_CODE_URL)
+        .json(&json!({ "client_id": OAUTH_CLIENT_ID }))
+        .send().await?;
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "ChatGPT device login is unavailable (HTTP {}). Enable device-code authorization in ChatGPT security settings or ask your workspace administrator.",
+            response.status()
+        );
+    }
+    let value: serde_json::Value = response.json().await?;
+    let device_auth_id = value["device_auth_id"].as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no device ID"))?;
+    let user_code = value["user_code"].as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no user code"))?;
+    let interval = value["interval"].as_u64()
+        .or_else(|| value["interval"].as_str().and_then(|value| value.parse().ok()))
+        .unwrap_or(5);
+    Ok(CodexDeviceLogin {
+        device_auth_id: device_auth_id.to_owned(),
+        user_code: user_code.to_owned(),
+        verification_uri: DEVICE_VERIFICATION_URI,
+        interval_seconds: interval.clamp(2, 30),
+        expires_in_seconds: 15 * 60,
+    })
+}
+
+pub async fn poll_codex_device_login(
+    device_auth_id: &str,
+    user_code: &str,
+) -> anyhow::Result<CodexDeviceLoginProgress> {
+    anyhow::ensure!(
+        !device_auth_id.is_empty() && device_auth_id.len() <= 512
+            && !user_code.is_empty() && user_code.len() <= 128,
+        "Invalid ChatGPT device authorization"
+    );
+    let response = oauth_http_client()?
+        .post(DEVICE_TOKEN_URL)
+        .json(&json!({
+            "device_auth_id": device_auth_id,
+            "user_code": user_code,
+        }))
+        .send().await?;
+    let status = response.status();
+    // The OpenAI device endpoint returns 403 or 404 while approval is pending.
+    if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::NOT_FOUND
+        || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Ok(CodexDeviceLoginProgress { authenticated: false, pending: true });
+    }
+    if !status.is_success() {
+        anyhow::bail!("ChatGPT device authorization failed (HTTP {status}). Retry sign-in.");
+    }
+    let payload: serde_json::Value = response.json().await?;
+    let code = payload["authorization_code"].as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no authorization code"))?;
+    let verifier = payload["code_verifier"].as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no PKCE verifier"))?;
+    let credentials = exchange_or_refresh(
+        &[
+            ("grant_type", "authorization_code"),
+            ("client_id", OAUTH_CLIENT_ID),
+            ("code", code),
+            ("code_verifier", verifier),
+            ("redirect_uri", DEVICE_REDIRECT_URI),
+        ],
+        "ChatGPT device token exchange",
+    ).await?;
+    save_credentials(&credentials)?;
+    Ok(CodexDeviceLoginProgress { authenticated: true, pending: false })
 }
 
 #[derive(Deserialize)]

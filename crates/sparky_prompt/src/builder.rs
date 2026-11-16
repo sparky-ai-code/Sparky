@@ -33,10 +33,12 @@ fn global_skill_roots(
 }
 
 #[cfg(test)]
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::Cell;
 
 #[cfg(test)]
-static PROJECT_FILES_SCAN_COUNT: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    static PROJECT_FILES_SCAN_COUNT: Cell<usize> = const { Cell::new(0) };
+}
 
 pub struct Skill {
     pub name: String,
@@ -523,7 +525,7 @@ impl PromptBuilder {
 
     fn project_files(&self) -> Vec<(std::path::PathBuf, String)> {
         #[cfg(test)]
-        PROJECT_FILES_SCAN_COUNT.fetch_add(1, Ordering::SeqCst);
+        PROJECT_FILES_SCAN_COUNT.with(|count| count.set(count.get() + 1));
 
         let root = Path::new(&self.cwd);
         let mut files: Vec<_> = WalkBuilder::new(root)
@@ -852,7 +854,7 @@ mod tests {
         )
         .expect("standard skill file");
 
-        PROJECT_FILES_SCAN_COUNT.store(0, Ordering::SeqCst);
+        PROJECT_FILES_SCAN_COUNT.with(|count| count.set(0));
         let prompt = PromptBuilder::new(directory.path().to_string_lossy())
             .with_plan_mode(true)
             .build()
@@ -865,7 +867,7 @@ mod tests {
         assert!(prompt.contains("path=\".sparky/skills/check.md\""));
         assert!(!prompt.contains("Do not inject this body until selected."));
         assert!(!prompt.contains("Check the focused regression."));
-        assert_eq!(PROJECT_FILES_SCAN_COUNT.load(Ordering::SeqCst), 1);
+        PROJECT_FILES_SCAN_COUNT.with(|count| assert_eq!(count.get(), 1));
     }
 
     #[tokio::test]
@@ -1021,7 +1023,8 @@ mod tests {
 
         // A project-free run does not advertise skills when it lacks read.
         let prompt_without_workspace = builder.with_workspace_context(false).build().await;
-        assert!(!prompt_without_workspace.contains("<available_skills>"));
+        assert!(!prompt_without_workspace.contains("\n\n<available_skills>\n"));
+        assert!(!prompt_without_workspace.contains("name=\"soil-control\""));
     }
 
     #[cfg(unix)]

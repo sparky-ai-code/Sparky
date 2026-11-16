@@ -487,8 +487,11 @@ impl PromptBuilder {
                 let is_standard_skill = path
                     .file_name()
                     .is_some_and(|name| name.eq_ignore_ascii_case("SKILL.md"));
-                let is_legacy_skill =
-                    legacy_markdown && path.extension().is_some_and(|extension| extension == "md");
+                // Legacy skills are flat Markdown files at the root. Nested
+                // references/*.md belong to SKILL.md, not separate skills.
+                let is_legacy_skill = legacy_markdown
+                    && path.parent() == Some(root.as_path())
+                    && path.extension().is_some_and(|extension| extension == "md");
                 if (is_standard_skill || is_legacy_skill) && seen.insert(path.clone()) {
                     paths.push(path);
                 }
@@ -965,7 +968,7 @@ mod tests {
         let workspace = directory.path().join("workspace");
         let sparky_root = home.join(".sparky/skills");
         let agents_root = home.join(".agents/skills");
-        std::fs::create_dir_all(sparky_root.join("soil-control")).unwrap();
+        std::fs::create_dir_all(sparky_root.join("soil-control/references")).unwrap();
         std::fs::create_dir_all(agents_root.join("tests")).unwrap();
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::write(workspace.join(".gitignore"), ".sparky/skills/\n").unwrap();
@@ -987,6 +990,11 @@ mod tests {
         )
         .unwrap();
         std::fs::write(sparky_root.join("other.txt"), "Not a skill").unwrap();
+        std::fs::write(
+            sparky_root.join("soil-control/references/notes.md"),
+            "Background information, not a skill.",
+        )
+        .unwrap();
 
         let mut builder = PromptBuilder::new(workspace.to_string_lossy());
         builder.global_skill_roots_override = Some(vec![(sparky_root, true), (agents_root, false)]);
@@ -1020,6 +1028,7 @@ mod tests {
         assert!(!prompt.contains("Private test skill body."));
         assert!(!prompt.contains("Private legacy skill body."));
         assert!(!prompt.contains("other.txt"));
+        assert!(!prompt.contains("name=\"notes\""));
 
         // A project-free run does not advertise skills when it lacks read.
         let prompt_without_workspace = builder.with_workspace_context(false).build().await;

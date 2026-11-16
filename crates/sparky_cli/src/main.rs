@@ -27,6 +27,15 @@ struct Cli {
     #[arg(long, help = "Sign in with a ChatGPT Codex subscription")]
     codex_login: bool,
 
+    #[arg(long, hide = true, help = "Start a ChatGPT login without a browser callback")]
+    codex_device_start: bool,
+
+    #[arg(long, hide = true, value_name = "ID", help = "Poll a ChatGPT device login")]
+    codex_device_poll: Option<String>,
+
+    #[arg(long, hide = true, value_name = "CODE", help = "Device login verification code")]
+    codex_device_user_code: Option<String>,
+
     #[arg(long, help = "Print ChatGPT Codex authentication status as JSON")]
     codex_auth_status: bool,
 
@@ -575,6 +584,18 @@ async fn main() -> anyhow::Result<()> {
 
     if cli.codex_login {
         println!("{}", serde_json::to_string(&login_codex().await?)?);
+        return Ok(());
+    }
+    if cli.codex_device_start {
+        println!("{}", serde_json::to_string(&sparky_ai::codex_auth::start_codex_device_login().await?)?);
+        return Ok(());
+    }
+    if let Some(device_auth_id) = cli.codex_device_poll.as_deref() {
+        let user_code = cli.codex_device_user_code.as_deref()
+            .ok_or_else(|| anyhow::anyhow!("Missing device login user code"))?;
+        println!("{}", serde_json::to_string(
+            &sparky_ai::codex_auth::poll_codex_device_login(device_auth_id, user_code).await?
+        )?);
         return Ok(());
     }
     if cli.codex_usage {

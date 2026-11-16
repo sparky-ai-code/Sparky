@@ -987,10 +987,7 @@ mod tests {
         std::fs::write(sparky_root.join("other.txt"), "Not a skill").unwrap();
 
         let mut builder = PromptBuilder::new(workspace.to_string_lossy());
-        builder.global_skill_roots_override = Some(vec![
-            (sparky_root, true),
-            (agents_root, false),
-        ]);
+        builder.global_skill_roots_override = Some(vec![(sparky_root, true), (agents_root, false)]);
         let skills = builder.load_skills().await;
         assert_eq!(skills.len(), 3);
         let soil_skill = skills.iter().find(|skill| skill.name == "soil-control").unwrap();
@@ -1000,12 +997,14 @@ mod tests {
         );
         assert_eq!(
             soil_skill.path,
-            std::fs::canonicalize(&soil).unwrap().to_string_lossy()
+            std::fs::canonicalize(&soil).unwrap().to_string_lossy().into_owned()
         );
 
         let prompt = builder.build().await;
         assert!(prompt.contains("name=\"soil-control\""));
-        assert!(prompt.contains("description=\"Diagnose soil moisture &amp; irrigation with calibrated sensors.\""));
+        assert!(prompt.contains(
+            "description=\"Diagnose soil moisture &amp; irrigation with calibrated sensors.\""
+        ));
         assert!(prompt.contains(&format!("path=\"{}\"", soil_skill.path)));
         assert!(prompt.contains("name=\"tests\""));
         assert!(prompt.contains("name=\"legacy\""));

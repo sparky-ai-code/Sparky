@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use walkdir::WalkDir;
 
+const BUILT_IN_AUTHORING_SKILL: &str = include_str!("../skills/authoring/SKILL.md");
+
 const SKILL_ROOTS: [&str; 4] = [
     ".agents/skills",
     ".claude/skills",
@@ -822,6 +824,14 @@ Do not provide a long play-by-play of tool calls.\n\
                 ));
             }
             prompt.push_str("</available_skills>\n");
+        }
+
+        // Embedded at compile time so every installed Sparky CLI can author
+        // artifacts without a project-local or user-installed skill.
+        if self.workspace_context && !self.plan_mode {
+            prompt.push_str("\n\n<built_in_skill name=\"document-presentation-authoring\">\n");
+            prompt.push_str(BUILT_IN_AUTHORING_SKILL);
+            prompt.push_str("\n</built_in_skill>\n");
         }
 
         if self.workspace_context {

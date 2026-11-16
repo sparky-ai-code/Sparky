@@ -1,0 +1,53 @@
+name: Document and presentation authoring
+
+on:
+  pull_request:
+    paths:
+      - "crates/sparky_prompt/**"
+      - "sparky-desktop/source/apps/web/src/components/files/**"
+      - ".github/workflows/document-presentation-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prompt:
+    name: Built-in agent authoring skill
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: true
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path crates/sparky_prompt/Cargo.toml -- --check
+      - name: Test prompt and bundled skill injection
+        run: cargo test --locked -p sparky_prompt
+
+  web:
+    name: Document and presentation UI tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Test artifact source, classification, and preview CSP
+        run: pnpm --filter @sparky/web exec vp test run src/components/files/artifactFiles.test.ts src/components/files/FilePreviewPanel.test.ts
+      - name: Type-check web UI
+        run: pnpm --filter @sparky/web typecheck

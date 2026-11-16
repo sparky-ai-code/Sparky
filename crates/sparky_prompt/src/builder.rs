@@ -990,14 +990,20 @@ mod tests {
         builder.global_skill_roots_override = Some(vec![(sparky_root, true), (agents_root, false)]);
         let skills = builder.load_skills().await;
         assert_eq!(skills.len(), 3);
-        let soil_skill = skills.iter().find(|skill| skill.name == "soil-control").unwrap();
+        let soil_skill = skills
+            .iter()
+            .find(|skill| skill.name == "soil-control")
+            .unwrap();
         assert_eq!(
             soil_skill.description,
             "Diagnose soil moisture & irrigation with calibrated sensors."
         );
         assert_eq!(
             soil_skill.path,
-            std::fs::canonicalize(&soil).unwrap().to_string_lossy().into_owned()
+            std::fs::canonicalize(&soil)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
         );
 
         let prompt = builder.build().await;
@@ -1028,7 +1034,11 @@ mod tests {
         std::fs::create_dir_all(skill_root.join("linked")).unwrap();
         let external = directory.path().join("external/SKILL.md");
         std::fs::create_dir_all(external.parent().unwrap()).unwrap();
-        std::fs::write(&external, "---\nname: external\ndescription: Outside\n---\nbody").unwrap();
+        std::fs::write(
+            &external,
+            "---\nname: external\ndescription: Outside\n---\nbody",
+        )
+        .unwrap();
         std::os::unix::fs::symlink(&external, skill_root.join("linked/SKILL.md")).unwrap();
 
         let mut builder = PromptBuilder::new(workspace.to_string_lossy());

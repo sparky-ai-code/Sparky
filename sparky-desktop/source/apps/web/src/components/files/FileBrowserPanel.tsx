@@ -5,10 +5,14 @@ import type {
 import type { EnvironmentId, ProjectEntry } from "@sparky/contracts";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@sparky/shared/composerTrigger";
-import { RefreshCw, Search } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { FileText, LoaderCircle, Plus, Presentation, RefreshCw, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { isAtomCommandInterrupted, squashAtomCommandFailure } from "@sparky/client-runtime/state/runtime";
 
 import { toastManager } from "~/components/ui/toast";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
+import { projectEnvironment } from "~/state/projects";
+import { useAtomCommand } from "~/state/use-atom-command";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
@@ -16,6 +20,7 @@ import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 
+import { type AuthoredArtifactKind, makeArtifactDraft } from "./artifactFiles";
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
 
@@ -51,6 +56,35 @@ export default function FileBrowserPanel({
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
   const entriesQuery = useProjectEntriesQuery(environmentId, cwd);
+  const writeFile = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
+  const [creatingArtifact, setCreatingArtifact] = useState(false);
+  const createArtifact = async (kind: AuthoredArtifactKind) => {
+    if (creatingArtifact) return;
+    setCreatingArtifact(true);
+    const artifact = makeArtifactDraft(
+      kind,
+      `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    );
+    try {
+      const result = await writeFile({
+        environmentId,
+        input: { cwd, relativePath: artifact.relativePath, contents: artifact.contents },
+      });
+      if (result._tag === "Success") {
+        entriesQuery.refresh();
+        onOpenFile(artifact.relativePath);
+      } else if (!isAtomCommandInterrupted(result)) {
+        const cause = squashAtomCommandFailure(result);
+        toastManager.add({
+          type: "error",
+          title: "Unable to create artifact",
+          description: cause instanceof Error ? cause.message : "Workspace write failed.",
+        });
+      }
+    } finally {
+      setCreatingArtifact(false);
+    }
+  };
   const entries = entriesQuery.data?.entries ?? [];
   const entryKinds = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry.kind] as const)),
@@ -233,6 +267,27 @@ export default function FileBrowserPanel({
             {entriesQuery.data?.truncated ? " · partial" : ""}
           </div>
         </div>
+        <Menu>
+          <MenuTrigger
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label="New document or presentation"
+            disabled={creatingArtifact}
+          >
+            {creatingArtifact ? (
+              <LoaderCircle className="size-3.5 animate-spin" />
+            ) : (
+              <Plus className="size-3.5" />
+            )}
+          </MenuTrigger>
+          <MenuPopup align="end">
+            <MenuItem disabled={creatingArtifact} onClick={() => void createArtifact("document")}>
+              <FileText /> New document
+            </MenuItem>
+            <MenuItem disabled={creatingArtifact} onClick={() => void createArtifact("presentation")}>
+              <Presentation /> New presentation
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
         <button
           type="button"
           className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"

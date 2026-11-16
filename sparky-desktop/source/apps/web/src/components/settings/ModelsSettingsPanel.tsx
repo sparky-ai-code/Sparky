@@ -302,8 +302,13 @@ export function ModelsSettingsPanel() {
         setDeviceLogin(device);
         try {
           if (typeof window.desktopBridge?.openExternal === "function") {
-            const opened = await window.desktopBridge.openExternal(device.verificationUri);
-            if (!opened) window.open(device.verificationUri, "_blank", "noopener,noreferrer");
+            // Launch the browser without blocking authorization polling on
+            // Electron's external-shell promise or the browser tab lifetime.
+            void window.desktopBridge.openExternal(device.verificationUri)
+              .then((opened) => {
+                if (!opened) window.open(device.verificationUri, "_blank", "noopener,noreferrer");
+              })
+              .catch(() => undefined);
           } else {
             window.open(device.verificationUri, "_blank", "noopener,noreferrer");
           }

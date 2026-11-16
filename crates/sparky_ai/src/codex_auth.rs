@@ -118,8 +118,12 @@ pub struct CodexDeviceLoginProgress {
 }
 
 pub async fn start_codex_device_login() -> anyhow::Result<CodexDeviceLogin> {
-    let response = oauth_http_client()?
-        .post(DEVICE_USER_CODE_URL)
+    request_codex_device_login(&oauth_http_client()?, DEVICE_USER_CODE_URL).await
+}
+
+async fn request_codex_device_login(client: &Client, url: &str) -> anyhow::Result<CodexDeviceLogin> {
+    let response = client
+        .post(url)
         .json(&json!({ "client_id": OAUTH_CLIENT_ID }))
         .send().await?;
     if !response.status().is_success() {
@@ -151,13 +155,39 @@ pub async fn poll_codex_device_login(
     device_auth_id: &str,
     user_code: &str,
 ) -> anyhow::Result<CodexDeviceLoginProgress> {
+    let result = request_codex_device_approval(
+        &oauth_http_client()?, DEVICE_TOKEN_URL, device_auth_id, user_code,
+    ).await?;
+    let Some((code, verifier)) = result else {
+        return Ok(CodexDeviceLoginProgress { authenticated: false, pending: true });
+    };
+    let credentials = exchange_or_refresh(
+        &[
+            ("grant_type", "authorization_code"),
+            ("client_id", OAUTH_CLIENT_ID),
+            ("code", &code),
+            ("code_verifier", &verifier),
+            ("redirect_uri", DEVICE_REDIRECT_URI),
+        ],
+        "ChatGPT device token exchange",
+    ).await?;
+    save_credentials(&credentials)?;
+    Ok(CodexDeviceLoginProgress { authenticated: true, pending: false })
+}
+
+async fn request_codex_device_approval(
+    client: &Client,
+    url: &str,
+    device_auth_id: &str,
+    user_code: &str,
+) -> anyhow::Result<Option<(String, String)>> {
     anyhow::ensure!(
         !device_auth_id.is_empty() && device_auth_id.len() <= 512
             && !user_code.is_empty() && user_code.len() <= 128,
         "Invalid ChatGPT device authorization"
     );
-    let response = oauth_http_client()?
-        .post(DEVICE_TOKEN_URL)
+    let response = client
+        .post(url)
         .json(&json!({
             "device_auth_id": device_auth_id,
             "user_code": user_code,
@@ -167,7 +197,7 @@ pub async fn poll_codex_device_login(
     // The OpenAI device endpoint returns 403 or 404 while approval is pending.
     if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::NOT_FOUND
         || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        return Ok(CodexDeviceLoginProgress { authenticated: false, pending: true });
+        return Ok(None);
     }
     if !status.is_success() {
         anyhow::bail!("ChatGPT device authorization failed (HTTP {status}). Retry sign-in.");
@@ -179,18 +209,7 @@ pub async fn poll_codex_device_login(
     let verifier = payload["code_verifier"].as_str()
         .filter(|value| !value.is_empty())
         .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no PKCE verifier"))?;
-    let credentials = exchange_or_refresh(
-        &[
-            ("grant_type", "authorization_code"),
-            ("client_id", OAUTH_CLIENT_ID),
-            ("code", code),
-            ("code_verifier", verifier),
-            ("redirect_uri", DEVICE_REDIRECT_URI),
-        ],
-        "ChatGPT device token exchange",
-    ).await?;
-    save_credentials(&credentials)?;
-    Ok(CodexDeviceLoginProgress { authenticated: true, pending: false })
+    Ok(Some((code.to_owned(), verifier.to_owned())))
 }
 
 #[derive(Deserialize)]
@@ -799,6 +818,64 @@ mod tests {
         browser.read_to_string(&mut response).await.unwrap();
         assert!(response.starts_with("HTTP/1.1 400 Bad Request"));
         assert!(task.await.unwrap().contains("access_denied"));
+    }
+
+    #[tokio::test]
+    async fn device_start_returns_verification_code_and_url() {
+        let (url, server) = token_test_server(vec![(
+            "200 OK",
+            r#"{"device_auth_id":"dev123","user_code":"ABCD-EFGH","interval":"5"}"#,
+            Duration::ZERO,
+        )]).await;
+        let device = request_codex_device_login(&oauth_http_client().unwrap(), &url).await.unwrap();
+        let json = serde_json::to_value(device).unwrap();
+        assert_eq!(json["deviceAuthId"], "dev123");
+        assert_eq!(json["userCode"], "ABCD-EFGH");
+        assert_eq!(json["intervalSeconds"], 5);
+        assert_eq!(json["verificationUri"], DEVICE_VERIFICATION_URI);
+        assert_eq!(json["expiresInSeconds"], 900);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn device_pending_does_not_require_a_browser_callback() {
+        let (url, server) = token_test_server(vec![(
+            "403 Forbidden",
+            r#"{"error":"deviceauth_authorization_pending"}"#,
+            Duration::ZERO,
+        )]).await;
+        let progress = request_codex_device_approval(
+            &oauth_http_client().unwrap(), &url, "dev123", "ABCD-EFGH",
+        ).await.unwrap();
+        assert!(progress.is_none());
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn device_approval_provides_code_and_pkce_verifier() {
+        let (url, server) = token_test_server(vec![(
+            "200 OK",
+            r#"{"authorization_code":"auth-code","code_verifier":"pkce-verifier"}"#,
+            Duration::ZERO,
+        )]).await;
+        let progress = request_codex_device_approval(
+            &oauth_http_client().unwrap(), &url, "dev123", "ABCD-EFGH",
+        ).await.unwrap();
+        assert_eq!(progress, Some(("auth-code".to_owned(), "pkce-verifier".to_owned())));
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn invalid_device_start_response_does_not_claim_authentication() {
+        let (url, server) = token_test_server(vec![(
+            "200 OK",
+            r#"{"device_auth_id":"dev123"}"#,
+            Duration::ZERO,
+        )]).await;
+        let error = request_codex_device_login(&oauth_http_client().unwrap(), &url)
+            .await.unwrap_err();
+        assert!(error.to_string().contains("no user code"));
+        server.await.unwrap();
     }
 
     #[tokio::test]

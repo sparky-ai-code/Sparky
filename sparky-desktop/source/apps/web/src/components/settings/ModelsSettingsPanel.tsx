@@ -458,10 +458,10 @@ export function ModelsSettingsPanel() {
                                 <CheckCircle2Icon className="size-3 text-emerald-500" />
                               ) : null}
                               {codexAuth?.authenticated && codexAuth.planUsageAuthorized
-                                ? "Disconnect ChatGPT plan"
+                                ? "Disconnect OpenAI Codex"
                                 : codexAuthBusy
-                                  ? "Signing in to ChatGPT…"
-                                  : "Use your ChatGPT plan"}
+                                  ? "Connecting OpenAI Codex…"
+                                  : "Connect ChatGPT via Codex"}
                             </button>
                             {codexAuth?.planUsageAuthorized ? (
                               <a
@@ -485,8 +485,8 @@ export function ModelsSettingsPanel() {
                             ) : null}
                             <p className="mt-1 text-xs text-muted-foreground/65">
                               {codexAuth?.authenticated && !codexAuth.planUsageAuthorized
-                                ? "Signed in, but ChatGPT plan usage permission was not granted."
-                                : "Uses eligible OpenAI Responses API requests from your ChatGPT plan."}
+                                ? "This session cannot be used by the Codex provider. Disconnect and sign in again."
+                                : "Uses the legacy ChatGPT Codex OAuth connection and Codex backend, not an OpenAI API key. Previous ChatGPT sign-ins must be reconnected."}
                             </p>
                             {codexAuthError ? (
                               <p role="alert" className="mt-1 text-xs text-destructive">

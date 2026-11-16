@@ -933,4 +933,107 @@ mod tests {
         assert!(!prompt.contains("<project_context>"));
         assert!(!prompt.contains("Current working directory:"));
     }
+
+    #[test]
+    fn global_skill_locations_include_sparky_home_and_managed_skills() {
+        let home = PathBuf::from("user-home");
+        let custom_home = PathBuf::from("custom-sparky");
+        let configured = PathBuf::from("managed-skills");
+        let roots = global_skill_roots(
+            Some(home.clone()),
+            Some(custom_home.clone()),
+            Some(configured.clone()),
+        );
+
+        assert_eq!(
+            roots,
+            vec![
+                (configured, false),
+                (custom_home.join("skills"), true),
+                (home.join(".sparky/skills"), true),
+                (home.join(".agents/skills"), false),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn user_installed_skills_are_catalogued_with_descriptions_and_absolute_read_paths() {
+        let directory = tempfile::tempdir().unwrap();
+        let home = directory.path().join("user");
+        let workspace = directory.path().join("workspace");
+        let sparky_root = home.join(".sparky/skills");
+        let agents_root = home.join(".agents/skills");
+        std::fs::create_dir_all(sparky_root.join("soil-control")).unwrap();
+        std::fs::create_dir_all(agents_root.join("tests")).unwrap();
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::write(workspace.join(".gitignore"), ".sparky/skills/\n").unwrap();
+
+        let soil = sparky_root.join("soil-control/SKILL.md");
+        std::fs::write(
+            &soil,
+            "---\nname: soil-control\ndescription: >-\n  Diagnose soil moisture & irrigation\n  with calibrated sensors.\n---\nPrivate soil skill body.",
+        )
+        .unwrap();
+        std::fs::write(
+            agents_root.join("tests/SKILL.md"),
+            "---\nname: tests\ndescription: Run focused checks\n---\nPrivate test skill body.",
+        )
+        .unwrap();
+        std::fs::write(
+            sparky_root.join("legacy.md"),
+            "---\nname: legacy\ndescription: Old style skill\n---\nPrivate legacy skill body.",
+        )
+        .unwrap();
+        std::fs::write(sparky_root.join("other.txt"), "Not a skill").unwrap();
+
+        let mut builder = PromptBuilder::new(workspace.to_string_lossy());
+        builder.global_skill_roots_override = Some(vec![
+            (sparky_root, true),
+            (agents_root, false),
+        ]);
+        let skills = builder.load_skills().await;
+        assert_eq!(skills.len(), 3);
+        let soil_skill = skills.iter().find(|skill| skill.name == "soil-control").unwrap();
+        assert_eq!(
+            soil_skill.description,
+            "Diagnose soil moisture & irrigation with calibrated sensors."
+        );
+        assert_eq!(
+            soil_skill.path,
+            std::fs::canonicalize(&soil).unwrap().to_string_lossy()
+        );
+
+        let prompt = builder.build().await;
+        assert!(prompt.contains("name=\"soil-control\""));
+        assert!(prompt.contains("description=\"Diagnose soil moisture &amp; irrigation with calibrated sensors.\""));
+        assert!(prompt.contains(&format!("path=\"{}\"", soil_skill.path)));
+        assert!(prompt.contains("name=\"tests\""));
+        assert!(prompt.contains("name=\"legacy\""));
+        assert!(!prompt.contains("Private soil skill body."));
+        assert!(!prompt.contains("Private test skill body."));
+        assert!(!prompt.contains("Private legacy skill body."));
+        assert!(!prompt.contains("other.txt"));
+
+        // A project-free run does not advertise skills when it lacks read.
+        let prompt_without_workspace = builder.with_workspace_context(false).build().await;
+        assert!(!prompt_without_workspace.contains("<available_skills>"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn global_skills_do_not_follow_symlinks_outside_the_skill_library() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path().join("workspace");
+        let skill_root = directory.path().join("user/.sparky/skills");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(skill_root.join("linked")).unwrap();
+        let external = directory.path().join("external/SKILL.md");
+        std::fs::create_dir_all(external.parent().unwrap()).unwrap();
+        std::fs::write(&external, "---\nname: external\ndescription: Outside\n---\nbody").unwrap();
+        std::os::unix::fs::symlink(&external, skill_root.join("linked/SKILL.md")).unwrap();
+
+        let mut builder = PromptBuilder::new(workspace.to_string_lossy());
+        builder.global_skill_roots_override = Some(vec![(skill_root, true)]);
+        assert!(builder.load_skills().await.is_empty());
+    }
 }

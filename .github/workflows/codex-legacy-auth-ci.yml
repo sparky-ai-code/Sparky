@@ -35,6 +35,18 @@ jobs:
       - name: Type-check Sparky CLI integration
         run: cargo check --locked -p sparky_cli
 
+  windows-oauth-callback:
+    name: Verify OAuth loopback callback on Windows
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: true
+      - name: Test ChatGPT browser and device authorization on Windows
+        run: cargo test --locked -p sparky_ai codex_auth::tests
+
   model-discovery:
     name: Verify ChatGPT provider and model discovery
     runs-on: ubuntu-latest

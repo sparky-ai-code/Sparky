@@ -9,18 +9,23 @@ use std::time::Duration;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::process::Command as StdCommand;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 // Legacy OpenAI Codex subscription OAuth, following Pi's openai-codex provider.
 // This is deliberately NOT the dynamic-client Sign in with ChatGPT API flow.
 const OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const OAUTH_AUTHORIZE_URL: &str = "https://auth.openai.com/oauth/authorize";
 const OAUTH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
+const DEVICE_USER_CODE_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/usercode";
+const DEVICE_TOKEN_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/token";
+const DEVICE_VERIFICATION_URI: &str = "https://auth.openai.com/codex/device";
+const DEVICE_REDIRECT_URI: &str = "https://auth.openai.com/deviceauth/callback";
 const OAUTH_SCOPE: &str = "openid profile email offline_access";
 const OAUTH_CALLBACK_PORT: u16 = 1455;
 const OAUTH_CALLBACK_PATH: &str = "/auth/callback";
 const OAUTH_REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 const OAUTH_CALLBACK_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const OAUTH_CALLBACK_READ_TIMEOUT: Duration = Duration::from_secs(10);
 const OAUTH_CONNECT_TIMEOUT: Duration = Duration::from_secs(90);
 const OAUTH_REQUEST_TIMEOUT: Duration = Duration::from_secs(240);
 const OAUTH_TOKEN_MAX_ATTEMPTS: usize = 3;
@@ -91,6 +96,120 @@ pub struct CodexAuthStatus {
     pub expires: Option<i64>,
     // Retained as a wire-compatible field for the desktop settings UI.
     pub plan_usage_authorized: bool,
+}
+
+// Device authorization is an independent, callback-free login path. The
+// external browser never needs to navigate to localhost:1455.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexDeviceLogin {
+    device_auth_id: String,
+    user_code: String,
+    verification_uri: &'static str,
+    interval_seconds: u64,
+    expires_in_seconds: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexDeviceLoginProgress {
+    authenticated: bool,
+    pending: bool,
+}
+
+pub async fn start_codex_device_login() -> anyhow::Result<CodexDeviceLogin> {
+    request_codex_device_login(&oauth_http_client()?, DEVICE_USER_CODE_URL).await
+}
+
+async fn request_codex_device_login(client: &Client, url: &str) -> anyhow::Result<CodexDeviceLogin> {
+    let response = client
+        .post(url)
+        .json(&json!({ "client_id": OAUTH_CLIENT_ID }))
+        .send().await?;
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "ChatGPT device login is unavailable (HTTP {}). Enable device-code authorization in ChatGPT security settings or ask your workspace administrator.",
+            response.status()
+        );
+    }
+    let value: serde_json::Value = response.json().await?;
+    let device_auth_id = value["device_auth_id"].as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no device ID"))?;
+    let user_code = value["user_code"].as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no user code"))?;
+    let interval = value["interval"].as_u64()
+        .or_else(|| value["interval"].as_str().and_then(|value| value.parse().ok()))
+        .unwrap_or(5);
+    Ok(CodexDeviceLogin {
+        device_auth_id: device_auth_id.to_owned(),
+        user_code: user_code.to_owned(),
+        verification_uri: DEVICE_VERIFICATION_URI,
+        interval_seconds: interval.clamp(2, 30),
+        expires_in_seconds: 15 * 60,
+    })
+}
+
+pub async fn poll_codex_device_login(
+    device_auth_id: &str,
+    user_code: &str,
+) -> anyhow::Result<CodexDeviceLoginProgress> {
+    let result = request_codex_device_approval(
+        &oauth_http_client()?, DEVICE_TOKEN_URL, device_auth_id, user_code,
+    ).await?;
+    let Some((code, verifier)) = result else {
+        return Ok(CodexDeviceLoginProgress { authenticated: false, pending: true });
+    };
+    let credentials = exchange_or_refresh(
+        &[
+            ("grant_type", "authorization_code"),
+            ("client_id", OAUTH_CLIENT_ID),
+            ("code", &code),
+            ("code_verifier", &verifier),
+            ("redirect_uri", DEVICE_REDIRECT_URI),
+        ],
+        "ChatGPT device token exchange",
+    ).await?;
+    save_credentials(&credentials)?;
+    Ok(CodexDeviceLoginProgress { authenticated: true, pending: false })
+}
+
+async fn request_codex_device_approval(
+    client: &Client,
+    url: &str,
+    device_auth_id: &str,
+    user_code: &str,
+) -> anyhow::Result<Option<(String, String)>> {
+    anyhow::ensure!(
+        !device_auth_id.is_empty() && device_auth_id.len() <= 512
+            && !user_code.is_empty() && user_code.len() <= 128,
+        "Invalid ChatGPT device authorization"
+    );
+    let response = client
+        .post(url)
+        .json(&json!({
+            "device_auth_id": device_auth_id,
+            "user_code": user_code,
+        }))
+        .send().await?;
+    let status = response.status();
+    // The OpenAI device endpoint returns 403 or 404 while approval is pending.
+    if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::NOT_FOUND
+        || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Ok(None);
+    }
+    if !status.is_success() {
+        anyhow::bail!("ChatGPT device authorization failed (HTTP {status}). Retry sign-in.");
+    }
+    let payload: serde_json::Value = response.json().await?;
+    let code = payload["authorization_code"].as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no authorization code"))?;
+    let verifier = payload["code_verifier"].as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no PKCE verifier"))?;
+    Ok(Some((code.to_owned(), verifier.to_owned())))
 }
 
 #[derive(Deserialize)]
@@ -246,13 +365,125 @@ fn build_oauth_authorize_url(state: &str, challenge: &str) -> String {
     format!("{OAUTH_AUTHORIZE_URL}?{}", query.finish())
 }
 
-async fn oauth_login() -> anyhow::Result<()> {
-    // Pi uses this fixed registered redirect; a random port would fail OAuth.
-    let listener = TcpListener::bind(("127.0.0.1", OAUTH_CALLBACK_PORT)).await.map_err(|error| {
-        anyhow::anyhow!(
-            "Could not start OpenAI Codex sign-in on port {OAUTH_CALLBACK_PORT} ({error}). Close another Codex login and retry."
+// Browsers may resolve "localhost" to either loopback family. Listening only
+// on 127.0.0.1 can strand the OAuth redirect on ::1 after account selection.
+async fn bind_oauth_callback_listeners(
+    port: u16,
+) -> anyhow::Result<(Option<TcpListener>, Option<TcpListener>)> {
+    let (ipv4, ipv6) = tokio::join!(
+        TcpListener::bind(("127.0.0.1", port)),
+        TcpListener::bind(("::1", port)),
+    );
+    if ipv4.is_err() && ipv6.is_err() {
+        anyhow::bail!(
+            "Could not start ChatGPT sign-in on localhost port {port} (IPv4: {}; IPv6: {}). Close any other Codex login and retry.",
+            ipv4.unwrap_err(),
+            ipv6.unwrap_err(),
+        );
+    }
+    Ok((ipv4.ok(), ipv6.ok()))
+}
+
+async fn accept_oauth_connection(
+    ipv4: Option<&TcpListener>,
+    ipv6: Option<&TcpListener>,
+) -> std::io::Result<(TcpStream, std::net::SocketAddr)> {
+    match (ipv4, ipv6) {
+        (Some(ipv4), Some(ipv6)) => {
+            tokio::select! {
+                connection = ipv4.accept() => connection,
+                connection = ipv6.accept() => connection,
+            }
+        }
+        (Some(ipv4), None) => ipv4.accept().await,
+        (None, Some(ipv6)) => ipv6.accept().await,
+        (None, None) => unreachable!("OAuth callback requires at least one listener"),
+    }
+}
+
+// Read a complete HTTP request line, not the first arbitrary TCP packet.
+// A split request could otherwise be discarded after the browser redirects.
+async fn read_oauth_request_line(stream: &mut TcpStream) -> anyhow::Result<String> {
+    let mut request = [0u8; 8192];
+    let mut size = 0;
+    loop {
+        let read = tokio::time::timeout(
+            OAUTH_CALLBACK_READ_TIMEOUT,
+            stream.read(&mut request[size..]),
         )
-    })?;
+        .await
+        .map_err(|_| anyhow::anyhow!("ChatGPT callback request timed out"))??;
+        if read == 0 {
+            anyhow::bail!("ChatGPT callback connection closed before the request line");
+        }
+        size += read;
+        if let Some(newline) = request[..size].iter().position(|byte| *byte == b'\n') {
+            return Ok(String::from_utf8_lossy(&request[..newline])
+                .trim_end_matches('\r')
+                .to_string());
+        }
+        if size == request.len() {
+            anyhow::bail!("ChatGPT callback request line is too long");
+        }
+    }
+}
+
+async fn wait_for_oauth_callback(
+    ipv4: Option<&TcpListener>,
+    ipv6: Option<&TcpListener>,
+    expected_state: &str,
+    deadline: Duration,
+) -> anyhow::Result<(String, TcpStream)> {
+    let started = tokio::time::Instant::now();
+    loop {
+        let remaining = deadline.checked_sub(started.elapsed())
+            .filter(|duration| !duration.is_zero())
+            .ok_or_else(|| anyhow::anyhow!("ChatGPT sign-in timed out. Start sign-in again."))?;
+        let (mut stream, _) = tokio::time::timeout(
+            remaining,
+            accept_oauth_connection(ipv4, ipv6),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("ChatGPT sign-in timed out. Start sign-in again."))??;
+
+        // An unrelated connection (including a browser preconnect) should not
+        // terminate the sign-in, but neither may it block the listener forever.
+        let Ok(request_line) = read_oauth_request_line(&mut stream).await else {
+            continue;
+        };
+        let Some(target) = request_line.strip_prefix("GET ")
+            .and_then(|line| line.split_whitespace().next()) else {
+            let _ = write_oauth_response(&mut stream, "Invalid callback request", "400 Bad Request").await;
+            continue;
+        };
+        let Ok(parsed) = url::Url::parse(&format!("http://localhost{target}")) else {
+            let _ = write_oauth_response(&mut stream, "Invalid callback URL", "400 Bad Request").await;
+            continue;
+        };
+        if parsed.path() != OAUTH_CALLBACK_PATH {
+            let _ = write_oauth_response(&mut stream, "Not Found", "404 Not Found").await;
+            continue;
+        }
+        let params: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
+        if params.get("state").map(String::as_str) != Some(expected_state) {
+            let _ = write_oauth_response(&mut stream, "ChatGPT sign-in state did not match; retry sign-in.", "400 Bad Request").await;
+            anyhow::bail!("ChatGPT sign-in state did not match. Start sign-in again.");
+        }
+        if let Some(error) = params.get("error") {
+            let _ = write_oauth_response(&mut stream, "ChatGPT sign-in was not completed.", "400 Bad Request").await;
+            anyhow::bail!("ChatGPT sign-in failed: {error}");
+        }
+        let Some(code) = params.get("code").filter(|value| !value.is_empty()) else {
+            let _ = write_oauth_response(&mut stream, "No authorization code returned", "400 Bad Request").await;
+            anyhow::bail!("ChatGPT did not return an authorization code. Start sign-in again.");
+        };
+        return Ok((code.to_owned(), stream));
+    }
+}
+
+async fn oauth_login() -> anyhow::Result<()> {
+    // The registered OAuth redirect is localhost:1455; accept IPv4 and IPv6.
+    let (ipv4, ipv6) = bind_oauth_callback_listeners(OAUTH_CALLBACK_PORT).await?;
     let mut random = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut random);
     let state = URL_SAFE_NO_PAD.encode(&random[..16]);
@@ -261,57 +492,47 @@ async fn oauth_login() -> anyhow::Result<()> {
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     open_oauth_browser(&build_oauth_authorize_url(&state, &challenge));
 
-    let callback_started = tokio::time::Instant::now();
-    let code = loop {
-        let remaining = OAUTH_CALLBACK_TIMEOUT.checked_sub(callback_started.elapsed())
-            .ok_or_else(|| anyhow::anyhow!("OpenAI Codex login expired after 15 minutes; retry sign-in"))?;
-        let (mut stream, _) = tokio::time::timeout(remaining, listener.accept()).await
-            .map_err(|_| anyhow::anyhow!("OpenAI Codex login expired after 15 minutes; retry sign-in"))??;
-        let mut request = [0u8; 8192];
-        let size = stream.read(&mut request).await?;
-        let request = String::from_utf8_lossy(&request[..size]);
-        let Some(target) = request.lines().next()
-            .and_then(|line| line.strip_prefix("GET "))
-            .and_then(|line| line.split_whitespace().next()) else {
-            write_oauth_response(&mut stream, "Invalid callback request", "400 Bad Request").await?;
-            continue;
-        };
-        let Ok(parsed) = url::Url::parse(&format!("http://localhost{target}")) else {
-            write_oauth_response(&mut stream, "Invalid callback URL", "400 Bad Request").await?;
-            continue;
-        };
-        if parsed.path() != OAUTH_CALLBACK_PATH {
-            write_oauth_response(&mut stream, "Not Found", "404 Not Found").await?;
-            continue;
-        }
-        let params: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
-        if params.get("state").map(String::as_str) != Some(state.as_str()) {
-            write_oauth_response(&mut stream, "Sign-in state did not match", "400 Bad Request").await?;
-            continue;
-        }
-        if let Some(error) = params.get("error") {
-            write_oauth_response(&mut stream, "OpenAI Codex sign-in was cancelled", "400 Bad Request").await?;
-            anyhow::bail!("OpenAI Codex sign-in failed: {error}");
-        }
-        let Some(code) = params.get("code").filter(|value| !value.is_empty()) else {
-            write_oauth_response(&mut stream, "No authorization code returned", "400 Bad Request").await?;
-            continue;
-        };
-        write_oauth_response(&mut stream, "OpenAI Codex authorization received. Return to Sparky.", "200 OK").await?;
-        break code.to_owned();
-    };
-    drop(listener);
-    let credentials = exchange_or_refresh(
-        &[
-            ("grant_type", "authorization_code"),
-            ("client_id", OAUTH_CLIENT_ID),
-            ("code", code.as_str()),
-            ("code_verifier", verifier.as_str()),
-            ("redirect_uri", OAUTH_REDIRECT_URI),
-        ],
-        "OpenAI Codex token exchange",
+    let (code, mut callback) = wait_for_oauth_callback(
+        ipv4.as_ref(),
+        ipv6.as_ref(),
+        &state,
+        OAUTH_CALLBACK_TIMEOUT,
     ).await?;
-    save_credentials(&credentials)
+    drop((ipv4, ipv6));
+
+    // Confirm success only after the token exchange and credential write have
+    // succeeded. Previously the browser was told "authorized" prematurely.
+    let result = async {
+        let credentials = exchange_or_refresh(
+            &[
+                ("grant_type", "authorization_code"),
+                ("client_id", OAUTH_CLIENT_ID),
+                ("code", code.as_str()),
+                ("code_verifier", verifier.as_str()),
+                ("redirect_uri", OAUTH_REDIRECT_URI),
+            ],
+            "OpenAI Codex token exchange",
+        ).await?;
+        save_credentials(&credentials)
+    }.await;
+    match result {
+        Ok(()) => {
+            let _ = write_oauth_response(
+                &mut callback,
+                "ChatGPT login complete. You can return to Sparky.",
+                "200 OK",
+            ).await;
+            Ok(())
+        }
+        Err(error) => {
+            let _ = write_oauth_response(
+                &mut callback,
+                "ChatGPT login could not finish. Return to Sparky and retry.",
+                "502 Bad Gateway",
+            ).await;
+            Err(error)
+        }
+    }
 }
 
 async fn write_oauth_response(
@@ -517,6 +738,144 @@ mod tests {
         }).unwrap();
         assert_eq!(credential.account_id, "acct_1");
         assert!(credential.expires > chrono::Utc::now().timestamp_millis());
+    }
+
+    #[tokio::test]
+    async fn callback_delivers_code_over_ipv4_and_handles_split_request_line() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            let (code, mut stream) = wait_for_oauth_callback(
+                Some(&listener), None, "state-123", Duration::from_secs(3),
+            ).await.unwrap();
+            write_oauth_response(&mut stream, "signed in", "200 OK").await.unwrap();
+            code
+        });
+        let mut browser = TcpStream::connect(address).await.unwrap();
+        browser.write_all(b"GET /auth/call").await.unwrap();
+        browser.write_all(b"back?code=oauth-code&state=state-123 HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await.unwrap();
+        let mut response = String::new();
+        browser.read_to_string(&mut response).await.unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert_eq!(task.await.unwrap(), "oauth-code");
+    }
+
+    #[tokio::test]
+    async fn callback_delivers_code_over_ipv6_when_available() {
+        let Ok(listener) = TcpListener::bind(("::1", 0)).await else {
+            // Some CI hosts disable IPv6 entirely; IPv4 remains supported.
+            return;
+        };
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            let (code, mut stream) = wait_for_oauth_callback(
+                None, Some(&listener), "ipv6-state", Duration::from_secs(3),
+            ).await.unwrap();
+            write_oauth_response(&mut stream, "signed in", "200 OK").await.unwrap();
+            code
+        });
+        let mut browser = TcpStream::connect(address).await.unwrap();
+        browser.write_all(b"GET /auth/callback?code=ipv6-code&state=ipv6-state HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await.unwrap();
+        let mut response = String::new();
+        browser.read_to_string(&mut response).await.unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert_eq!(task.await.unwrap(), "ipv6-code");
+    }
+
+    #[tokio::test]
+    async fn callback_rejects_wrong_state_and_ends_login_instead_of_hanging() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            wait_for_oauth_callback(
+                Some(&listener), None, "expected", Duration::from_secs(3),
+            ).await.unwrap_err().to_string()
+        });
+        let mut browser = TcpStream::connect(address).await.unwrap();
+        browser.write_all(b"GET /auth/callback?code=code&state=other HTTP/1.1\r\n\r\n")
+            .await.unwrap();
+        let mut response = String::new();
+        browser.read_to_string(&mut response).await.unwrap();
+        assert!(response.starts_with("HTTP/1.1 400 Bad Request"));
+        assert!(task.await.unwrap().contains("state did not match"));
+    }
+
+    #[tokio::test]
+    async fn callback_reports_account_denial_without_waiting_for_timeout() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            wait_for_oauth_callback(
+                Some(&listener), None, "expected", Duration::from_secs(3),
+            ).await.unwrap_err().to_string()
+        });
+        let mut browser = TcpStream::connect(address).await.unwrap();
+        browser.write_all(b"GET /auth/callback?error=access_denied&state=expected HTTP/1.1\r\n\r\n")
+            .await.unwrap();
+        let mut response = String::new();
+        browser.read_to_string(&mut response).await.unwrap();
+        assert!(response.starts_with("HTTP/1.1 400 Bad Request"));
+        assert!(task.await.unwrap().contains("access_denied"));
+    }
+
+    #[tokio::test]
+    async fn device_start_returns_verification_code_and_url() {
+        let (url, server) = token_test_server(vec![(
+            "200 OK",
+            r#"{"device_auth_id":"dev123","user_code":"ABCD-EFGH","interval":"5"}"#,
+            Duration::ZERO,
+        )]).await;
+        let device = request_codex_device_login(&oauth_http_client().unwrap(), &url).await.unwrap();
+        let json = serde_json::to_value(device).unwrap();
+        assert_eq!(json["deviceAuthId"], "dev123");
+        assert_eq!(json["userCode"], "ABCD-EFGH");
+        assert_eq!(json["intervalSeconds"], 5);
+        assert_eq!(json["verificationUri"], DEVICE_VERIFICATION_URI);
+        assert_eq!(json["expiresInSeconds"], 900);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn device_pending_does_not_require_a_browser_callback() {
+        let (url, server) = token_test_server(vec![(
+            "403 Forbidden",
+            r#"{"error":"deviceauth_authorization_pending"}"#,
+            Duration::ZERO,
+        )]).await;
+        let progress = request_codex_device_approval(
+            &oauth_http_client().unwrap(), &url, "dev123", "ABCD-EFGH",
+        ).await.unwrap();
+        assert!(progress.is_none());
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn device_approval_provides_code_and_pkce_verifier() {
+        let (url, server) = token_test_server(vec![(
+            "200 OK",
+            r#"{"authorization_code":"auth-code","code_verifier":"pkce-verifier"}"#,
+            Duration::ZERO,
+        )]).await;
+        let progress = request_codex_device_approval(
+            &oauth_http_client().unwrap(), &url, "dev123", "ABCD-EFGH",
+        ).await.unwrap();
+        assert_eq!(progress, Some(("auth-code".to_owned(), "pkce-verifier".to_owned())));
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn invalid_device_start_response_does_not_claim_authentication() {
+        let (url, server) = token_test_server(vec![(
+            "200 OK",
+            r#"{"device_auth_id":"dev123"}"#,
+            Duration::ZERO,
+        )]).await;
+        let error = request_codex_device_login(&oauth_http_client().unwrap(), &url)
+            .await.unwrap_err();
+        assert!(error.to_string().contains("no user code"));
+        server.await.unwrap();
     }
 
     #[tokio::test]

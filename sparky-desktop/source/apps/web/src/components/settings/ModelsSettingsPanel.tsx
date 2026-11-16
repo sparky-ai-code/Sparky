@@ -4,6 +4,7 @@ import {
   BoxesIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
+  InfoIcon,
   LoaderCircleIcon,
   SaveIcon,
   SearchIcon,
@@ -43,6 +44,7 @@ import {
   GroqLogo,
 } from "../chat/providerIconUtils";
 import { Button } from "../ui/button";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
@@ -51,6 +53,7 @@ type Logo = ComponentType<SVGProps<SVGSVGElement>>;
 const SPARKY_INSTANCE_ID = ProviderInstanceId.make("sparky");
 const SPARKY_DRIVER = ProviderDriverKind.make("sparky");
 const CODEX_AUTH_PATH = "/api/sparky/codex-auth";
+const CHATGPT_SECURITY_SETTINGS_URL = "https://chatgpt.com/#settings/Security";
 
 type CodexAuthStatus = {
   readonly authenticated: boolean;
@@ -58,14 +61,36 @@ type CodexAuthStatus = {
   readonly planUsageAuthorized: boolean;
 };
 
-async function codexAuthRequest(path = "", method = "GET"): Promise<CodexAuthStatus> {
+type CodexDeviceLogin = {
+  readonly deviceAuthId: string;
+  readonly userCode: string;
+  readonly verificationUri: string;
+  readonly intervalSeconds: number;
+  readonly expiresInSeconds: number;
+};
+
+type CodexDeviceLoginProgress = {
+  readonly authenticated: boolean;
+  readonly pending: boolean;
+};
+
+async function codexAuthRequest<T = CodexAuthStatus>(
+  path = "",
+  method = "GET",
+  body?: unknown,
+): Promise<T> {
   const requestUrl = resolvePrimaryEnvironmentHttpUrl(`${CODEX_AUTH_PATH}${path}`);
   let response: Response;
   try {
     response = await fetchPrimaryEnvironment(requestUrl, {
       method,
-      // Slightly longer than the backend 60-minute deadline, so it can return a useful error.
-      signal: AbortSignal.timeout(path === "/login" ? 65 * 60_000 : 20_000),
+      ...(body === undefined ? {} : {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      signal: AbortSignal.timeout(
+        path === "/login" ? 65 * 60_000 : path.startsWith("/device/") ? 6 * 60_000 : 20_000,
+      ),
     });
   } catch (cause) {
     if (path === "/login" && cause instanceof Error && cause.name === "TimeoutError") {
@@ -92,7 +117,7 @@ async function codexAuthRequest(path = "", method = "GET"): Promise<CodexAuthSta
   if (!response.ok) {
     throw new Error(payload.error || `ChatGPT authentication failed (HTTP ${response.status}).`);
   }
-  return payload;
+  return payload as T;
 }
 
 const MODEL_APIS: ReadonlyArray<{
@@ -174,6 +199,8 @@ export function ModelsSettingsPanel() {
   const [codexAuth, setCodexAuth] = useState<CodexAuthStatus | null>(null);
   const [codexAuthBusy, setCodexAuthBusy] = useState(false);
   const [codexAuthError, setCodexAuthError] = useState<string | null>(null);
+  const [deviceLogin, setDeviceLogin] = useState<CodexDeviceLogin | null>(null);
+  const loginAttemptRef = useRef(0);
   const [modelQuery, setModelQuery] = useState("");
   const modelPreferencesRef = useRef(settings.providerModelPreferences);
   const [modelPreferences, setModelPreferences] = useState(settings.providerModelPreferences);
@@ -242,6 +269,11 @@ export function ModelsSettingsPanel() {
     };
   }, []);
 
+  useEffect(() => () => {
+    // Invalidate the polling loop if the user leaves Models settings.
+    loginAttemptRef.current += 1;
+  }, []);
+
   const refreshSparkyProvider = async () => {
     if (!primaryEnvironment) {
       throw new Error("The local provider is not connected yet. Restart the app and try again.");
@@ -256,17 +288,76 @@ export function ModelsSettingsPanel() {
     }
   };
 
-  const updateCodexAuthentication = async (operation: "login" | "logout") => {
+  const updateCodexAuthentication = async (operation: "login" | "browser" | "logout") => {
+    const attempt = ++loginAttemptRef.current;
     setCodexAuthBusy(true);
     setCodexAuthError(null);
+    setDeviceLogin(null);
     try {
-      const status = await codexAuthRequest(`/${operation}`, "POST");
-      setCodexAuth(status);
-      await refreshSparkyProvider();
+      if (operation === "login") {
+        // Device authorization polls OpenAI directly: it does not depend on
+        // localhost:1455 or a browser tab remaining open after account selection.
+        const device = await codexAuthRequest<CodexDeviceLogin>("/device/start", "POST");
+        if (attempt !== loginAttemptRef.current) return;
+        if (!device.deviceAuthId || !device.userCode || !device.verificationUri) {
+          throw new Error("ChatGPT did not return a valid verification code.");
+        }
+        setDeviceLogin(device);
+        try {
+          if (typeof window.desktopBridge?.openExternal === "function") {
+            // Launch the browser without blocking authorization polling on
+            // Electron's external-shell promise or the browser tab lifetime.
+            void window.desktopBridge.openExternal(device.verificationUri)
+              .then((opened) => {
+                if (!opened) window.open(device.verificationUri, "_blank", "noopener,noreferrer");
+              })
+              .catch(() => undefined);
+          } else {
+            window.open(device.verificationUri, "_blank", "noopener,noreferrer");
+          }
+        } catch {
+          // The verification link remains visible for manual opening.
+        }
+
+        const intervalMs = Math.max(2, Math.min(device.intervalSeconds || 5, 30)) * 1_000;
+        const deadline = Date.now() + Math.min(device.expiresInSeconds || 900, 900) * 1_000;
+        while (Date.now() < deadline && attempt === loginAttemptRef.current) {
+          await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
+          if (attempt !== loginAttemptRef.current) return;
+          const progress = await codexAuthRequest<CodexDeviceLoginProgress>(
+            "/device/poll", "POST",
+            { deviceAuthId: device.deviceAuthId, userCode: device.userCode },
+          );
+          if (progress.authenticated) {
+            if (attempt !== loginAttemptRef.current) return;
+            const status = await codexAuthRequest();
+            if (!status.authenticated) throw new Error("ChatGPT sign-in was not saved.");
+            setCodexAuth(status);
+            await refreshSparkyProvider();
+            return;
+          }
+          if (!progress.pending) throw new Error("ChatGPT declined the verification request.");
+        }
+        if (attempt === loginAttemptRef.current) {
+          throw new Error("ChatGPT verification expired. Select Login with ChatGPT to try again.");
+        }
+      } else {
+        const status = await codexAuthRequest(
+          operation === "browser" ? "/login" : "/logout", "POST",
+        );
+        if (attempt !== loginAttemptRef.current) return;
+        setCodexAuth(status);
+        await refreshSparkyProvider();
+      }
     } catch (error) {
-      setCodexAuthError(error instanceof Error ? error.message : String(error));
+      if (attempt === loginAttemptRef.current) {
+        setCodexAuthError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
-      setCodexAuthBusy(false);
+      if (attempt === loginAttemptRef.current) {
+        setDeviceLogin(null);
+        setCodexAuthBusy(false);
+      }
     }
   };
 
@@ -456,6 +547,43 @@ export function ModelsSettingsPanel() {
                                 ) : null}
                                 Login with ChatGPT
                               </button>
+                              <Popover>
+                                <PopoverTrigger
+                                  render={
+                                    <button
+                                      type="button"
+                                      aria-label="ChatGPT device-code sign-in requirements"
+                                      className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                                    >
+                                      <InfoIcon className="size-3.5" aria-hidden />
+                                    </button>
+                                  }
+                                />
+                                <PopoverPopup
+                                  tooltipStyle
+                                  side="top"
+                                  align="start"
+                                  className="w-64 max-w-[calc(100vw-2rem)]"
+                                >
+                                  <div className="space-y-1.5 p-2 text-xs leading-relaxed">
+                                    <p>
+                                      To log in, enable <strong>Device code sign-in</strong> in
+                                      ChatGPT Settings → Security and login.
+                                    </p>
+                                    <p className="text-muted-foreground">
+                                      Work account? Your workspace admin may need to enable it.
+                                    </p>
+                                    <a
+                                      href={CHATGPT_SECURITY_SETTINGS_URL}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-block font-medium text-foreground underline underline-offset-2 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                                    >
+                                      Open ChatGPT security settings
+                                    </a>
+                                  </div>
+                                </PopoverPopup>
+                              </Popover>
                               {codexAuth?.authenticated ? (
                                 <button
                                   type="button"
@@ -467,10 +595,33 @@ export function ModelsSettingsPanel() {
                                 </button>
                               ) : null}
                             </div>
+                            {deviceLogin ? (
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                Enter code <strong className="select-all font-semibold text-foreground">{deviceLogin.userCode}</strong> at{" "}
+                                <a
+                                  href={deviceLogin.verificationUri}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline underline-offset-2 hover:text-foreground"
+                                >
+                                  ChatGPT verification
+                                </a>
+                              </div>
+                            ) : null}
                             {codexAuthError ? (
-                              <p role="alert" className="mt-1 text-xs text-destructive">
+                              <div role="alert" className="mt-1 text-xs text-destructive">
                                 {codexAuthError}
-                              </p>
+                                {!codexAuth?.authenticated ? (
+                                  <button
+                                    type="button"
+                                    className="ml-2 underline underline-offset-2"
+                                    disabled={codexAuthBusy}
+                                    onClick={() => void updateCodexAuthentication("browser")}
+                                  >
+                                    Try browser login
+                                  </button>
+                                ) : null}
+                              </div>
                             ) : null}
                           </div>
                         ) : null}

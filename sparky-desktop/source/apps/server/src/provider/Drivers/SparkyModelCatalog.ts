@@ -58,6 +58,7 @@ function codexAuthDirectory(environment: NodeJS.ProcessEnv): string | undefined 
 function readCodexOAuthCredentials(environment: NodeJS.ProcessEnv):
   | {
       readonly accessToken: string;
+      readonly accountId: string;
       readonly expiresAt: number;
     }
   | undefined {
@@ -67,27 +68,22 @@ function readCodexOAuthCredentials(environment: NodeJS.ProcessEnv):
     const credentials: unknown = JSON.parse(
       NodeFS.readFileSync(NodePath.join(authDirectory, "auth.json"), "utf8"),
     );
+    // Match the Rust legacy Codex credential writer. The old "siwc" flow
+    // issued a different grant and must never appear as a connected provider.
     if (
       isRecord(credentials) &&
-      credentials.auth_mode === "siwc" &&
+      credentials.auth_mode === "codex_legacy" &&
       isRecord(credentials.tokens) &&
       nonEmptyString(credentials.tokens.access_token) &&
       nonEmptyString(credentials.tokens.refresh_token) &&
-      nonEmptyString(credentials.tokens.scope) &&
-      nonEmptyString(credentials.tokens.client_id) &&
+      nonEmptyString(credentials.tokens.account_id) &&
       typeof credentials.tokens.expires === "number" &&
-      Number.isSafeInteger(credentials.tokens.expires)
+      Number.isSafeInteger(credentials.tokens.expires) &&
+      credentials.tokens.expires > 0
     ) {
-      const scopes = new Set(nonEmptyString(credentials.tokens.scope)!.split(/\s+/u));
-      if (
-        !["offline_access", "resource.invoke", "chatgpt.tokens.use.direct"].every((scope) =>
-          scopes.has(scope),
-        )
-      ) {
-        return undefined;
-      }
       return {
         accessToken: nonEmptyString(credentials.tokens.access_token)!,
+        accountId: nonEmptyString(credentials.tokens.account_id)!,
         expiresAt: credentials.tokens.expires,
       };
     }
@@ -135,7 +131,7 @@ export type SparkyModelDiscovery = {
 type ModelsDevCatalog = Readonly<Record<string, Readonly<Record<string, Record<string, unknown>>>>>;
 
 const REQUEST_TIMEOUT_MS = 12_000;
-const CODEX_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
+const CODEX_MODELS_ENDPOINT = "https://chatgpt.com/backend-api/codex/models";
 
 const CHATGPT_CODEX_MODELS = [
   { id: "gpt-6.1-sol", name: "GPT-6.1 Sol" },
@@ -832,7 +828,11 @@ export async function loadCodexModels(
 
   try {
     const payload = await fetchJson(fetchImplementation, CODEX_MODELS_ENDPOINT, {
-      headers: { Authorization: `Bearer ${credentials.accessToken}` },
+      headers: {
+        Authorization: `Bearer ${credentials.accessToken}`,
+        "chatgpt-account-id": credentials.accountId,
+        originator: "sparky",
+      },
     });
     if (!Array.isArray(payload.models)) return CHATGPT_CODEX_MODELS;
     const metadataByModelId = new Map(

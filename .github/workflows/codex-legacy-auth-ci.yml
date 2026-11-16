@@ -44,8 +44,8 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache: true
-      - name: Test IPv4, IPv6, and failed ChatGPT redirects on Windows
-        run: cargo test --locked -p sparky_ai callback_
+      - name: Test ChatGPT browser and device authorization on Windows
+        run: cargo test --locked -p sparky_ai codex_auth::tests
 
   model-discovery:
     name: Verify ChatGPT provider and model discovery

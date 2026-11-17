@@ -36,6 +36,7 @@ export function VoiceSession({
   const [phase, setPhase] = useState<Phase>("loading");
   const phaseRef = useRef<Phase>("loading");
   const closedRef = useRef(false);
+  const outputCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const needsAttentionRef = useRef(needsAttention);
   const messagesRef = useRef(messages);
   const onSendRef = useRef(onSend);
@@ -58,6 +59,11 @@ export function VoiceSession({
   };
 
   useEffect(() => {
+    // StrictMode may mount, clean up and remount this effect immediately.
+    if (outputCloseTimer.current !== null) {
+      clearTimeout(outputCloseTimer.current);
+      outputCloseTimer.current = null;
+    }
     closedRef.current = false;
     let closed = false;
     let stream: MediaStream | null = null;
@@ -179,7 +185,10 @@ export function VoiceSession({
         stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         });
-        if (closed) return;
+        if (closed) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         inputContext = new AudioContext();
         const source = inputContext.createMediaStreamSource(stream);
         analyser = inputContext.createAnalyser();
@@ -203,7 +212,10 @@ export function VoiceSession({
       transcriber.dispose();
       stream?.getTracks().forEach((track) => track.stop());
       if (inputContext) void inputContext.close();
-      if (audioContext.state !== "closed") void audioContext.close();
+      outputCloseTimer.current = setTimeout(() => {
+        if (audioContext.state !== "closed") void audioContext.close();
+        outputCloseTimer.current = null;
+      }, 0);
     };
   }, [audioContext]);
 

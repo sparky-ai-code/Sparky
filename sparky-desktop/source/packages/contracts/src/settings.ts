@@ -702,6 +702,7 @@ export const ClientSettingsPatch = Schema.Struct({
     ),
   ),
   focusMode: Schema.optionalKey(Schema.Boolean),
+  persistentBrowserProfileEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),

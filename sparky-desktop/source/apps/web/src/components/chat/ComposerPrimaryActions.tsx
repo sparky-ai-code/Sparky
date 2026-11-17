@@ -214,8 +214,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         onClick={onVoiceToggle}
         disabled={!voiceActive && (isConnecting || isSendBusy || isEnvironmentUnavailable || isPreparingWorktree)}
         className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white transition-all hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40 sm:h-8 sm:w-8",
-          voiceActive && "ring-2 ring-blue-400/45",
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40 sm:h-8 sm:w-8",
+          voiceActive && "ring-2 ring-primary/40 ring-offset-2 ring-offset-background",
         )}
       >
         <AudioLinesIcon className={cn("size-5", voiceActive && "animate-pulse")} aria-hidden="true" />

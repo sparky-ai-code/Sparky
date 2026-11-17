@@ -47,6 +47,19 @@ jobs:
             echo "::error::Voice must stay inside the existing chat."
             exit 1
           fi
+      - name: Verify Whisper CDN browser module imports resolve
+        run: |
+          node --input-type=module <<'NODE'
+          const url = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm";
+          const response = await fetch(url, { signal: AbortSignal.timeout(45000) });
+          if (!response.ok) throw new Error("Transformers ESM returned HTTP " + response.status);
+          const js = await response.text();
+          const imports = Array.from(js.matchAll(/(?:from\\s*|import\\s*\\(\\s*)["']([^"']+)["']/g), m => m[1]);
+          const unresolved = imports.filter(spec => !/^(https?:\\/\\/|\\/|\\.\\/|\\.\\.\\/)/.test(spec));
+          if (unresolved.length) throw new Error("Unresolved browser imports: " + unresolved.join(", "));
+          if (!js.includes("export")) throw new Error("CDN did not return an ES module");
+          console.log("Verified " + imports.length + " browser module imports");
+          NODE
       - name: Test inline voice lifecycle, worker cancellation and settings
         run: pnpm --filter @sparky/web exec vp test run --project unit src/voice/voiceCall.logic.test.ts src/voice/voiceEngines.test.ts src/components/settings/VoiceSettings.test.ts
       - name: Test shared settings contract

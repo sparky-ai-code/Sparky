@@ -11,7 +11,11 @@ const currentInvocation = McpInvocationContext.McpInvocationContext as unknown a
   never
 >;
 
-const handlers = {
+const makeHandlers = Effect.gen(function* () {
+  // The broker is a server-scoped service; authenticated invocation remains
+  // request-scoped and must not be captured here.
+  const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+  return {
   sparky_request_plugin_authorization: (input) =>
     Effect.gen(function* () {
       const invocation = yield* currentInvocation;
@@ -26,7 +30,6 @@ const handlers = {
   getPullRequestComments: (input) =>
     Effect.gen(function* () {
       const invocation = yield* currentInvocation;
-      const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
       const result = yield* broker.invoke<{
         comments: unknown[];
         error: string | null;
@@ -53,6 +56,7 @@ const handlers = {
         Effect.succeed({ error: error.detail, pluginId: input.pluginId, action: input.action }),
       ),
     ),
-} satisfies Parameters<typeof PluginToolkit.toLayer>[0];
+  } satisfies Parameters<typeof PluginToolkit.toLayer>[0];
+});
 
-export const PluginToolkitHandlersLive = PluginToolkit.toLayer(handlers);
+export const PluginToolkitHandlersLive = PluginToolkit.toLayer(makeHandlers);

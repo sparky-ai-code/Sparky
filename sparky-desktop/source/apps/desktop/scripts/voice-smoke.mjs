@@ -10,8 +10,7 @@ const sourceRoot = resolve(here, "../../..");
 const port = 5741;
 const url = "http://127.0.0.1:" + port + "/voice-smoke.html";
 const server = spawn("pnpm", [
-  "--filter", "@sparky/web", "exec", "vite", "--host", "127.0.0.1",
-  "--port", String(port), "--strictPort",
+  "--filter", "@sparky/web", "run", "dev",
 ], {
   cwd: sourceRoot,
   stdio: ["ignore", "pipe", "pipe"],

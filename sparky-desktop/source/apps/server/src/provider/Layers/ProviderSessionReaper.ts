@@ -128,7 +128,7 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
       ),
     );
 
-    const start: ProviderSessionReaperShape["start"] = ()
+    const start: ProviderSessionReaperShape["start"] = () =>
       Effect.gen(function* () {
         // A server restart cannot resume an in-flight turn safely. Reconcile
         // persisted provider sessions before accepting new work, and stop live

@@ -88,7 +88,12 @@ export function VoiceCall({
     cancelRecordingRef.current = cancelRecording;
 
     const listen = () => {
-      if (closed || mutedRef.current || !stream || !analyser) return;
+      if (closed || !stream || !analyser) return;
+      if (mutedRef.current) {
+        changePhase("listening");
+        setDetail("Microphone muted");
+        return;
+      }
       if (recorder?.state === "recording") return;
       if (typeof MediaRecorder === "undefined") {
         changePhase("error");

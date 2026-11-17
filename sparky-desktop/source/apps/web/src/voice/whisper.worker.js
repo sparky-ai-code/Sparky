@@ -1,7 +1,9 @@
 // Local, on-demand Whisper inference. Microphone samples never leave this worker.
 // The model and the pinned Transformers.js runtime are downloaded and cached by the browser.
+// Use the CDN's ESM build, which rewrites package dependencies into absolute module
+// URLs. Importing the raw dist file left "onnxruntime-common" unresolved in Electron.
 const TRANSFORMERS_URL =
-  "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.web.min.js";
+  "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm";
 let modelPromise;
 
 function model() {

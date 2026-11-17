@@ -213,7 +213,7 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
-import { VoiceCall } from "../voice/VoiceCall";
+import { VoiceSession } from "../voice/VoiceSession";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -1231,7 +1231,10 @@ function ChatViewContent(props: ChatViewProps) {
   const composerRef = useComposerHandleContext() ?? localComposerRef;
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
-  const [voiceCall, setVoiceCall] = useState<{ context: AudioContext; threadKey: string } | null>(null);
+  const [voiceSession, setVoiceSession] = useState<{ context: AudioContext; threadKey: string } | null>(null);
+  useEffect(() => {
+    if (voiceSession && voiceSession.threadKey !== routeThreadKey) setVoiceSession(null);
+  }, [routeThreadKey, voiceSession]);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
   const [steeredMessageIds, setSteeredMessageIds] = useState<ReadonlySet<string>>(() => new Set());
   const [steeringStartedAt, setSteeringStartedAt] = useState<string | null>(null);
@@ -5807,12 +5810,20 @@ function ChatViewContent(props: ChatViewProps) {
                         composerTerminalContextsRef={composerTerminalContextsRef}
                         composerElementContextsRef={composerElementContextsRef}
                         onSend={onSend}
-                        onVoiceCall={() => {
-                          if (voiceCall || typeof AudioContext === "undefined") return;
+                        onVoiceToggle={() => {
+                          if (voiceSession) {
+                            setVoiceSession(null);
+                            return;
+                          }
+                          if (typeof AudioContext === "undefined") {
+                            toastManager.add({ type: "error", title: "Audio playback is unavailable." });
+                            return;
+                          }
                           const context = new AudioContext();
-                          void context.resume();
-                          setVoiceCall({ context, threadKey: routeThreadKey });
+                          void context.resume().catch(() => {});
+                          setVoiceSession({ context, threadKey: routeThreadKey });
                         }}
+                        voiceActive={voiceSession?.threadKey === routeThreadKey}
                         onInterrupt={onInterrupt}
                         onImplementPlanInNewThread={onImplementPlanInNewThread}
                         onRespondToApproval={onRespondToApproval}
@@ -6008,9 +6019,9 @@ function ChatViewContent(props: ChatViewProps) {
         </RightPanelSheet>
       ) : null}
 
-      {voiceCall && voiceCall.threadKey === routeThreadKey ? (
-        <VoiceCall
-          audioContext={voiceCall.context}
+      {voiceSession && voiceSession.threadKey === routeThreadKey ? (
+        <VoiceSession
+          audioContext={voiceSession.context}
           messages={timelineMessages}
           busy={timelineActiveTurnInProgress || isSendBusy || isConnecting}
           settled={latestTurnSettled}
@@ -6018,8 +6029,8 @@ function ChatViewContent(props: ChatViewProps) {
           voice={settings.voiceSelection}
           speed={settings.voiceSpeed}
           onSend={async (text) => Boolean(await onSend(undefined, text))}
-          onInterrupt={() => void onInterrupt()}
-          onClose={() => setVoiceCall(null)}
+          onError={(message) => toastManager.add({ type: "error", title: message })}
+          onClose={() => setVoiceSession(null)}
         />
       ) : null}
 

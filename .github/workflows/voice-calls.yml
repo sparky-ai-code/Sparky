@@ -41,7 +41,13 @@ jobs:
         run: |
           node --check apps/web/src/voice/tinyVoca.worker.js
           node --check apps/web/src/voice/whisper.worker.js
-      - name: Test voice call lifecycle, worker cancellation and settings
+      - name: Guard against a separate voice call screen or phone button
+        run: |
+          if grep -Eq 'PhoneIcon|VoiceCall|voice call' apps/web/src/components/chat/ChatComposer.tsx apps/web/src/voice/VoiceSession.tsx; then
+            echo "::error::Voice must stay inside the existing chat."
+            exit 1
+          fi
+      - name: Test inline voice lifecycle, worker cancellation and settings
         run: pnpm --filter @sparky/web exec vp test run --project unit src/voice/voiceCall.logic.test.ts src/voice/voiceEngines.test.ts src/components/settings/VoiceSettings.test.ts
       - name: Test shared settings contract
         run: pnpm --filter @sparky/contracts exec vp test run src/settings.test.ts

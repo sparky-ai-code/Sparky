@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   latestNewAssistant,
   microphoneRms,
+  shouldShowInlineVoiceAction,
   shouldFinishUtterance,
   textForSpeech,
 } from "./voiceCall.logic";
@@ -22,6 +23,15 @@ describe("voice-call lifecycle helpers", () => {
     expect(output).toContain("Done here");
     expect(output).not.toContain("secretCall");
     expect(output).not.toContain("example.com");
+  });
+
+  it("only replaces an empty send action, preserving text, attachments, stop and approval controls", () => {
+    const empty = { isRunning: false, pendingAction: false, showPlanFollowUpPrompt: false, hasSendableContent: false };
+    expect(shouldShowInlineVoiceAction(empty)).toBe(true);
+    expect(shouldShowInlineVoiceAction({ ...empty, hasSendableContent: true })).toBe(false);
+    expect(shouldShowInlineVoiceAction({ ...empty, isRunning: true })).toBe(false);
+    expect(shouldShowInlineVoiceAction({ ...empty, pendingAction: true })).toBe(false);
+    expect(shouldShowInlineVoiceAction({ ...empty, showPlanFollowUpPrompt: true })).toBe(false);
   });
 
   it("finishes only after silence or maximum recording duration", () => {

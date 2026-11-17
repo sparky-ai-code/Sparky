@@ -1,9 +1,10 @@
 import { memo, type PointerEventHandler } from "react";
-import { ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
+import { AudioLinesIcon, ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
+import { shouldShowInlineVoiceAction } from "../../voice/voiceCall.logic";
 
 interface PendingActionState {
   questionIndex: number;
@@ -15,6 +16,8 @@ interface PendingActionState {
 
 interface ComposerPrimaryActionsProps {
   compact: boolean;
+  voiceActive?: boolean;
+  onVoiceToggle?: () => void;
   pendingAction: PendingActionState | null;
   isRunning: boolean;
   showPlanFollowUpPrompt: boolean;
@@ -54,6 +57,8 @@ const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
 
 export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   compact,
+  voiceActive = false,
+  onVoiceToggle,
   pendingAction,
   isRunning,
   showPlanFollowUpPrompt,
@@ -190,6 +195,31 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           </MenuPopup>
         </Menu>
       </div>
+    );
+  }
+
+  if (onVoiceToggle && (voiceActive || shouldShowInlineVoiceAction({
+    isRunning,
+    pendingAction: Boolean(pendingAction),
+    showPlanFollowUpPrompt,
+    hasSendableContent,
+  }))) {
+    return (
+      <button
+        type="button"
+        data-voice-input-action="true"
+        aria-label={voiceActive ? "Stop voice input" : "Start voice input"}
+        aria-pressed={voiceActive}
+        title={voiceActive ? "Stop voice input" : "Speak to Sparky"}
+        onClick={onVoiceToggle}
+        disabled={!voiceActive && (isConnecting || isSendBusy || isEnvironmentUnavailable || isPreparingWorktree)}
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white transition-all hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40 sm:h-8 sm:w-8",
+          voiceActive && "ring-2 ring-blue-400/45",
+        )}
+      >
+        <AudioLinesIcon className={cn("size-5", voiceActive && "animate-pulse")} aria-hidden="true" />
+      </button>
     );
   }
 

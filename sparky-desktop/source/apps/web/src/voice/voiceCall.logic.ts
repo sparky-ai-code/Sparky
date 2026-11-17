@@ -26,6 +26,15 @@ export function latestNewAssistant(
   return null;
 }
 
+export function shouldShowInlineVoiceAction(input: {
+  isRunning: boolean;
+  pendingAction: boolean;
+  showPlanFollowUpPrompt: boolean;
+  hasSendableContent: boolean;
+}): boolean {
+  return !input.isRunning && !input.pendingAction && !input.showPlanFollowUpPrompt && !input.hasSendableContent;
+}
+
 export function microphoneRms(samples: Float32Array): number {
   if (samples.length === 0) return 0;
   let squares = 0;

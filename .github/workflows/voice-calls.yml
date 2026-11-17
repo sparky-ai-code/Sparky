@@ -5,6 +5,7 @@ on:
     paths:
       - "sparky-desktop/source/packages/contracts/src/settings.ts"
       - "sparky-desktop/source/apps/web/src/voice/**"
+      - "sparky-desktop/source/apps/desktop/src/electron/ElectronProtocol*"
       - "sparky-desktop/source/apps/web/src/components/chat/ChatComposer.tsx"
       - "sparky-desktop/source/apps/web/src/components/ChatView.tsx"
       - "sparky-desktop/source/apps/web/src/components/settings/VoiceSettings*"
@@ -62,6 +63,8 @@ jobs:
           NODE
       - name: Test inline voice lifecycle, worker cancellation and settings
         run: pnpm --filter @sparky/web exec vp test run --project unit src/voice/voiceCall.logic.test.ts src/voice/voiceEngines.test.ts src/components/settings/VoiceSettings.test.ts
+      - name: Test Electron desktop speech WebAssembly security policy
+        run: pnpm --filter @sparky/desktop exec vp test run src/electron/ElectronProtocol.test.ts
       - name: Test shared settings contract
         run: pnpm --filter @sparky/contracts exec vp test run src/settings.test.ts
       # Track existing main-branch compiler problems separately: fail on any

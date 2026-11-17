@@ -368,6 +368,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
   voiceActive: boolean;
+  voiceStatus: string;
   onVoiceToggle: () => void;
   activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
   activeThreadProviderDisplayName: string | null;
@@ -401,6 +402,11 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
       ) : null}
       {props.isPreparingWorktree ? (
         <span className="text-muted-foreground/70 text-xs">Preparing worktree...</span>
+      ) : null}
+      {props.voiceActive && props.voiceStatus ? (
+        <span role="status" aria-live="polite" className="max-w-36 truncate text-xs text-muted-foreground" title={props.voiceStatus}>
+          {props.voiceStatus}
+        </span>
       ) : null}
       <ComposerPrimaryActions
         compact={props.compact}
@@ -522,6 +528,7 @@ export interface ChatComposerProps {
   onSend: (e?: { preventDefault: () => void }) => void;
   onVoiceToggle: () => void;
   voiceActive: boolean;
+  voiceStatus: string;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
@@ -606,6 +613,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onSend,
     onVoiceToggle,
     voiceActive,
+    voiceStatus,
     onInterrupt,
     onImplementPlanInNewThread,
     onRespondToApproval,
@@ -2533,6 +2541,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
                   voiceActive={voiceActive}
+                  voiceStatus={voiceStatus}
                   onVoiceToggle={onVoiceToggle}
                   activeContextWindow={null}
                   activeThreadProviderDisplayName={null}

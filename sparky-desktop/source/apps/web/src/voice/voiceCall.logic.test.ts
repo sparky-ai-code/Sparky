@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   latestNewAssistant,
   microphoneRms,
+  speechThreshold,
+  transcribeAndSend,
   shouldShowInlineVoiceAction,
   shouldFinishUtterance,
   textForSpeech,
@@ -32,6 +34,27 @@ describe("voice-call lifecycle helpers", () => {
     expect(shouldShowInlineVoiceAction({ ...empty, isRunning: true })).toBe(false);
     expect(shouldShowInlineVoiceAction({ ...empty, pendingAction: true })).toBe(false);
     expect(shouldShowInlineVoiceAction({ ...empty, showPlanFollowUpPrompt: true })).toBe(false);
+  });
+
+  it("detects normal, quiet microphone speech that the old 0.024 threshold ignored", () => {
+    expect(speechThreshold(0.001)).toBe(0.0035);
+    expect(0.008).toBeGreaterThan(speechThreshold(0.001));
+    expect(speechThreshold(0.025)).toBeGreaterThan(0.025);
+  });
+
+  it("transcribes, automatically sends the recognized text, and surfaces the transcript", async () => {
+    const calls: string[] = [];
+    const send = async (text: string) => { calls.push("sent:" + text); return true; };
+    const result = await transcribeAndSend(new Float32Array([0.01]), async () => "  hello Sparky  ", send, (text) => calls.push("heard:" + text));
+    expect(result).toEqual({ transcript: "hello Sparky", sent: true });
+    expect(calls).toEqual(["heard:hello Sparky", "sent:hello Sparky"]);
+  });
+
+  it("does not send silence or empty transcripts", async () => {
+    let sends = 0;
+    const result = await transcribeAndSend(new Float32Array(1), async () => "   ", async () => { sends++; return true; });
+    expect(result).toEqual({ transcript: "", sent: false });
+    expect(sends).toBe(0);
   });
 
   it("finishes only after silence or maximum recording duration", () => {

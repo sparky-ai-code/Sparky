@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { decodeRecordedSpeech, LocalSpeechTranscriber, TinyVocaSpeaker } from "./voiceEngines";
-import { latestNewAssistant, microphoneRms, shouldFinishUtterance, textForSpeech } from "./voiceCall.logic";
+import { latestNewAssistant, microphoneRms, shouldFinishUtterance, speechThreshold, textForSpeech, transcribeAndSend } from "./voiceCall.logic";
 
 type Phase = "loading" | "listening" | "recording" | "transcribing" | "waiting" | "speaking" | "paused";
 
@@ -13,6 +13,7 @@ export interface VoiceSessionProps {
   voice: "F2" | "M2";
   speed: number;
   onSend: (transcript: string) => Promise<boolean>;
+  onStatus: (message: string) => void;
   onError: (message: string) => void;
   onClose: () => void;
 }
@@ -30,6 +31,7 @@ export function VoiceSession({
   voice,
   speed,
   onSend,
+  onStatus,
   onError,
   onClose,
 }: VoiceSessionProps) {
@@ -40,6 +42,7 @@ export function VoiceSession({
   const needsAttentionRef = useRef(needsAttention);
   const messagesRef = useRef(messages);
   const onSendRef = useRef(onSend);
+  const onStatusRef = useRef(onStatus);
   const onErrorRef = useRef(onError);
   const onCloseRef = useRef(onClose);
   const speakerRef = useRef<TinyVocaSpeaker | null>(null);
@@ -50,6 +53,7 @@ export function VoiceSession({
   messagesRef.current = messages;
   needsAttentionRef.current = needsAttention;
   onSendRef.current = onSend;
+  onStatusRef.current = onStatus;
   onErrorRef.current = onError;
   onCloseRef.current = onClose;
 
@@ -73,15 +77,18 @@ export function VoiceSession({
     let recorder: MediaRecorder | null = null;
     let epoch = 0;
 
+    const report = (message: string) => {
+      if (!closed) onStatusRef.current(message);
+    };
     const fail = (error: unknown) => {
       if (closed) return;
       const message = error instanceof Error ? error.message : "Voice could not start.";
+      report(message);
       onErrorRef.current(message);
       onCloseRef.current();
     };
-    const speaker = new TinyVocaSpeaker(audioContext, () => {});
-    const transcriber = new LocalSpeechTranscriber(() => {});
-    speakerRef.current = speaker;
+    let speaker: TinyVocaSpeaker | null = null;
+    let transcriber: LocalSpeechTranscriber | null = null;
 
     const cancelRecording = () => {
       epoch += 1;
@@ -112,6 +119,8 @@ export function VoiceSession({
       const startedAt = performance.now();
       let speechDetected = false;
       let lastLoudAt = startedAt;
+      let noiseFloor = 0.001;
+      let loudFrames = 0;
       const wave = new Float32Array(analyser.fftSize);
 
       current.ondataavailable = (event) => {
@@ -126,23 +135,33 @@ export function VoiceSession({
           return;
         }
         changePhase("transcribing");
+        report("Transcribing…");
         void (async () => {
           try {
             const pcm = await decodeRecordedSpeech(new Blob(chunks, { type: current.mimeType }));
             if (closed || epoch !== thisEpoch) return;
-            const transcript = (await transcriber.transcribe(pcm)).trim();
+            const engine = transcriber;
+            if (!engine) throw new Error("Speech recognition is not initialized.");
+            baselineAssistantIdRef.current =
+              [...messagesRef.current].reverse().find((item) => item.role === "assistant")?.id ?? null;
+            const { transcript, sent } = await transcribeAndSend(
+              pcm,
+              (audio) => engine.transcribe(audio),
+              async (text) => {
+                if (closed || epoch !== thisEpoch) return false;
+                changePhase("waiting");
+                report("Sending spoken message…");
+                return onSendRef.current(text);
+              },
+              () => report("Recognized speech. Sending…"),
+            );
             if (closed || epoch !== thisEpoch) return;
             if (!transcript) {
+              report("Didn't catch that. Listening…");
               listen();
               return;
             }
-            baselineAssistantIdRef.current =
-              [...messagesRef.current].reverse().find((item) => item.role === "assistant")?.id ?? null;
-            changePhase("waiting");
-            const sent = await onSendRef.current(transcript);
-            if (!closed && epoch === thisEpoch && !sent) {
-              fail(new Error("Sparky could not send your spoken message."));
-            }
+            if (!sent) fail(new Error("Sparky could not send your spoken message."));
           } catch (error) {
             fail(error);
           }
@@ -156,15 +175,25 @@ export function VoiceSession({
         return;
       }
       changePhase("listening");
+      report("Listening…");
       const tick = () => {
         if (closed || current.state !== "recording" || !analyser) return;
         analyser.getFloatTimeDomainData(wave);
         const rms = microphoneRms(wave);
         const now = performance.now();
-        if (rms > 0.024) {
-          lastLoudAt = now;
-          speechDetected = true;
-          if (phaseRef.current === "listening") changePhase("recording");
+        if (rms > speechThreshold(noiseFloor)) {
+          loudFrames++;
+          if (loudFrames >= 2) {
+            lastLoudAt = now;
+            speechDetected = true;
+            if (phaseRef.current === "listening") {
+              changePhase("recording");
+              report("Hearing you…");
+            }
+          }
+        } else {
+          loudFrames = 0;
+          if (!speechDetected) noiseFloor = noiseFloor * 0.98 + rms * 0.02;
         }
         if (shouldFinishUtterance(now - startedAt, now - lastLoudAt, speechDetected)) {
           current.stop();
@@ -178,6 +207,7 @@ export function VoiceSession({
 
     void (async () => {
       try {
+        report("Requesting microphone access…");
         if (!navigator.mediaDevices?.getUserMedia) {
           throw new Error("Microphone access is unavailable.");
         }
@@ -190,12 +220,18 @@ export function VoiceSession({
           return;
         }
         inputContext = new AudioContext();
+        if (inputContext.state === "suspended") await inputContext.resume();
+        if (closed) return;
         const source = inputContext.createMediaStreamSource(stream);
         analyser = inputContext.createAnalyser();
         analyser.fftSize = 2048;
         source.connect(analyser);
-        // Start recording as soon as the microphone is ready. Model downloads
-        // continue separately, so first-use startup never blocks speaking.
+        // Initializing Workers can throw synchronously if Electron blocks their
+        // script or worker origins. Handle that as a visible error, not a blank UI.
+        speaker = new TinyVocaSpeaker(audioContext, report);
+        speakerRef.current = speaker;
+        transcriber = new LocalSpeechTranscriber(report);
+        // The microphone can start immediately; model downloads occur in parallel.
         void Promise.all([speaker.load(), transcriber.load()]).catch(fail);
         if (!closed) listen();
       } catch (error) {
@@ -210,8 +246,8 @@ export function VoiceSession({
       listenRef.current = null;
       cancelRecordingRef.current = null;
       speakerRef.current = null;
-      speaker.dispose();
-      transcriber.dispose();
+      speaker?.dispose();
+      transcriber?.dispose();
       stream?.getTracks().forEach((track) => track.stop());
       if (inputContext) void inputContext.close();
       outputCloseTimer.current = setTimeout(() => {
@@ -229,6 +265,7 @@ export function VoiceSession({
         cancelRecordingRef.current?.();
         speakerRef.current?.stop();
         changePhase("paused");
+        onStatusRef.current("Review the request in chat…");
       }
     } else if (phase === "paused") {
       listenRef.current?.();
@@ -246,6 +283,7 @@ export function VoiceSession({
       return;
     }
     changePhase("speaking");
+    onStatusRef.current("Speaking…");
     void speakerRef.current?.speak(speechText, voice, speed).then(
       () => {
         if (!closedRef.current && phaseRef.current === "speaking") listenRef.current?.();

@@ -85,6 +85,8 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "'self'",
     `${input.scheme}:`,
     "'unsafe-inline'",
+    // Both local voice engines compile WebAssembly. Do not grant JS 'unsafe-eval'.
+    "'wasm-unsafe-eval'",
     ...(neonAuthOrigin ? [neonAuthOrigin] : []),
     "https://challenges.cloudflare.com",
     // Pinned, on-demand Tiny Voca and local Whisper browser runtimes.

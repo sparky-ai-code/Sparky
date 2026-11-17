@@ -82,7 +82,7 @@ describe("ElectronProtocol", () => {
           assert.equal(yield* Effect.promise(() => response.text()), "ok");
           assert.include(
             response.headers.get("content-security-policy") ?? "",
-            "script-src 'self' t3code-dev: 'unsafe-inline' https://auth.sparky.codes https://challenges.cloudflare.com",
+            "script-src 'self' t3code-dev: 'unsafe-inline' 'wasm-unsafe-eval' https://auth.sparky.codes https://challenges.cloudflare.com",
           );
           assert.include(
             response.headers.get("content-security-policy") ?? "",
@@ -238,9 +238,12 @@ describe("ElectronProtocol", () => {
       "'self'",
       "t3code:",
       "'unsafe-inline'",
+      "'wasm-unsafe-eval'",
       "https://auth.sparky.codes",
       "https://challenges.cloudflare.com",
+      "https://cdn.jsdelivr.net",
     ]);
+    assert.notInclude(directives["script-src"], "'unsafe-eval'");
     assert.deepEqual(directives["connect-src"], ["'self'", "http:", "https:", "ws:", "wss:"]);
     assert.deepEqual(directives["img-src"], [
       "'self'",

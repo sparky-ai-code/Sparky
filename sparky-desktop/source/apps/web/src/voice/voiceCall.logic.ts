@@ -35,6 +35,26 @@ export function shouldShowInlineVoiceAction(input: {
   return !input.isRunning && !input.pendingAction && !input.showPlanFollowUpPrompt && !input.hasSendableContent;
 }
 
+/**
+ * Normal speech can have RMS under 0.024 on noise-suppressed microphones.
+ * Use a low floor with modest adaptation to the ambient noise level instead.
+ */
+export function speechThreshold(noiseFloorRms: number): number {
+  return Math.max(0.0035, Math.min(0.025, noiseFloorRms * 2.8));
+}
+
+export async function transcribeAndSend(
+  samples: Float32Array,
+  transcribe: (samples: Float32Array) => Promise<string>,
+  send: (transcript: string) => Promise<boolean>,
+  onTranscript?: (transcript: string) => void,
+): Promise<{ transcript: string; sent: boolean }> {
+  const transcript = (await transcribe(samples)).trim();
+  if (!transcript) return { transcript: "", sent: false };
+  onTranscript?.(transcript);
+  return { transcript, sent: await send(transcript) };
+}
+
 export function microphoneRms(samples: Float32Array): number {
   if (samples.length === 0) return 0;
   let squares = 0;

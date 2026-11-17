@@ -1232,6 +1232,7 @@ function ChatViewContent(props: ChatViewProps) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [voiceSession, setVoiceSession] = useState<{ context: AudioContext; threadKey: string } | null>(null);
+  const [voiceStatus, setVoiceStatus] = useState("");
   useEffect(() => {
     if (voiceSession && voiceSession.threadKey !== routeThreadKey) setVoiceSession(null);
   }, [routeThreadKey, voiceSession]);
@@ -5821,9 +5822,11 @@ function ChatViewContent(props: ChatViewProps) {
                           }
                           const context = new AudioContext();
                           void context.resume().catch(() => {});
+                          setVoiceStatus("Starting voice…");
                           setVoiceSession({ context, threadKey: routeThreadKey });
                         }}
                         voiceActive={voiceSession?.threadKey === routeThreadKey}
+                        voiceStatus={voiceStatus}
                         onInterrupt={onInterrupt}
                         onImplementPlanInNewThread={onImplementPlanInNewThread}
                         onRespondToApproval={onRespondToApproval}
@@ -6029,6 +6032,7 @@ function ChatViewContent(props: ChatViewProps) {
           voice={settings.voiceSelection}
           speed={settings.voiceSpeed}
           onSend={async (text) => Boolean(await onSend(undefined, text))}
+          onStatus={setVoiceStatus}
           onError={(message) => toastManager.add({ type: "error", title: message })}
           onClose={() => setVoiceSession(null)}
         />

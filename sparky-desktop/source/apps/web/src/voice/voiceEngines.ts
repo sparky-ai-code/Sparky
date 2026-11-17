@@ -59,8 +59,7 @@ export class TinyVocaSpeaker {
         if (!this.ready) this.rejectReady(error);
         if (this.active && this.active.id === data.id) {
           const active = this.active;
-          this.stop();
-          active.reject(error);
+          this.failActive(error);
         }
         return;
       }
@@ -96,8 +95,7 @@ export class TinyVocaSpeaker {
       if (!this.ready) this.rejectReady(error);
       const active = this.active;
       if (active) {
-        this.stop();
-        active.reject(error);
+        this.failActive(error);
       }
     };
     this.worker.postMessage({ type: "load" });
@@ -125,6 +123,18 @@ export class TinyVocaSpeaker {
     });
   }
 
+  private failActive(error: Error): void {
+    const active = this.active;
+    this.active = null;
+    if (!active) return;
+    for (const source of active.sources) {
+      source.onended = null;
+      try { source.stop(); } catch { /* Already finished. */ }
+    }
+    active.sources.clear();
+    active.reject(error);
+  }
+
   stop(): void {
     const active = this.active;
     this.active = null;
@@ -138,6 +148,7 @@ export class TinyVocaSpeaker {
       }
     }
     active.sources.clear();
+    if (!this.disposed) this.worker.postMessage({ type: "cancel", id: active.id });
     active.resolve();
   }
 

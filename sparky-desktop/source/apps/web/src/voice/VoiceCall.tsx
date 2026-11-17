@@ -224,7 +224,14 @@ export function VoiceCall({
     setDetail("Sparky is speaking");
     void speakerRef.current?.speak(text, voice, speed).then(
       () => {
-        if (!closedRef.current && phaseRef.current === "speaking") resumeRef.current?.();
+        if (!closedRef.current && phaseRef.current === "speaking") {
+          if (mutedRef.current) {
+            changePhase("listening");
+            setDetail("Microphone muted");
+          } else {
+            resumeRef.current?.();
+          }
+        }
       },
       (error: unknown) => {
         if (!closedRef.current) {
@@ -251,7 +258,12 @@ export function VoiceCall({
   const interrupt = () => {
     speakerRef.current?.stop();
     if (phaseRef.current === "waiting") onInterrupt();
-    resumeRef.current?.();
+    if (mutedRef.current) {
+      changePhase("listening");
+      setDetail("Microphone muted");
+    } else {
+      resumeRef.current?.();
+    }
   };
   const status =
     phase === "loading" ? "Connecting"

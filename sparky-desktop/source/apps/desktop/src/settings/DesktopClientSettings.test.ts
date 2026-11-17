@@ -36,6 +36,8 @@ const clientSettings: ClientSettings = {
   sidebarThreadPreviewCount: 6,
   sidebarThreadsGroupedByProject: false,
   streamingTextAnimation: "lift",
+  voiceSelection: "F2",
+  voiceSpeed: 1,
   timestampFormat: "24-hour",
   modelSelectorStyle: "menu",
   pullRequestReviewModelSelection: null,

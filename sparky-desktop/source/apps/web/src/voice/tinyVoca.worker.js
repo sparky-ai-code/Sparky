@@ -22,6 +22,7 @@ const TABLES = [
 const DATA = ["lexicon.tsv", "align.json", "g2p.json", "g2p.npz", "homographs.json"];
 let pyodide, phonemize, session, config;
 let initialized;
+const cancelled = new Set();
 const status = (text) => postMessage({ type: "status", text });
 
 async function download(url) {
@@ -145,18 +146,29 @@ async function speak(data) {
   let count = 0;
   const text = data.text.trim().replace(/([^.!?…,;:])$/, "$1.");
   for (const sentence of sentences(text)) {
+    if (cancelled.has(data.id)) break;
     for (const phones of fit(sentence)) {
+      if (cancelled.has(data.id)) break;
       const audio = (await synthesize(phones, data.voice, data.speed)).slice();
+      if (cancelled.has(data.id)) break;
       limitPeak(audio);
       postMessage({ type: "sentence", id: data.id, audio, sampleRate: config.sample_rate }, [audio.buffer]);
       count++;
     }
+  }
+  if (cancelled.has(data.id)) {
+    cancelled.delete(data.id);
+    return;
   }
   if (!count) throw new Error("Tiny Voca currently supports English text only.");
   postMessage({ type: "done", id: data.id });
 }
 
 onmessage = async ({ data }) => {
+  if (data.type === "cancel") {
+    cancelled.add(data.id);
+    return;
+  }
   try {
     await init();
     if (data.type === "speak") await speak(data);

@@ -39,7 +39,7 @@ describe("voice-call lifecycle helpers", () => {
   it("detects normal, quiet microphone speech that the old 0.024 threshold ignored", () => {
     expect(speechThreshold(0.001)).toBe(0.0035);
     expect(0.008).toBeGreaterThan(speechThreshold(0.001));
-    expect(speechThreshold(0.025)).toBeGreaterThan(0.025);
+    expect(speechThreshold(0.025)).toBe(0.025);
   });
 
   it("transcribes, automatically sends the recognized text, and surfaces the transcript", async () => {

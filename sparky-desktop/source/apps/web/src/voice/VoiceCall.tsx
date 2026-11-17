@@ -17,6 +17,7 @@ export interface VoiceCallProps {
   messages: ReadonlyArray<{ id: string; role: string; text: string; streaming?: boolean }>;
   busy: boolean;
   settled: boolean;
+  needsAttention: boolean;
   voice: "F2" | "M2";
   speed: number;
   onSend: (transcript: string) => Promise<boolean>;
@@ -30,6 +31,7 @@ export function VoiceCall({
   messages,
   busy,
   settled,
+  needsAttention,
   voice,
   speed,
   onSend,
@@ -246,6 +248,13 @@ export function VoiceCall({
       },
     );
   }, [busy, messages, phase, settled, speed, voice]);
+
+  useEffect(() => {
+    if (needsAttention) {
+      setMinimized(true);
+      setDetail("Sparky needs your input in the chat.");
+    }
+  }, [needsAttention]);
 
   const toggleMute = () => {
     const next = !mutedRef.current;

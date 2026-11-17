@@ -6014,6 +6014,7 @@ function ChatViewContent(props: ChatViewProps) {
           messages={timelineMessages}
           busy={timelineActiveTurnInProgress || isSendBusy || isConnecting}
           settled={latestTurnSettled}
+          needsAttention={Boolean(activePendingApproval || activePendingUserInput)}
           voice={settings.voiceSelection}
           speed={settings.voiceSpeed}
           onSend={async (text) => Boolean(await onSend(undefined, text))}

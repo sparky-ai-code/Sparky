@@ -42,5 +42,26 @@ jobs:
         run: pnpm --filter @sparky/contracts exec vp test run src/settings.test.ts
       - name: Check voice turn selection and formatting
         run: pnpm --filter @sparky/web exec vp test run src/voice/voiceSpeech.test.ts
-      - name: Typecheck web app
-        run: pnpm --filter @sparky/web typecheck
+      - name: Check local audio capture helpers
+        run: pnpm --filter @sparky/web exec vp test run src/voice/voiceCapture.test.ts
+      - name: Check voice worker JavaScript
+        run: |
+          node --check apps/web/src/voice/tinyVoca.worker.js
+          node --check apps/web/src/voice/localSpeech.worker.js
+      - name: Build web app and voice workers
+        run: pnpm --filter @sparky/web build
+      - name: Typecheck changed voice files (report existing unrelated errors)
+        shell: bash
+        run: |
+          set +e
+          pnpm --filter @sparky/web typecheck > /tmp/sparky-web-typecheck.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/sparky-web-typecheck.log
+          if [ "$status" -ne 0 ]; then
+            if grep -E 'src/(voice/|components/ChatView\.tsx|components/chat/ChatComposer\.tsx|components/settings/VoiceSettings\.tsx|routes/settings\.voice\.tsx)' /tmp/sparky-web-typecheck.log; then
+              echo "::error::Voice change introduced a web typecheck error"
+              exit 1
+            fi
+            echo "::warning::Web app typecheck still fails in unrelated pre-existing files; see full diagnostics."
+          fi

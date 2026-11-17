@@ -194,7 +194,9 @@ export function VoiceSession({
         analyser = inputContext.createAnalyser();
         analyser.fftSize = 2048;
         source.connect(analyser);
-        await Promise.all([speaker.load(), transcriber.load()]);
+        // Start recording as soon as the microphone is ready. Model downloads
+        // continue separately, so first-use startup never blocks speaking.
+        void Promise.all([speaker.load(), transcriber.load()]).catch(fail);
         if (!closed) listen();
       } catch (error) {
         fail(error);

@@ -60,7 +60,7 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
   const listCalls = yield* Ref.make(0);
   const listFailure = yield* Ref.make<ManagedRelay.ManagedRelayClientError | null>(null);
   const secondListCall = yield* Deferred.make<void>();
-  const clerkToken = yield* Ref.make<string | null>("clerk-token");
+  const accountToken = yield* Ref.make<string | null>("clerk-token");
   const wakeups = yield* SubscriptionRef.make<{
     readonly sequence: number;
     readonly reason: "application-active" | "credentials-changed";
@@ -126,7 +126,7 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
         Layer.succeed(
           ClientCapabilities.CloudSession,
           ClientCapabilities.CloudSession.of({
-            clerkToken: Ref.get(clerkToken).pipe(
+            accountToken: Ref.get(accountToken).pipe(
               Effect.flatMap((token) =>
                 token === null
                   ? Effect.fail(
@@ -158,7 +158,7 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
     layer,
     listCalls,
     listFailure,
-    clerkToken,
+    accountToken,
     networkStatus,
     secondListCall,
     statusRequests,
@@ -282,7 +282,7 @@ describe("RelayEnvironmentDiscovery", () => {
           Layer.mergeAll(
             Layer.succeed(ManagedRelay.ManagedRelayClient, client),
             Layer.succeed(ClientCapabilities.CloudSession, {
-              clerkToken: Effect.succeed("clerk-token"),
+              accountToken: Effect.succeed("clerk-token"),
             }),
             Layer.succeed(Connectivity.Connectivity, {
               status: SubscriptionRef.get(networkStatus),
@@ -380,7 +380,7 @@ describe("RelayEnvironmentDiscovery", () => {
       const harness = yield* makeHarness();
       yield* Effect.gen(function* () {
         const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
-        yield* Ref.set(harness.clerkToken, null);
+        yield* Ref.set(harness.accountToken, null);
         yield* discovery.refresh;
 
         const state = yield* SubscriptionRef.get(discovery.state);
@@ -402,7 +402,7 @@ describe("RelayEnvironmentDiscovery", () => {
           Stream.runHead,
         );
 
-        yield* Ref.set(harness.clerkToken, null);
+        yield* Ref.set(harness.accountToken, null);
         yield* harness.wake("credentials-changed");
         yield* SubscriptionRef.changes(discovery.state).pipe(
           Stream.filter((state) => state.environments.size === 0),

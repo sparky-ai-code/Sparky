@@ -219,7 +219,10 @@ export const make = Effect.gen(function* PreviewManagerMake() {
                 (session) => session.requestId === input.requestId,
               );
         if (existing) {
-          return [{ snapshot: existing.snapshot, created: false }, state] as const;
+          return [{ snapshot: existing.snapshot, created: false }, state] as readonly [
+            { snapshot: PreviewSessionSnapshot; created: boolean },
+            ManagerState,
+          ];
         }
         const sessions = new Map(state.sessions);
         sessions.set(compositeKey(input.threadId, tabId), {
@@ -228,7 +231,10 @@ export const make = Effect.gen(function* PreviewManagerMake() {
           snapshot,
           ...(input.requestId === undefined ? {} : { requestId: input.requestId }),
         });
-        return [{ snapshot, created: true }, { sessions }] as const;
+        return [{ snapshot, created: true }, { sessions }] as readonly [
+          { snapshot: PreviewSessionSnapshot; created: boolean },
+          ManagerState,
+        ];
       });
       if (opened.created) {
         yield* PubSub.publish(eventsPubSub, {

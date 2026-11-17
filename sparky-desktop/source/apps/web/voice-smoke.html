@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Match Electron's restricted origin while exercising browser WASM. -->
+    <meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; connect-src 'self' http: https: ws: wss:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:">
+    <title>Sparky voice pipeline smoke</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/voice/VoiceSession.smoke.tsx"></script>
+  </body>
+</html>

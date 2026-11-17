@@ -67,6 +67,19 @@ jobs:
         run: pnpm --filter @sparky/desktop exec vp test run src/electron/ElectronProtocol.test.ts
       - name: Test shared settings contract
         run: pnpm --filter @sparky/contracts exec vp test run src/settings.test.ts
+      # Run the real Whisper + Tiny Voca models with a public speech recording.
+      # This is the regression test for an inactive voice button/blank chat feed.
+      - name: Download public voice sample
+        run: |
+          curl --fail --location --retry 3 \
+            "https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/jfk.wav" \
+            -o apps/web/public/voice-test-utterance.wav
+          test "$(wc -c < apps/web/public/voice-test-utterance.wav)" -gt 100000
+      - name: Install headless Chromium
+        run: pnpm --filter @sparky/desktop exec playwright-core install chromium --with-deps --only-shell
+      - name: Smoke test real microphone capture, local transcription, automatic send and speech playback
+        timeout-minutes: 12
+        run: pnpm --filter @sparky/desktop exec node scripts/voice-smoke.mjs
       # Track existing main-branch compiler problems separately: fail on any
       # new error path so a voice regression cannot hide behind that baseline.
       - name: Typecheck web (fail for new diagnostic paths)

@@ -59,7 +59,7 @@ async function send(
     "content-type": "application/json",
   };
   if (sessionId) headers["mcp-session-id"] = sessionId;
-  if (config.authorizationToken) headers.authorization = \`Bearer \${config.authorizationToken}\`;
+  if (config.authorizationToken) headers.authorization = `Bearer ${config.authorizationToken}`;
 
   // A scoped Effect HTTP client supports streaming responses and cancellation
   // without relying on a global fetch or manual reader lifetime management.
@@ -72,7 +72,7 @@ async function send(
       const response = yield* HttpClient.execute(request);
       if (response.status < 200 || response.status >= 300) {
         return yield* Effect.fail(new ExternalMcpProtocolError({
-          message: \`MCP server \${config.name} returned HTTP \${response.status}.\`,
+          message: `MCP server ${config.name} returned HTTP ${response.status}.`,
         }));
       }
       const nextSessionId = response.headers["mcp-session-id"] ?? sessionId;
@@ -84,18 +84,18 @@ async function send(
         : yield* response.text;
       if (!body) {
         return yield* Effect.fail(new ExternalMcpProtocolError({
-          message: \`MCP server \${config.name} returned an empty response.\`,
+          message: `MCP server ${config.name} returned an empty response.`,
         }));
       }
       const parsed = yield* Effect.try({
         try: () => JSON.parse(body) as JsonRpcResponse,
         catch: () => new ExternalMcpProtocolError({
-          message: \`MCP server \${config.name} returned an invalid JSON-RPC response.\`,
+          message: `MCP server ${config.name} returned an invalid JSON-RPC response.`,
         }),
       });
       if (parsed.error) {
         return yield* Effect.fail(new ExternalMcpProtocolError({
-          message: parsed.error.message ?? \`MCP server \${config.name} returned an error.\`,
+          message: parsed.error.message ?? `MCP server ${config.name} returned an error.`,
         }));
       }
       return { response: parsed, ...(nextSessionId ? { sessionId: nextSessionId } : {}) };

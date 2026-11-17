@@ -957,15 +957,15 @@ function runSparky(input: {
             }
           },
         });
-        stdout.setEncoding("utf8");
-        stderr.setEncoding("utf8");
-        stdout.on("data", (chunk: string) => {
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stdout.on("data", (chunk: string) => {
           decoder.push(chunk);
         });
-        stderr.on("data", (chunk: string) => {
+        child.stderr.on("data", (chunk: string) => {
           appendStderr(chunk);
         });
-        stdin.on("error", (error) => {
+        child.stdin.on("error", (error) => {
           appendStderr(`\nUnable to send the prompt to Sparky: ${error.message}`);
         });
         child.stdin.end(input.prompt, "utf8");

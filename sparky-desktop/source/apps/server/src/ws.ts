@@ -1651,7 +1651,7 @@ const makeWsRpcLayer = (
                   Effect.gen(function* () {
                     const tools = yield* Effect.tryPromise({
                       try: () => listExternalMcpTools(config),
-                      catch: () => new McpConnectivityError({}),
+                      catch: () => new McpConnectivityError(),
                     }).pipe(Effect.option);
                     const checkedAt = yield* Clock.currentTimeMillis;
                     return {

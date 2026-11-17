@@ -15,6 +15,7 @@ const makeHandlers = Effect.gen(function* () {
   // Capture server settings when the toolkit layer is constructed rather than
   // requiring a service from an unscoped tool invocation.
   const settings = yield* ServerSettings.ServerSettingsService;
+  const crypto = yield* Crypto.Crypto;
   return {
   sparky_mcp_setup_server: (input) =>
     Effect.gen(function* () {
@@ -38,7 +39,7 @@ const makeHandlers = Effect.gen(function* () {
         return { error: `An MCP server named '${name}' is already configured.` };
       }
       const server: McpServerConfig = {
-        id: yield* Crypto.Crypto.pipe(Effect.flatMap((crypto) => crypto.randomUUIDv4)),
+        id: yield* crypto.randomUUIDv4,
         name,
         url: parsedUrl.toString(),
         authorizationToken: input.authorizationToken ?? "",

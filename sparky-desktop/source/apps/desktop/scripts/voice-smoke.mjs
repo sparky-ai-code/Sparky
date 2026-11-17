@@ -76,6 +76,7 @@ try {
   await page.waitForFunction(() =>
     Boolean(window.__voiceTestError) ||
     document.querySelector('[data-testid="chat-feed"] [data-role="user"]'),
+    null,
     { timeout: 300_000 },
   );
   const error = await page.locator('[data-testid="voice-error"]').textContent();
@@ -86,6 +87,7 @@ try {
   await page.waitForFunction(() =>
     Boolean(window.__voiceTestError) ||
     (window.__voiceStatusHistory ?? []).includes("Speaking…"),
+    null,
     { timeout: 300_000 },
   );
   const after = await page.locator('[data-testid="voice-error"]').textContent();
@@ -94,7 +96,7 @@ try {
     const statuses = window.__voiceStatusHistory ?? [];
     const speaking = statuses.lastIndexOf("Speaking…");
     return Boolean(window.__voiceTestError) || (speaking !== -1 && statuses.slice(speaking + 1).includes("Listening…"));
-  }, { timeout: 300_000 });
+  }, null, { timeout: 300_000 });
   const playbackError = await page.locator('[data-testid="voice-error"]').textContent();
   if (playbackError) throw new Error("Speech playback failed: " + playbackError);
   const assistant = await page.locator('[data-testid="chat-feed"] [data-role="assistant"]').first().textContent();

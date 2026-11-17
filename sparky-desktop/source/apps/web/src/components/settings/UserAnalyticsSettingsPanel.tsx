@@ -55,14 +55,14 @@ function parseCodexRateLimits(value: unknown): CodexRateLimitData | undefined {
   const windows = Object.entries(rateLimit)
     .filter(([key]) => key.endsWith("_window"))
     .flatMap(([key, value]) => {
-      const window = asRecord(value);
-      const usedPercent = window?.used_percent;
-      if (typeof usedPercent !== "number" || !Number.isFinite(usedPercent)) return [];
+      const rateWindow = asRecord(value);
+      const usedPercent = rateWindow?.used_percent;
+      if (!rateWindow || typeof usedPercent !== "number" || !Number.isFinite(usedPercent)) return [];
       const data: CodexRateWindow = {
         usedPercent: Math.min(100, Math.max(0, usedPercent)),
-        ...(typeof window.reset_at === "number" ? { resetAt: window.reset_at } : {}),
-        ...(typeof window.limit_window_seconds === "number"
-          ? { durationSeconds: window.limit_window_seconds }
+        ...(typeof rateWindow.reset_at === "number" ? { resetAt: rateWindow.reset_at } : {}),
+        ...(typeof rateWindow.limit_window_seconds === "number"
+          ? { durationSeconds: rateWindow.limit_window_seconds }
           : {}),
       };
       const label =

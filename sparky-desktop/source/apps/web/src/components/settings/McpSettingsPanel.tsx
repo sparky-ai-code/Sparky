@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import type { McpServerConnectionStatus } from "@sparky/contracts";
+import * as Effect from "effect/Effect";
+import * as Random from "effect/Random";
 
 import { McpIcon } from "./McpIcon";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
@@ -66,7 +68,9 @@ export function McpSettingsPanel() {
       save([
         ...connections,
         {
-          id: crypto.randomUUID(),
+          id: Effect.runSync(Effect.all([Random.nextInt, Random.nextInt, Random.nextInt])).map(
+             (value) => value.toString(36),
+           ).join("-"),
           name: normalizedName,
           url: parsedEndpoint.href,
           authorizationToken: authorizationToken.trim(),

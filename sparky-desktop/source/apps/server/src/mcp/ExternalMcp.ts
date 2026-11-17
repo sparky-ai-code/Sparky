@@ -1,16 +1,20 @@
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 
 import type { McpServerConfig } from "@sparky/contracts";
 
-type JsonRpcResponse = {
-  readonly result?: Record<string, unknown>;
-  readonly error?: { readonly message?: string };
-};
+const JsonRpcResponseSchema = Schema.fromJsonString(
+  Schema.Struct({
+    result: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+    error: Schema.optional(Schema.Struct({ message: Schema.optional(Schema.String) })),
+  }),
+);
+type JsonRpcResponse = typeof JsonRpcResponseSchema.Type;
 
 
 class ExternalMcpProtocolError extends Data.TaggedError("ExternalMcpProtocolError")<{
@@ -65,9 +69,10 @@ async function send(
   // without relying on a global fetch or manual reader lifetime management.
   return Effect.runPromise(
     Effect.gen(function* () {
+      const requestBody = yield* Schema.encodeUnknownEffect(Schema.UnknownFromJsonString)(payload);
       const request = HttpClientRequest.post(config.url).pipe(
         HttpClientRequest.setHeaders(headers),
-        HttpClientRequest.bodyText(JSON.stringify(payload), "application/json"),
+        HttpClientRequest.bodyText(requestBody, "application/json"),
       );
       const response = yield* HttpClient.execute(request);
       if (response.status < 200 || response.status >= 300) {
@@ -87,12 +92,11 @@ async function send(
           message: `MCP server ${config.name} returned an empty response.`,
         }));
       }
-      const parsed = yield* Effect.try({
-        try: () => JSON.parse(body) as JsonRpcResponse,
-        catch: () => new ExternalMcpProtocolError({
+      const parsed = yield* Schema.decodeUnknownEffect(JsonRpcResponseSchema)(body).pipe(
+        Effect.mapError(() => new ExternalMcpProtocolError({
           message: `MCP server ${config.name} returned an invalid JSON-RPC response.`,
-        }),
-      });
+        })),
+      );
       if (parsed.error) {
         return yield* Effect.fail(new ExternalMcpProtocolError({
           message: parsed.error.message ?? `MCP server ${config.name} returned an error.`,

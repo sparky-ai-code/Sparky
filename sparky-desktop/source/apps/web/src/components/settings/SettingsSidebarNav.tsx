@@ -11,6 +11,7 @@ import {
   PlugZapIcon,
   SearchIcon,
   Settings2Icon,
+  AudioLinesIcon,
 } from "lucide-react";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 
@@ -31,6 +32,7 @@ export type SettingsSectionPath =
   | "/settings/general"
   | "/settings/personalize"
   | "/settings/appearance"
+  | "/settings/voice"
   | "/settings/keybindings"
   | "/settings/models"
   | "/settings/plugins"
@@ -58,6 +60,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
     to: "/settings/appearance",
     icon: PaletteIcon,
   },
+  { label: "Voice", section: "Preferences", to: "/settings/voice", icon: AudioLinesIcon },
   { label: "Models", section: "AI & tools", to: "/settings/models", icon: BoxesIcon },
   { label: "Plugins", section: "AI & tools", to: "/settings/plugins", icon: PlugZapIcon },
   { label: "MCP", section: "AI & tools", to: "/settings/mcp", icon: McpIcon },

@@ -87,6 +87,8 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "'unsafe-inline'",
     ...(neonAuthOrigin ? [neonAuthOrigin] : []),
     "https://challenges.cloudflare.com",
+    // tiny-voca worker loads Pyodide and ONNX Runtime from the pinned jsDelivr versions.
+    "https://cdn.jsdelivr.net",
   ];
 
   // The renderer connects directly to user-configured environments in addition to

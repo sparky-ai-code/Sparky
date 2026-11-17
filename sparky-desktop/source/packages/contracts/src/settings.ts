@@ -17,6 +17,13 @@ export const StreamingTextAnimation = Schema.Literals(["lift", "words"]);
 export type StreamingTextAnimation = typeof StreamingTextAnimation.Type;
 export const DEFAULT_STREAMING_TEXT_ANIMATION: StreamingTextAnimation = "lift";
 
+export const VoiceChoice = Schema.Literals(["F2", "M2"]);
+export type VoiceChoice = typeof VoiceChoice.Type;
+export const DEFAULT_VOICE_CHOICE: VoiceChoice = "F2";
+export const VoiceSpeed = Schema.Number.check(Schema.isBetween({ minimum: 0.7, maximum: 1.4 }));
+export type VoiceSpeed = typeof VoiceSpeed.Type;
+export const DEFAULT_VOICE_SPEED: VoiceSpeed = 1;
+
 export const ModelSelectorStyle = Schema.Literals(["menu", "slider"]);
 export type ModelSelectorStyle = typeof ModelSelectorStyle.Type;
 export const DEFAULT_MODEL_SELECTOR_STYLE: ModelSelectorStyle = "menu";
@@ -124,6 +131,12 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   modelSelectorStyle: ModelSelectorStyle.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MODEL_SELECTOR_STYLE)),
+  ),
+  voiceChoice: VoiceChoice.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_VOICE_CHOICE)),
+  ),
+  voiceSpeed: VoiceSpeed.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_VOICE_SPEED)),
   ),
   pullRequestReviewModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
@@ -703,5 +716,7 @@ export const ClientSettingsPatch = Schema.Struct({
   pullRequestReviewFocus: Schema.optionalKey(PullRequestReviewFocus),
   pullRequestReviewEffort: Schema.optionalKey(PullRequestReviewEffort),
   wordWrap: Schema.optionalKey(Schema.Boolean),
+  voiceChoice: Schema.optionalKey(VoiceChoice),
+  voiceSpeed: Schema.optionalKey(VoiceSpeed),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

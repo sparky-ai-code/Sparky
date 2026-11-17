@@ -282,3 +282,19 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
   });
 });
+
+
+describe("ClientSettings voice", () => {
+  it("defaults to F2 at normal speed without changing existing settings", () => {
+    expect(decodeClientSettings({}).voiceChoice).toBe("F2");
+    expect(decodeClientSettings({}).voiceSpeed).toBe(1);
+  });
+
+  it("persists both voices and a bounded speaking speed", () => {
+    expect(decodeClientSettingsPatch({ voiceChoice: "M2", voiceSpeed: 1.3 })).toEqual({
+      voiceChoice: "M2", voiceSpeed: 1.3,
+    });
+    expect(() => decodeClientSettingsPatch({ voiceSpeed: 0.3 })).toThrow();
+    expect(() => decodeClientSettingsPatch({ voiceChoice: "other" })).toThrow();
+  });
+});

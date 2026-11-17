@@ -38,6 +38,8 @@ const clientSettings: ClientSettings = {
   streamingTextAnimation: "lift",
   timestampFormat: "24-hour",
   modelSelectorStyle: "menu",
+  voiceChoice: "M2",
+  voiceSpeed: 1.25,
   pullRequestReviewModelSelection: null,
   pullRequestReviewFocus: "all",
   pullRequestReviewEffort: "thorough",

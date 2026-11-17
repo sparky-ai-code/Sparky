@@ -2526,7 +2526,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   aria-label="Start voice call"
                   title="Start voice call"
                   onClick={onStartVoiceCall}
-                  disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
+                  disabled={isConnecting || environmentUnavailable !== null || isComposerApprovalState || pendingUserInputs.length > 0 || projectSelectionRequired}
                   className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
                 >
                   <PhoneCallIcon className="size-4" aria-hidden="true" />

@@ -139,7 +139,17 @@ export function VoiceCall({
         speakerRef.current = null;
       };
     }
-    const recognition = new RecognitionApi();
+    let recognition: Recognition;
+    try {
+      recognition = new RecognitionApi();
+    } catch {
+      setStatus("Could not initialize microphone recognition.");
+      return () => {
+        closedRef.current = true;
+        speaker.close();
+        speakerRef.current = null;
+      };
+    }
     recognitionRef.current = recognition;
     recognition.continuous = false;
     recognition.interimResults = true;
@@ -267,12 +277,12 @@ export function VoiceCall({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+    <div className="pointer-events-none fixed inset-0 z-[100] flex items-end justify-end p-4 sm:p-6">
       <section
         role="dialog"
-        aria-modal="true"
+        aria-modal="false"
         aria-label="Voice call"
-        className="flex w-full max-w-sm flex-col items-center gap-6 rounded-3xl border border-border bg-card px-7 py-8 text-center text-card-foreground shadow-2xl"
+        className="pointer-events-auto flex w-full max-w-sm flex-col items-center gap-6 rounded-3xl border border-border bg-card px-7 py-8 text-center text-card-foreground shadow-2xl"
       >
         <div className="space-y-1">
           <h2 className="text-lg font-semibold">Sparky Voice</h2>

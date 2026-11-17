@@ -1,0 +1,46 @@
+name: Tiny Voca voice regression tests
+
+on:
+  pull_request:
+    paths:
+      - 'sparky-desktop/source/apps/web/src/voice/**'
+      - 'sparky-desktop/source/apps/web/src/components/ChatView.tsx'
+      - 'sparky-desktop/source/apps/web/src/components/chat/ChatComposer.tsx'
+      - 'sparky-desktop/source/apps/web/src/components/settings/VoiceSettings.tsx'
+      - 'sparky-desktop/source/apps/web/src/routes/settings.voice.tsx'
+      - 'sparky-desktop/source/packages/contracts/src/settings*'
+      - '.github/workflows/voice-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  voice-regression:
+    name: Contract and voice tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sparky-desktop/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Check voice settings contracts
+        run: pnpm --filter @sparky/contracts exec vp test run src/settings.test.ts
+      - name: Check voice turn selection and formatting
+        run: pnpm --filter @sparky/web exec vp test run src/voice/voiceSpeech.test.ts
+      - name: Typecheck web app
+        run: pnpm --filter @sparky/web typecheck

@@ -34,10 +34,10 @@ self.onmessage = async ({ data }) => {
   try {
     const transcriber = await model();
     if (data.type !== "transcribe") return;
+    // whisper-tiny.en is English-only. Transformers.js rejects explicit
+    // language/task options on this model rather than silently ignoring them.
     const result = await transcriber(new Float32Array(data.audio), {
       return_timestamps: false,
-      language: "english",
-      task: "transcribe",
     });
     postMessage({ type: "transcript", id: data.id, text: String(result.text || "").trim() });
   } catch (error) {

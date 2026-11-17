@@ -113,6 +113,14 @@ try {
   console.error("Vite:", serverLog.slice(-1500));
   process.exitCode = 1;
 } finally {
-  if (browser) await browser.close().catch(() => {});
+  // Heavy WASM workers may block graceful browser shutdown. Always finish the
+  // smoke test promptly so CI reports the original audio failure, not a timeout.
+  if (browser) {
+    await Promise.race([
+      browser.close().catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 2500)),
+    ]);
+  }
   server.kill("SIGTERM");
+  process.exit(process.exitCode || 0);
 }

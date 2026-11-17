@@ -58,6 +58,7 @@ export function VoiceSession({
   };
 
   useEffect(() => {
+    closedRef.current = false;
     let closed = false;
     let stream: MediaStream | null = null;
     let inputContext: AudioContext | null = null;

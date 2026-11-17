@@ -13,6 +13,11 @@ export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"])
 export type TimestampFormat = typeof TimestampFormat.Type;
 export const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
+export const VoiceSelection = Schema.Literals(["F2", "M2"]);
+export type VoiceSelection = typeof VoiceSelection.Type;
+export const VoiceSpeed = Schema.Number.check(Schema.isBetween({ minimum: 0.7, maximum: 1.4 }));
+export type VoiceSpeed = typeof VoiceSpeed.Type;
+
 export const StreamingTextAnimation = Schema.Literals(["lift", "words"]);
 export type StreamingTextAnimation = typeof StreamingTextAnimation.Type;
 export const DEFAULT_STREAMING_TEXT_ANIMATION: StreamingTextAnimation = "lift";
@@ -116,6 +121,8 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarThreadsGroupedByProject: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  voiceSelection: VoiceSelection.pipe(Schema.withDecodingDefault(Effect.succeed("F2"))),
+  voiceSpeed: VoiceSpeed.pipe(Schema.withDecodingDefault(Effect.succeed(1))),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
   ),
@@ -697,6 +704,8 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   sidebarThreadsGroupedByProject: Schema.optionalKey(Schema.Boolean),
+  voiceSelection: Schema.optionalKey(VoiceSelection),
+  voiceSpeed: Schema.optionalKey(VoiceSpeed),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   streamingTextAnimation: Schema.optionalKey(StreamingTextAnimation),
   pullRequestReviewModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),

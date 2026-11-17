@@ -8,6 +8,7 @@ import {
   BrainIcon,
   GaugeIcon,
   KeyboardIcon,
+  AudioLinesIcon,
   PlugZapIcon,
   SearchIcon,
   Settings2Icon,
@@ -33,6 +34,7 @@ export type SettingsSectionPath =
   | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/models"
+  | "/settings/voice"
   | "/settings/plugins"
   | "/settings/mcp"
   | "/settings/memory"
@@ -59,6 +61,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
     icon: PaletteIcon,
   },
   { label: "Models", section: "AI & tools", to: "/settings/models", icon: BoxesIcon },
+  { label: "Voice", section: "Preferences", to: "/settings/voice", icon: AudioLinesIcon },
   { label: "Plugins", section: "AI & tools", to: "/settings/plugins", icon: PlugZapIcon },
   { label: "MCP", section: "AI & tools", to: "/settings/mcp", icon: McpIcon },
   { label: "Memory", section: "AI & tools", to: "/settings/memory", icon: BrainIcon },

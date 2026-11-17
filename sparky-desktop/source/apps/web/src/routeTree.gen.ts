@@ -20,6 +20,7 @@ import { Route as SettingsSourceControlRouteImport } from './routes/settings.sou
 import { Route as SettingsPluginsRouteImport } from './routes/settings.plugins'
 import { Route as SettingsPersonalizeRouteImport } from './routes/settings.personalize'
 import { Route as SettingsModelsRouteImport } from './routes/settings.models'
+import { Route as SettingsVoiceRouteImport } from './routes/settings.voice'
 import { Route as SettingsMemoryRouteImport } from './routes/settings.memory'
 import { Route as SettingsMcpRouteImport } from './routes/settings.mcp'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
@@ -79,6 +80,11 @@ const SettingsPluginsRoute = SettingsPluginsRouteImport.update({
 const SettingsPersonalizeRoute = SettingsPersonalizeRouteImport.update({
   id: '/personalize',
   path: '/personalize',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsVoiceRoute = SettingsVoiceRouteImport.update({
+  id: '/voice',
+  path: '/voice',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsModelsRoute = SettingsModelsRouteImport.update({
@@ -160,6 +166,7 @@ export interface FileRoutesByFullPath {
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
   '/settings/models': typeof SettingsModelsRoute
+  '/settings/voice': typeof SettingsVoiceRoute
   '/settings/personalize': typeof SettingsPersonalizeRoute
   '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
@@ -182,6 +189,7 @@ export interface FileRoutesByTo {
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
   '/settings/models': typeof SettingsModelsRoute
+  '/settings/voice': typeof SettingsVoiceRoute
   '/settings/personalize': typeof SettingsPersonalizeRoute
   '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
@@ -207,6 +215,7 @@ export interface FileRoutesById {
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
   '/settings/models': typeof SettingsModelsRoute
+  '/settings/voice': typeof SettingsVoiceRoute
   '/settings/personalize': typeof SettingsPersonalizeRoute
   '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
@@ -233,6 +242,7 @@ export interface FileRouteTypes {
     | '/settings/mcp'
     | '/settings/memory'
     | '/settings/models'
+    | '/settings/voice'
     | '/settings/personalize'
     | '/settings/plugins'
     | '/settings/source-control'
@@ -255,6 +265,7 @@ export interface FileRouteTypes {
     | '/settings/mcp'
     | '/settings/memory'
     | '/settings/models'
+    | '/settings/voice'
     | '/settings/personalize'
     | '/settings/plugins'
     | '/settings/source-control'
@@ -279,6 +290,7 @@ export interface FileRouteTypes {
     | '/settings/mcp'
     | '/settings/memory'
     | '/settings/models'
+    | '/settings/voice'
     | '/settings/personalize'
     | '/settings/plugins'
     | '/settings/source-control'
@@ -366,6 +378,13 @@ declare module '@tanstack/react-router' {
       path: '/personalize'
       fullPath: '/settings/personalize'
       preLoaderRoute: typeof SettingsPersonalizeRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/voice': {
+      id: '/settings/voice'
+      path: '/voice'
+      fullPath: '/settings/voice'
+      preLoaderRoute: typeof SettingsVoiceRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/models': {
@@ -480,6 +499,7 @@ interface SettingsRouteChildren {
   SettingsMcpRoute: typeof SettingsMcpRoute
   SettingsMemoryRoute: typeof SettingsMemoryRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
+  SettingsVoiceRoute: typeof SettingsVoiceRoute
   SettingsPersonalizeRoute: typeof SettingsPersonalizeRoute
   SettingsPluginsRoute: typeof SettingsPluginsRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
@@ -496,6 +516,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsMcpRoute: SettingsMcpRoute,
   SettingsMemoryRoute: SettingsMemoryRoute,
   SettingsModelsRoute: SettingsModelsRoute,
+  SettingsVoiceRoute: SettingsVoiceRoute,
   SettingsPersonalizeRoute: SettingsPersonalizeRoute,
   SettingsPluginsRoute: SettingsPluginsRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,

@@ -87,6 +87,8 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "'unsafe-inline'",
     ...(neonAuthOrigin ? [neonAuthOrigin] : []),
     "https://challenges.cloudflare.com",
+    // Pinned, on-demand Tiny Voca and local Whisper browser runtimes.
+    "https://cdn.jsdelivr.net",
   ];
 
   // The renderer connects directly to user-configured environments in addition to

@@ -114,6 +114,7 @@ import {
   LockIcon,
   LockOpenIcon,
   PenLineIcon,
+  PhoneIcon,
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
@@ -516,6 +517,7 @@ export interface ChatComposerProps {
   composerElementContextsRef: React.RefObject<ElementContextDraft[]>;
   composerRef: React.RefObject<ChatComposerHandle | null>;
   onSend: (e?: { preventDefault: () => void }) => void;
+  onVoiceCall: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
@@ -598,6 +600,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerTerminalContextsRef,
     composerElementContextsRef,
     onSend,
+    onVoiceCall,
     onInterrupt,
     onImplementPlanInNewThread,
     onRespondToApproval,
@@ -2518,6 +2521,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   getModelDisabledReason={getModelDisabledReason}
                   onInstanceModelChange={onProviderModelSelect}
                 />
+                <button
+                  type="button"
+                  aria-label="Start voice call"
+                  title="Voice call"
+                  onClick={onVoiceCall}
+                  disabled={isConnecting || environmentUnavailable !== null || projectSelectionRequired || pendingUserInputs.length > 0 || activePendingApproval !== null}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <PhoneIcon className="size-4" />
+                </button>
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
                   activeContextWindow={null}

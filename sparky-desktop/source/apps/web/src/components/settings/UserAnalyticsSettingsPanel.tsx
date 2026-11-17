@@ -394,7 +394,7 @@ export function UserAnalyticsSettingsPanel() {
           <div className="ms-auto flex shrink-0 items-center justify-end gap-2">
             <ToggleGroup
               aria-label="Usage period"
-              variant="segmented"
+              variant="outline"
               value={[String(days)]}
               onValueChange={(next) => {
                 const value = next[0];
@@ -411,7 +411,7 @@ export function UserAnalyticsSettingsPanel() {
             </ToggleGroup>
             <ToggleGroup
               aria-label="Usage metric"
-              variant="segmented"
+              variant="outline"
               value={[metric]}
               onValueChange={(next) => {
                 const value = next[0];
@@ -541,7 +541,7 @@ export function UserAnalyticsSettingsPanel() {
               <h2 className="text-sm font-medium text-foreground">Breakdown</h2>
               <ToggleGroup
                 aria-label="Usage breakdown"
-                variant="segmented"
+                variant="outline"
                 value={[breakdown]}
                 onValueChange={(next) => {
                   const value = next[0];

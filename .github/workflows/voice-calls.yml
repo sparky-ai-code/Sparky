@@ -54,8 +54,8 @@ jobs:
           const response = await fetch(url, { signal: AbortSignal.timeout(45000) });
           if (!response.ok) throw new Error("Transformers ESM returned HTTP " + response.status);
           const js = await response.text();
-          const imports = Array.from(js.matchAll(/(?:from\\s*|import\\s*\\(\\s*)["']([^"']+)["']/g), m => m[1]);
-          const unresolved = imports.filter(spec => !/^(https?:\\/\\/|\\/|\\.\\/|\\.\\.\\/)/.test(spec));
+          const imports = Array.from(js.matchAll(/(?:from\s*|import\s*\(\s*)["']([^"']+)["']/g), m => m[1]);
+          const unresolved = imports.filter(spec => !/^(https?:\/\/|\/|\.\/|\.\.\/)/.test(spec));
           if (unresolved.length) throw new Error("Unresolved browser imports: " + unresolved.join(", "));
           if (!js.includes("export")) throw new Error("CDN did not return an ES module");
           console.log("Verified " + imports.length + " browser module imports");

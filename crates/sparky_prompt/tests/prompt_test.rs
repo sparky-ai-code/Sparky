@@ -126,3 +126,25 @@ async fn custom_prompt_still_receives_workspace_instructions_and_skill_catalog()
     assert!(!prompt.contains("skill body"));
     assert!(!prompt.contains("## Sparky tool system"));
 }
+
+#[tokio::test]
+async fn built_in_authoring_skill_works_without_a_workspace_skill_installation() {
+    let dir = tempfile::tempdir().unwrap();
+    let prompt = PromptBuilder::new(dir.path().to_string_lossy())
+        .build()
+        .await;
+    assert!(prompt.contains("<built_in_skill name=\"document-presentation-authoring\">"));
+    assert!(prompt.contains("sparky-artifacts/documents/"));
+    assert!(prompt.contains("sparky-artifacts/presentations/"));
+    assert!(prompt.contains("script-disabled, network-restricted iframe"));
+    let plan = PromptBuilder::new(dir.path().to_string_lossy())
+        .with_plan_mode(true)
+        .build()
+        .await;
+    assert!(!plan.contains("<built_in_skill name=\"document-presentation-authoring\">"));
+    let unscoped = PromptBuilder::new(dir.path().to_string_lossy())
+        .with_workspace_context(false)
+        .build()
+        .await;
+    assert!(!unscoped.contains("<built_in_skill name=\"document-presentation-authoring\">"));
+}

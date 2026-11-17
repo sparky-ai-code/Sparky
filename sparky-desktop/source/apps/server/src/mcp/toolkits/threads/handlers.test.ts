@@ -7,6 +7,7 @@ import {
   formatAgentThreadMessage,
   formatInitialThreadMessage,
   resolveAgentThreadModelSelection,
+  resolveCurrentWorkspaceBranch,
   resolveExistingWorktreeRef,
 } from "./handlers.ts";
 import { CreateThreadTool, ProjectBranchesTool, ReadThreadTool, ThreadTools } from "./tools.ts";
@@ -94,6 +95,20 @@ describe("agent-managed thread collaboration tools", () => {
     expect(input.workspaceMode).toBe("new");
     expect(input.baseBranch).toBe("main");
     expect(input.modelSelection?.options).toHaveLength(2);
+  });
+
+  it("accepts ordinary folder and project-free thread creation without a Git selection", () => {
+    const input = Schema.decodeUnknownSync(CreateThreadTool.parametersSchema)({
+      title: "Inspect files",
+      initialMessage: "Review this folder",
+    });
+    // Project ID is inferred from the calling thread and current is the default mode.
+    expect(input.projectId).toBeUndefined();
+    expect(input.workspaceMode).toBeUndefined();
+    expect(input.branch).toBeUndefined();
+    expect(resolveCurrentWorkspaceBranch(null)).toBeNull();
+    expect(resolveCurrentWorkspaceBranch({ isRepo: false, refName: null })).toBeNull();
+    expect(resolveCurrentWorkspaceBranch({ isRepo: true, refName: "main" })).toBe("main");
   });
 
   it("reuses only a worktree registered for exactly the selected branch", () => {

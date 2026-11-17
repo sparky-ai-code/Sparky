@@ -26,3 +26,8 @@ const BLOCKED_WHILE_PROTECTED = new Set([
 export function isProtectedInspectionAction(action: string): boolean {
   return BLOCKED_WHILE_PROTECTED.has(action);
 }
+
+/** Internal navigation readiness checks are fixed, read-only and cannot install page observers. */
+export function isCredentialSafeReadinessProbe(expression: string): boolean {
+  return expression === "document.readyState";
+}

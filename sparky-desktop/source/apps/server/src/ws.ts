@@ -69,6 +69,7 @@ import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import { threadDetailReplayLimit } from "./orchestration/threadResumeStrategy.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
@@ -1495,49 +1496,41 @@ const makeWsRpcLayer = (
               );
               const bufferedLiveStream = Stream.fromQueue(liveBuffer);
 
-              // When the client already loaded the snapshot over HTTP it passes
-              // that snapshot's sequence, and we resume the live subscription by
-              // replaying persisted events after it instead of re-sending the
-              // (potentially multi-KB) snapshot frame over the socket.
-              //
-              // The live PubSub subscription must be attached *before* draining
-              // the catch-up replay, otherwise events published during the replay
-              // window are dropped (they are past the persisted tail the replay
-              // read, but the live stream is not yet subscribed). So fork the
-              // live stream into a buffer bound to this stream's scope, then emit
-              // catch-up followed by the buffered/ongoing live events. Overlapping
-              // events are deduped by sequence on the client.
-              //
-              // Read the full range after the cursor (not the store's default
-              // page-bounded limit): the range is normally tiny (a fresh HTTP
-              // snapshot sequence) and the per-thread filter runs after reading,
-              // so a global cap could otherwise omit this thread's events.
+              // Attach the live listener before either replay or snapshot loading.
+              // Small gaps are read through the indexed per-thread stream, not
+              // through a global event scan. A large global backlog (or invalid
+              // cursor) instead receives a full projected snapshot. Neither path
+              // drops events published during catch-up: the live tail is buffered.
               if (input.afterSequence !== undefined) {
                 const afterSequence = input.afterSequence;
-                const catchUpStream = orchestrationEngine
-                  .readEvents(afterSequence, Number.MAX_SAFE_INTEGER)
-                  .pipe(
-                    Stream.filter(isThisThreadDetailEvent),
-                    coalesceThreadDetailStream,
-                    Stream.map((event) => ({ kind: "event" as const, event })),
-                    Stream.mapError(
-                      (cause) =>
-                        new OrchestrationGetSnapshotError({
-                          message: `Failed to replay thread ${input.threadId} events`,
-                          cause,
-                        }),
-                    ),
-                  );
-                const afterCatchUp =
-                  input.requestCompletionMarker === true
-                    ? Stream.concat(
-                        Stream.fromEffect(
-                          Queue.offer(liveBuffer, { kind: "synchronized" as const }),
-                        ).pipe(Stream.drain),
-                        bufferedLiveStream,
-                      )
-                    : bufferedLiveStream;
-                return Stream.concat(catchUpStream, afterCatchUp);
+                const headSequence = yield* orchestrationEngine.latestSequence;
+                const replayLimit = threadDetailReplayLimit(afterSequence, headSequence);
+                if (replayLimit !== null) {
+                  const catchUpStream = orchestrationEngine
+                    .readThreadEvents(input.threadId, afterSequence, headSequence)
+                    .pipe(
+                      Stream.filter(isThreadDetailEvent),
+                      coalesceThreadDetailStream,
+                      Stream.map((event) => ({ kind: "event" as const, event })),
+                      Stream.mapError(
+                        (cause) =>
+                          new OrchestrationGetSnapshotError({
+                            message: `Failed to replay thread ${input.threadId} events`,
+                            cause,
+                          }),
+                      ),
+                    );
+                  const afterCatchUp =
+                    input.requestCompletionMarker === true
+                      ? Stream.concat(
+                          Stream.fromEffect(
+                            Queue.offer(liveBuffer, { kind: "synchronized" as const }),
+                          ).pipe(Stream.drain),
+                          bufferedLiveStream,
+                        )
+                      : bufferedLiveStream;
+                  return Stream.concat(catchUpStream, afterCatchUp);
+                }
               }
 
               const snapshot = yield* projectionSnapshotQuery

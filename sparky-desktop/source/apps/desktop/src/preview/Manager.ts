@@ -65,7 +65,7 @@ import {
 import { isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
 import { playwrightInjectedRuntimeInstallExpression } from "./PlaywrightInjectedRuntime.ts";
 import { makePreviewAutomationKeySequence } from "./PreviewKeyboard.ts";
-import { canClickProtectedPage, isProtectedInspectionAction } from "./SecretProtectionPolicy.ts";
+import { canClickProtectedPage, isCredentialSafeReadinessProbe, isProtectedInspectionAction } from "./SecretProtectionPolicy.ts";
 
 export type PreviewNavStatus =
   | { kind: "Idle" }
@@ -2525,7 +2525,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       Effect.gen(function* () {
         // Mark before evaluation: even scripts that subsequently throw may have
         // installed a password observer in this document.
-        yield* Ref.update(evaluatedTabsRef, (tabs) => new Set([...tabs, tabId]));
+        // The UI uses this literal read-only probe while opening/navigating tabs.
+        // Treating it as arbitrary agent JS would make secrets_use fail after every preview_open.
+        if (!isCredentialSafeReadinessProbe(input.expression)) {
+          yield* Ref.update(evaluatedTabsRef, (tabs) => new Set([...tabs, tabId]));
+        }
         return yield* performAutomationEvaluate(tabId, input, send);
       }),
     );

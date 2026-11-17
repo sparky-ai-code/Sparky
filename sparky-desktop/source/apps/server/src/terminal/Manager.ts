@@ -76,7 +76,16 @@ export {
 
 const DEFAULT_HISTORY_LINE_LIMIT = 5_000;
 const DEFAULT_PERSIST_DEBOUNCE_MS = 40;
-const DEFAULT_SUBPROCESS_POLL_INTERVAL_MS = 1_000;
+// Process enumeration is expensive, especially PowerShell/CIM on Windows.
+const DEFAULT_SUBPROCESS_POLL_INTERVAL_MS = 2_000;
+const WINDOWS_SUBPROCESS_POLL_INTERVAL_MS = 5_000;
+const MAX_SUBPROCESS_INSPECTIONS_IN_FLIGHT = 4;
+
+export function defaultSubprocessPollIntervalMs(platform: NodeJS.Platform): number {
+  return platform === "win32"
+    ? WINDOWS_SUBPROCESS_POLL_INTERVAL_MS
+    : DEFAULT_SUBPROCESS_POLL_INTERVAL_MS;
+}
 const DEFAULT_PROCESS_KILL_GRACE_MS = 1_000;
 const DEFAULT_MAX_RETAINED_INACTIVE_SESSIONS = 128;
 const DEFAULT_OPEN_COLS = 120;
@@ -1197,7 +1206,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
       ));
   const subprocessPollIntervalMs =
-    options.subprocessPollIntervalMs ?? DEFAULT_SUBPROCESS_POLL_INTERVAL_MS;
+    options.subprocessPollIntervalMs ?? defaultSubprocessPollIntervalMs(platform);
   const processKillGraceMs = options.processKillGraceMs ?? DEFAULT_PROCESS_KILL_GRACE_MS;
   const maxRetainedInactiveSessions =
     options.maxRetainedInactiveSessions ?? DEFAULT_MAX_RETAINED_INACTIVE_SESSIONS;
@@ -2090,8 +2099,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       }
     });
 
+    // A terminal per project can otherwise spawn many concurrent PowerShell
+    // or ps probes. Cap those short-lived processes to avoid CPU/RAM spikes.
     yield* Effect.forEach(runningSessions, checkSubprocessActivity, {
-      concurrency: "unbounded",
+      concurrency: MAX_SUBPROCESS_INSPECTIONS_IN_FLIGHT,
       discard: true,
     });
   });

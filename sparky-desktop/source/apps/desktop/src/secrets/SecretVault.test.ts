@@ -111,6 +111,19 @@ describe("local encrypted credential vault", () => {
     await expect(Vault.listSecrets()).rejects.toThrow("Secure credential storage is unavailable");
   });
 
+  it("does not lose entries when several credentials are saved concurrently", async () => {
+    const created = await Promise.all(Array.from({ length: 12 }, (_, index) =>
+      Vault.saveSecret({ ...example, name: `Login ${index}`, email: `user${index}@example.com` }),
+    ));
+    const listed = await Vault.listSecrets();
+    expect(new Set(created.map((entry) => entry.id)).size).toBe(12);
+    expect(listed).toHaveLength(12);
+    for (const entry of created) {
+      expect((await Vault.getSecretForOrigin(entry.id, "https://example.com/sign-in")).password)
+        .toBe(example.password);
+    }
+  });
+
   it("stores native passkeys as metadata-only references", async () => {
     const entry = await Vault.saveSecret({
       name: "Passkey test",

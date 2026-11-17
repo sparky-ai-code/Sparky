@@ -1,7 +1,21 @@
 import { describe, expect, it } from "vite-plus/test";
-import { canClickProtectedPage, isProtectedInspectionAction } from "./SecretProtectionPolicy.ts";
+import { canClickProtectedPage, isCredentialSafeReadinessProbe, isProtectedInspectionAction } from "./SecretProtectionPolicy.ts";
 
 describe("protected credential browser actions", () => {
+  it("does not taint a page for the desktop's fixed navigation readiness probe", () => {
+    expect(isCredentialSafeReadinessProbe("document.readyState")).toBe(true);
+    for (const expression of [
+      "document.readyState; window.evil = true",
+      "(document.readyState)",
+      "document.readyState + document.cookie",
+      "document.querySelector('input[type=password]')?.value",
+      "window.addEventListener('input', () => {})",
+    ]) {
+      expect(isCredentialSafeReadinessProbe(expression)).toBe(false);
+    }
+    // The exception only avoids pre-fill taint; once protected, all evaluation remains blocked.
+    expect(isProtectedInspectionAction("evaluate")).toBe(true);
+  });
   it("blocks inspection and recording after waiting on the tab lock", () => {
     for (const action of ["snapshot", "evaluate", "waitFor", "type", "press", "scroll", "recording.start"]) {
       expect(isProtectedInspectionAction(action)).toBe(true);

@@ -34,10 +34,17 @@ async fn loads_supported_context_and_skips_gitignored_files() {
         .iter()
         .any(|path| path.starts_with("ignored/")));
 
-    let skills = builder.load_skills().await;
-    assert_eq!(skills.len(), 1);
-    assert_eq!(skills[0].name, "visible");
-    assert_eq!(skills[0].content, "visible skill");
+    // A developer's globally installed skills must not change what this test
+    // expects from its workspace inventory.
+    let workspace_skills: Vec<_> = builder
+        .load_skills()
+        .await
+        .into_iter()
+        .filter(|skill| !std::path::Path::new(&skill.path).is_absolute())
+        .collect();
+    assert_eq!(workspace_skills.len(), 1);
+    assert_eq!(workspace_skills[0].name, "visible");
+    assert_eq!(workspace_skills[0].content, "visible skill");
 }
 
 #[tokio::test]

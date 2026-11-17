@@ -68,3 +68,42 @@ export const makeDrainableWorker = <A, E, R>(
 
     return { enqueue, drain } satisfies DrainableWorker<A>;
   });
+
+/**
+ * Run independent aggregate keys on separate bounded workers, while
+ * preserving FIFO within each key. A stalled provider operation for one
+ * thread should not block unrelated threads behind the same global queue.
+ *
+ * Deterministic sharding uses a fixed number of queues/fibers (rather than
+ * spawning unbounded per-thread workers), and every worker is scope-bound.
+ * Hash collisions may share a lane but never violate per-key ordering.
+ */
+export const makePartitionedDrainableWorker = <A, E, R>(
+  process: (item: A) => Effect.Effect<void, E, R>,
+  keyForItem: (item: A) => string,
+  partitions = 4,
+): Effect.Effect<DrainableWorker<A>, never, Scope.Scope | R> =>
+  Effect.gen(function* () {
+    const count = Math.max(1, Math.floor(partitions));
+    const workers = yield* Effect.forEach(
+      Array.from({ length: count }, (_unused, index) => index),
+      () => makeDrainableWorker(process),
+      { concurrency: "unbounded" },
+    );
+
+    const partitionFor = (key: string): number => {
+      let hash = 0;
+      for (let index = 0; index < key.length; index += 1) {
+        hash = (Math.imul(hash, 31) + key.charCodeAt(index)) | 0;
+      }
+      return (hash >>> 0) % count;
+    };
+
+    return {
+      enqueue: (item: A) => workers[partitionFor(keyForItem(item))]!.enqueue(item),
+      drain: Effect.forEach(workers, (worker) => worker.drain, {
+        concurrency: "unbounded",
+        discard: true,
+      }),
+    } satisfies DrainableWorker<A>;
+  });

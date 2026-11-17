@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AudioLinesIcon, MicIcon, MicOffIcon, PhoneOffIcon, SquareIcon } from "lucide-react";
+import { LocalMicrophone } from "./localMicrophone";
 import { TinyVocaSpeaker, type TinyVocaChoice } from "./tinyVocaSpeaker";
 import {
   completedVoiceReply,
@@ -7,30 +8,6 @@ import {
   textForSpeech,
   type VoiceMessage,
 } from "./voiceSpeech";
-
-interface RecognitionResult {
-  isFinal: boolean;
-  0: { transcript: string };
-}
-interface RecognitionEvent {
-  resultIndex: number;
-  results: ArrayLike<RecognitionResult>;
-}
-interface RecognitionError {
-  error: string;
-}
-interface Recognition {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: ((event: RecognitionEvent) => void) | null;
-  onerror: ((event: RecognitionError) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-type RecognitionConstructor = new () => Recognition;
 
 interface VoiceCallProps {
   messages: ReadonlyArray<VoiceMessage>;
@@ -60,17 +37,15 @@ export function VoiceCall({
   onInterrupt,
   onClose,
 }: VoiceCallProps) {
-  const [status, setStatus] = useState("Starting voice call…");
+  const [status, setStatus] = useState("Preparing local voice call…");
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [muted, setMuted] = useState(false);
-  const recognitionRef = useRef<Recognition | null>(null);
+  const microphoneRef = useRef<LocalMicrophone | null>(null);
   const speakerRef = useRef<TinyVocaSpeaker | null>(null);
-  const restartTimerRef = useRef<number | null>(null);
   const pendingRef = useRef<PendingVoiceTurn | null>(null);
   const closedRef = useRef(false);
   const mutedRef = useRef(false);
-  const listeningRef = useRef(false);
   const speakingRef = useRef(false);
   const messagesRef = useRef(messages);
   const canSendRef = useRef(canSend);
@@ -87,122 +62,46 @@ export function VoiceCall({
       mutedRef.current ||
       speakingRef.current ||
       pendingRef.current ||
-      listeningRef.current ||
       busyRef.current ||
       !canSendRef.current
     ) return;
-    const recognition = recognitionRef.current;
-    if (!recognition) return;
-    try {
-      recognition.start();
-      listeningRef.current = true;
-      setListening(true);
-      setStatus("Listening…");
-    } catch {
-      setStatus("Could not start the microphone. Check its permissions.");
-    }
-  }
-
-  function stopListening() {
-    if (restartTimerRef.current !== null) {
-      window.clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
-    }
-    if (!listeningRef.current) return;
-    listeningRef.current = false;
-    setListening(false);
-    try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
+    void microphoneRef.current?.start();
   }
 
   useEffect(() => {
     closedRef.current = false;
     const speaker = new TinyVocaSpeaker((message) => {
-      if (!closedRef.current && !pendingRef.current && !speakingRef.current) setStatus(message);
+      if (!closedRef.current && speakingRef.current) setStatus(message);
     });
+    const microphone = new LocalMicrophone(
+      (transcript) => {
+        if (closedRef.current || pendingRef.current || speakingRef.current) return;
+        if (busyRef.current || !canSendRef.current) return;
+        pendingRef.current = {
+          assistantBefore: latestAssistantId(messagesRef.current),
+          hadBusy: false,
+        };
+        microphone.stop();
+        setStatus("Sparky is thinking…");
+        onTranscriptRef.current(transcript);
+      },
+      (message) => {
+        if (!closedRef.current) setStatus(message);
+      },
+      (active) => {
+        if (!closedRef.current) setListening(active);
+      },
+    );
     speakerRef.current = speaker;
-    void speaker.load().catch((error: unknown) => {
-      if (!closedRef.current) {
-        setStatus(error instanceof Error ? error.message : "Could not load Tiny Voca");
-      }
-    });
-    const recognitionHost = window as typeof window & {
-      SpeechRecognition?: RecognitionConstructor;
-      webkitSpeechRecognition?: RecognitionConstructor;
-    };
-    const RecognitionApi =
-      recognitionHost.SpeechRecognition ?? recognitionHost.webkitSpeechRecognition;
-    if (!RecognitionApi) {
-      setStatus("Voice input is not supported by this browser. Try Chromium with speech recognition.");
-      return () => {
-        closedRef.current = true;
-        speaker.close();
-        speakerRef.current = null;
-      };
-    }
-    let recognition: Recognition;
-    try {
-      recognition = new RecognitionApi();
-    } catch {
-      setStatus("Could not initialize microphone recognition.");
-      return () => {
-        closedRef.current = true;
-        speaker.close();
-        speakerRef.current = null;
-      };
-    }
-    recognitionRef.current = recognition;
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-    recognition.onresult = (event) => {
-      if (closedRef.current || pendingRef.current || speakingRef.current) return;
-      let transcript = "";
-      for (let index = event.resultIndex; index < event.results.length; index++) {
-        const result = event.results[index];
-        if (result?.isFinal) transcript += " " + (result[0]?.transcript ?? "");
-      }
-      transcript = transcript.trim();
-      if (!transcript || !canSendRef.current || busyRef.current) return;
-      pendingRef.current = {
-        assistantBefore: latestAssistantId(messagesRef.current),
-        hadBusy: false,
-      };
-      stopListening();
-      setStatus("Sparky is thinking…");
-      onTranscriptRef.current(transcript);
-    };
-    recognition.onerror = (event) => {
-      if (closedRef.current || event.error === "aborted") return;
-      if (event.error === "no-speech") {
-        setStatus("Listening…");
-        return;
-      }
-      mutedRef.current = true;
-      setMuted(true);
-      setStatus("Microphone error: " + event.error + ". Check microphone access, then unmute.");
-    };
-    recognition.onend = () => {
-      listeningRef.current = false;
-      if (!closedRef.current) setListening(false);
-      if (
-        !closedRef.current &&
-        !mutedRef.current &&
-        !pendingRef.current &&
-        !speakingRef.current
-      ) {
-        restartTimerRef.current = window.setTimeout(listen, 500);
-      }
-    };
-    listen();
+    microphoneRef.current = microphone;
+    // The TTS worker can warm up while speech input downloads its first-use model.
+    void speaker.load().catch(() => {});
+    if (!mutedRef.current) void microphone.start();
     return () => {
       closedRef.current = true;
-      if (restartTimerRef.current !== null) window.clearTimeout(restartTimerRef.current);
-      recognition.onresult = null;
-      recognition.onerror = null;
-      recognition.onend = null;
-      try { recognition.abort(); } catch { /* unsupported */ }
-      recognitionRef.current = null;
+      microphone.close();
       speaker.close();
+      microphoneRef.current = null;
       speakerRef.current = null;
     };
   }, []);
@@ -232,7 +131,7 @@ export function VoiceCall({
       return;
     }
     speakingRef.current = true;
-    stopListening();
+    microphoneRef.current?.stop();
     setSpeaking(true);
     setStatus("Speaking…");
     void speakerRef.current?.speak(spokenText, voiceChoice, voiceSpeed)
@@ -254,7 +153,7 @@ export function VoiceCall({
     mutedRef.current = nextMuted;
     setMuted(nextMuted);
     if (nextMuted) {
-      stopListening();
+      microphoneRef.current?.stop();
       setStatus("Microphone muted");
     } else {
       setStatus("Microphone unmuted");
@@ -286,7 +185,7 @@ export function VoiceCall({
       >
         <div className="space-y-1">
           <h2 className="text-lg font-semibold">Sparky Voice</h2>
-          <p className="text-xs text-muted-foreground">Using your current model and thread · English</p>
+          <p className="text-xs text-muted-foreground">Your current model and thread · English</p>
         </div>
         <div className="flex h-24 w-24 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
           <AudioLinesIcon className="h-12 w-12 text-primary" aria-hidden="true" />
@@ -328,6 +227,15 @@ export function VoiceCall({
           {speaking ? "Audio is playing" : listening ? "Microphone active" : muted ? "Microphone off" : "Waiting"}
           {" · "}{voiceChoice} at {voiceSpeed.toFixed(2)}×
         </p>
+        {!listening && !muted && !speaking && !isBusy && canSend ? (
+          <button
+            type="button"
+            onClick={listen}
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            Retry microphone
+          </button>
+        ) : null}
       </section>
     </div>
   );

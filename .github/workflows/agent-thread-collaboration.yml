@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - "crates/sparky_prompt/**"
+      - "sparky-desktop/source/apps/server/src/orchestration/**"
+      - "sparky-desktop/source/apps/server/src/persistence/**"
+      - "sparky-desktop/source/packages/contracts/src/orchestration.ts"
+      - "sparky-desktop/source/packages/client-runtime/src/state/threadShell*"
       - "sparky-desktop/source/apps/server/src/mcp/**"
       - "sparky-desktop/source/apps/web/src/components/preview/**"
       - "sparky-desktop/source/packages/contracts/src/previewAutomation.ts"
@@ -56,6 +60,10 @@ jobs:
           fi
       - name: Test agent MCP tool schemas and permissions
         run: pnpm --filter t3 exec vp test run src/mcp/toolkits/threads/handlers.test.ts
+      - name: Test native subagent hierarchy and projection durability
+        run: pnpm --filter t3 exec vp test run src/orchestration/decider.subagents.test.ts src/orchestration/Layers/ProjectionSnapshotQuery.subagents.test.ts
+      - name: Test parent-only thread navigation
+        run: pnpm --filter @sparky/client-runtime exec vp test run src/state/threadShell.subagents.test.ts
       - name: Test cross-environment relay
         run: pnpm --filter @sparky/web exec vp test run --passWithNoTests --project unit src/components/preview/threadCollaborationRelay.test.ts
       # Main already fails full typecheck in unrelated untouched files. Keep

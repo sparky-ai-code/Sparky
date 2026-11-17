@@ -21,6 +21,10 @@ import {
   threadRefsEqual,
 } from "./entities.ts";
 
+export const isTopLevelThreadShell = (
+  thread: Pick<OrchestrationThreadShell, "parentThreadId">,
+): boolean => thread.parentThreadId === undefined;
+
 const EMPTY_THREADS: ReadonlyArray<OrchestrationThreadShell> = Object.freeze([]);
 const EMPTY_SCOPED_THREAD_REFS: ReadonlyArray<ScopedThreadRef> = Object.freeze([]);
 const EMPTY_THREAD_INDEX: ReadonlyMap<ThreadId, OrchestrationThreadShell> = new Map();
@@ -56,7 +60,7 @@ export function createEnvironmentThreadShellAtoms(input: {
     let previous: ReadonlyArray<ScopedThreadRef> = [];
     return Atom.make((get) => {
       const next = get(environmentThreadsAtom(environmentId))
-        .filter((thread) => thread.parentThreadId === undefined)
+        .filter(isTopLevelThreadShell)
         .map((thread) => ({
           environmentId,
           threadId: thread.id,
@@ -78,7 +82,7 @@ export function createEnvironmentThreadShellAtoms(input: {
       const grouped = new Map<ProjectId, ScopedThreadRef[]>();
       for (const thread of get(environmentThreadsAtom(environmentId))) {
         // Child agents remain addressable by ID but never clutter primary thread navigation.
-        if (thread.parentThreadId !== undefined) continue;
+        if (!isTopLevelThreadShell(thread)) continue;
         const refs = grouped.get(thread.projectId);
         const ref = { environmentId, threadId: thread.id };
         if (refs === undefined) {

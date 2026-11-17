@@ -213,6 +213,7 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { VoiceCall } from "../voice/VoiceCall";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -1230,6 +1231,7 @@ function ChatViewContent(props: ChatViewProps) {
   const composerRef = useComposerHandleContext() ?? localComposerRef;
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
+  const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
   const [steeredMessageIds, setSteeredMessageIds] = useState<ReadonlySet<string>>(() => new Set());
   const [steeringStartedAt, setSteeringStartedAt] = useState<string | null>(null);
@@ -4296,7 +4298,7 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
-  const onSend = async (e?: { preventDefault: () => void }) => {
+  const onSend = async (e?: { preventDefault: () => void }, voicePrompt?: string) => {
     e?.preventDefault();
     if (
       !activeThread ||
@@ -4312,6 +4314,16 @@ function ChatViewContent(props: ChatViewProps) {
     }
     const sendCtx = composerRef.current?.getSendContext();
     if (!sendCtx) return;
+    // Voice goes through the existing thread dispatcher without touching the typed draft.
+    const voiceCtx = voicePrompt === undefined ? sendCtx : {
+      ...sendCtx,
+      prompt: voicePrompt,
+      images: [],
+      terminalContexts: [],
+      elementContexts: [],
+      previewAnnotations: [],
+      reviewComments: [],
+    };
     const {
       prompt: promptForSend,
       images: composerImages,
@@ -4324,7 +4336,7 @@ function ChatViewContent(props: ChatViewProps) {
       selectedProviderModels: ctxSelectedProviderModels,
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
-    } = sendCtx;
+    } = voiceCtx;
     const composerTerminalContexts = workspaceContextEnabled ? rawComposerTerminalContexts : [];
     const composerElementContexts = workspaceContextEnabled ? rawComposerElementContexts : [];
     const composerPreviewAnnotations = workspaceContextEnabled ? rawComposerPreviewAnnotations : [];
@@ -4348,9 +4360,11 @@ function ChatViewContent(props: ChatViewProps) {
         draftText: trimmed,
         planMarkdown: activeProposedPlan.planMarkdown,
       });
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
+      if (voicePrompt === undefined) {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      }
       await onSubmitPlanFollowUp({
         text: followUp.text,
         interactionMode: followUp.interactionMode,
@@ -4358,7 +4372,7 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
     const standaloneSlashCommand =
-      composerImages.length === 0 &&
+      voicePrompt === undefined && composerImages.length === 0 &&
       sendableComposerTerminalContexts.length === 0 &&
       composerElementContexts.length === 0 &&
       composerPreviewAnnotations.length === 0 &&
@@ -4367,9 +4381,11 @@ function ChatViewContent(props: ChatViewProps) {
         : null;
     if (standaloneSlashCommand) {
       handleInteractionModeChange(standaloneSlashCommand);
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
+      if (voicePrompt === undefined) {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      }
       return;
     }
     if (!hasSendableContent) {
@@ -4417,9 +4433,11 @@ function ChatViewContent(props: ChatViewProps) {
           streaming: false,
         },
       ]);
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
+      if (voicePrompt === undefined) {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      }
       window.setTimeout(() => {
         const repliedAt = new Date().toISOString();
         setOptimisticUserMessages((existing) => [
@@ -4567,9 +4585,11 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
     }
-    promptRef.current = "";
-    clearComposerDraftContent(composerDraftTarget);
-    composerRef.current?.resetCursorState();
+    if (voicePrompt === undefined) {
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+    }
 
     let firstComposerImageName: string | null = null;
     if (composerImagesSnapshot.length > 0) {
@@ -4689,7 +4709,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
     }
 
-    if (failure !== null) {
+    if (failure !== null && voicePrompt === undefined) {
       if (
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
@@ -5786,6 +5806,7 @@ function ChatViewContent(props: ChatViewProps) {
                         composerTerminalContextsRef={composerTerminalContextsRef}
                         composerElementContextsRef={composerElementContextsRef}
                         onSend={onSend}
+                        onStartVoiceCall={() => setVoiceCallOpen(true)}
                         onInterrupt={onInterrupt}
                         onImplementPlanInNewThread={onImplementPlanInNewThread}
                         onRespondToApproval={onRespondToApproval}
@@ -5979,6 +6000,29 @@ function ChatViewContent(props: ChatViewProps) {
             {rightPanelContent}
           </RightPanelTabs>
         </RightPanelSheet>
+      ) : null}
+
+      {voiceCallOpen && activeThread ? (
+        <VoiceCall
+          key={routeThreadKey}
+          messages={timelineMessages}
+          voiceChoice={settings.voiceChoice}
+          voiceSpeed={settings.voiceSpeed}
+          isBusy={phase === "running" || isSendBusy || isConnecting}
+          latestTurnSettled={latestTurnSettled}
+          canSend={
+            !activeEnvironmentUnavailable &&
+            !activePendingApproval &&
+            !activePendingUserInput &&
+            !isConnecting &&
+            !isSendBusy &&
+            phase !== "running" &&
+            (!isLocalDraftThread || Boolean(activeProject) || isUnscopedChatThread)
+          }
+          onTranscript={(transcript) => void onSend(undefined, transcript)}
+          onInterrupt={() => void onInterrupt()}
+          onClose={() => setVoiceCallOpen(false)}
+        />
       ) : null}
 
       {expandedImage && (

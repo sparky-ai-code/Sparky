@@ -1,3 +1,4 @@
+import { PhoneCallIcon } from "lucide-react";
 import type {
   ApprovalRequestId,
   EnvironmentId,
@@ -516,6 +517,7 @@ export interface ChatComposerProps {
   composerElementContextsRef: React.RefObject<ElementContextDraft[]>;
   composerRef: React.RefObject<ChatComposerHandle | null>;
   onSend: (e?: { preventDefault: () => void }) => void;
+  onStartVoiceCall: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
@@ -598,6 +600,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerTerminalContextsRef,
     composerElementContextsRef,
     onSend,
+    onStartVoiceCall,
     onInterrupt,
     onImplementPlanInNewThread,
     onRespondToApproval,
@@ -2518,6 +2521,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   getModelDisabledReason={getModelDisabledReason}
                   onInstanceModelChange={onProviderModelSelect}
                 />
+                <button
+                  type="button"
+                  aria-label="Start voice call"
+                  title="Start voice call"
+                  onClick={onStartVoiceCall}
+                  disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
+                >
+                  <PhoneCallIcon className="size-4" aria-hidden="true" />
+                </button>
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
                   activeContextWindow={null}

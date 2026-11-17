@@ -216,6 +216,16 @@ If Sparky Desktop exposes `sparky_threads_list`, `sparky_project_branches`, `spa
 * Avoid circular delegations, self-messaging, unnecessary fan-out, and repeated polling. Coordinate ownership of files and branches when agents work in parallel to prevent conflicting edits. Inform the user about significant delegations and summarize confirmed outcomes, not merely queued actions.
 * Never use cross-thread tools to bypass Plan mode, permissions, or user approval. Newly created threads inherit the caller's access level; a more privileged existing thread must not be used to escalate the caller's permissions. Do not claim a peer completed its work merely because creation or delivery was acknowledged.
 
+### Native in-thread Sparky subagents
+
+When `sparky_subagent_spawn`, `sparky_subagents_list`, and `sparky_subagent_stop` are exposed, use them for parallel independent work **inside the current conversation**, not for creating another visible top-level thread. These children use the ordinary Sparky agent/provider runtime and tools, not an external CLI harness, and run asynchronously with their own provider session. Do not claim the work is complete merely because a spawn was acknowledged.
+
+* Spawn with `sparky_subagent_spawn(title, task, modelSelection?)` for substantive independent tasks that benefit from parallel research, implementation, tests, or review. The child inherits this thread's project, branch/worktree and permission mode. Omit modelSelection to use the caller's model, or inspect `sparky_thread_models` and select any supported connected provider/model and valid option values. Do not invent an unavailable model.
+* Use `sparky_subagents_list()` for your direct children and, when you are a subagent, your parent and siblings. Inspect results with `sparky_thread_read(threadId)`. A subagent is not a second user-facing thread and has no access to the parent's entire transcript unless given context deliberately.
+* Send updates or questions to teammates with `sparky_thread_message(threadId, message)`, and redirect an active agent mid-work using `sparky_thread_steer(threadId, message)`. Every agent, including a child, can message its parent and siblings. Replies must be sent using a tool: writing a normal assistant response in your own thread does not notify a teammate. Report the final outcome to your parent, and have the parent synthesize results for the user.
+* Use `sparky_subagent_stop(threadId)` only to stop a direct child and its nested children. Coordinate file ownership while agents share a workspace to prevent conflicting edits. Avoid idle polling, loops of agents messaging agents, or spawning agents for trivial steps.
+* Plan mode and permission approval rules still apply to every child; no delegation may escalate access or bypass user confirmation.
+
 When the Sparky Desktop browser toolkit is exposed, these tools operate on the shared in-app browser; they are not local filesystem or general research tools:
 
 * `preview_status(tabId?)` checks whether a tab is automation-capable and reports URL, title, loading state, and viewport.
@@ -903,6 +913,9 @@ mod tests {
             "sparky_thread_create",
             "sparky_thread_message",
             "sparky_thread_steer",
+            "sparky_subagent_spawn",
+            "sparky_subagents_list",
+            "sparky_subagent_stop",
         ] {
             assert!(build.contains(tool), "missing instructions for {tool}");
         }
@@ -918,6 +931,7 @@ mod tests {
             .build()
             .await;
         assert!(!plan.contains("sparky_thread_create"));
+        assert!(!plan.contains("sparky_subagent_spawn"));
     }
 
     #[tokio::test]

@@ -16,8 +16,12 @@ export function McpSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const connections = settings.mcpServers;
+  const [transport, setTransport] = useState<"streamable-http" | "stdio">("streamable-http");
   const [name, setName] = useState("");
   const [endpoint, setEndpoint] = useState("");
+  const [command, setCommand] = useState("");
+  const [args, setArgs] = useState("");
+  const [env, setEnv] = useState("");
   const [authorizationToken, setAuthorizationToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [serverStatuses, setServerStatuses] = useState<ReadonlyMap<string, McpServerConnectionStatus>>(
@@ -55,20 +59,41 @@ export function McpSettingsPanel() {
     const normalizedName = name.trim();
     const normalizedEndpoint = endpoint.trim();
     try {
-      const parsedEndpoint = new URL(normalizedEndpoint);
-      if (parsedEndpoint.protocol !== "https:" && parsedEndpoint.protocol !== "http:") {
-        throw new Error("Use an HTTP or HTTPS endpoint.");
-      }
       if (!normalizedName) throw new Error("Enter a name for this MCP server.");
       if (connections.some((server) => server.name.toLowerCase() === normalizedName.toLowerCase())) {
         throw new Error("Choose a unique server name.");
+      }
+      let url = "";
+      let normalizedCommand = "";
+      let parsedEnv: Record<string, string> = {};
+      if (transport === "stdio") {
+        normalizedCommand = command.trim();
+        if (!normalizedCommand) throw new Error("Enter the executable for the local MCP server.");
+        if (env.trim()) {
+          const value: unknown = JSON.parse(env);
+          if (!value || typeof value !== "object" || Array.isArray(value) ||
+              Object.values(value).some((item) => typeof item !== "string")) {
+            throw new Error("Environment variables must be a JSON object with string values.");
+          }
+          parsedEnv = value as Record<string, string>;
+        }
+      } else {
+        const parsedEndpoint = new URL(normalizedEndpoint);
+        if (parsedEndpoint.protocol !== "https:" && parsedEndpoint.protocol !== "http:") {
+          throw new Error("Use an HTTP or HTTPS endpoint.");
+        }
+        url = parsedEndpoint.href;
       }
       save([
         ...connections,
         {
           id: crypto.randomUUID(),
           name: normalizedName,
-          url: parsedEndpoint.href,
+          transport,
+          url,
+          command: normalizedCommand,
+          args: args.split(/\r?\n/u).map((arg) => arg.trim()).filter(Boolean),
+          env: parsedEnv,
           authorizationToken: authorizationToken.trim(),
           authorizationTokenRedacted: false,
           enabled: true,
@@ -76,10 +101,13 @@ export function McpSettingsPanel() {
       ]);
       setName("");
       setEndpoint("");
+      setCommand("");
+      setArgs("");
+      setEnv("");
       setAuthorizationToken("");
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Enter a valid MCP endpoint.");
+      setError(cause instanceof Error ? cause.message : "Enter a valid MCP configuration.");
     }
   };
 
@@ -87,15 +115,14 @@ export function McpSettingsPanel() {
     <SettingsPageContainer>
       <div>
         <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">MCP</h1>
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">Plugins</h1>
           <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Beta
           </span>
         </div>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Add streamable HTTP MCP servers here. Connections are saved in server settings and restored
-          after restart. Their status is checked when this page opens and periodically; unreachable
-          servers are marked Offline.
+          Add MCP servers, app integrations, and local tools here. Connections are saved in server
+          settings and restored after restart. Local command-based plugins execute on this machine.
         </p>
       </div>
 
@@ -113,7 +140,7 @@ export function McpSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection
-        title="Your MCP servers"
+        title="Configured plugins"
         icon={<McpIcon className="size-3.5" />}
         headerAction={
           <Button
@@ -140,7 +167,11 @@ export function McpSettingsPanel() {
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-semibold text-foreground">{connection.name}</p>
-                <p className="truncate text-xs text-muted-foreground">{connection.url}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {connection.transport === "stdio"
+                    ? `${connection.command} ${(connection.args ?? []).join(" ")}`
+                    : connection.url}
+                </p>
               </div>
               <span
                 role="status"
@@ -186,32 +217,51 @@ export function McpSettingsPanel() {
         <form onSubmit={addConnection} className="grid gap-3 border-t border-border/60 p-4 sm:p-5">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1.5 text-xs font-medium text-foreground">
-              Server name
+              Plugin name
               <Input value={name} onChange={(event) => setName(event.currentTarget.value)} placeholder="My MCP server" />
             </label>
             <label className="grid gap-1.5 text-xs font-medium text-foreground">
-              Server URL
-              <Input
-                type="url"
-                value={endpoint}
-                onChange={(event) => setEndpoint(event.currentTarget.value)}
-                placeholder="https://example.com/mcp"
-              />
+              Connection type
+              <select
+                value={transport}
+                onChange={(event) => setTransport(event.currentTarget.value as typeof transport)}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="streamable-http">Streamable HTTP</option>
+                <option value="stdio">Local command (stdio)</option>
+              </select>
             </label>
-            <label className="grid gap-1.5 text-xs font-medium text-foreground sm:col-span-2">
-              Bearer token <span className="font-normal text-muted-foreground">(optional)</span>
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={authorizationToken}
-                onChange={(event) => setAuthorizationToken(event.currentTarget.value)}
-                placeholder="Stored securely on the server"
-              />
-            </label>
+            {transport === "streamable-http" ? (
+              <label className="grid gap-1.5 text-xs font-medium text-foreground sm:col-span-2">
+                Server URL
+                <Input type="url" value={endpoint} onChange={(event) => setEndpoint(event.currentTarget.value)} placeholder="https://example.com/mcp" />
+              </label>
+            ) : (
+              <>
+                <label className="grid gap-1.5 text-xs font-medium text-foreground sm:col-span-2">
+                  Executable
+                  <Input value={command} onChange={(event) => setCommand(event.currentTarget.value)} placeholder="npx" />
+                </label>
+                <label className="grid gap-1.5 text-xs font-medium text-foreground sm:col-span-2">
+                  Arguments <span className="font-normal text-muted-foreground">(one per line)</span>
+                  <textarea value={args} onChange={(event) => setArgs(event.currentTarget.value)} rows={3} className="rounded-md border border-input bg-background px-3 py-2 font-mono text-xs" placeholder="--yes&#10;@example/mcp-server" />
+                </label>
+                <label className="grid gap-1.5 text-xs font-medium text-foreground sm:col-span-2">
+                  Environment variables <span className="font-normal text-muted-foreground">(JSON object, optional)</span>
+                  <textarea value={env} onChange={(event) => setEnv(event.currentTarget.value)} rows={3} className="rounded-md border border-input bg-background px-3 py-2 font-mono text-xs" placeholder={'{"API_KEY":"…"}'} />
+                </label>
+              </>
+            )}
+            {transport === "streamable-http" ? (
+              <label className="grid gap-1.5 text-xs font-medium text-foreground sm:col-span-2">
+                Bearer token <span className="font-normal text-muted-foreground">(optional)</span>
+                <Input type="password" autoComplete="new-password" value={authorizationToken} onChange={(event) => setAuthorizationToken(event.currentTarget.value)} placeholder="Stored securely on the server" />
+              </label>
+            ) : null}
           </div>
           {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
           <div className="flex justify-end">
-            <Button type="submit" size="sm"><PlusIcon className="size-4" /> Add server</Button>
+            <Button type="submit" size="sm"><PlusIcon className="size-4" /> Add plugin</Button>
           </div>
         </form>
       </SettingsSection>

@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { PluginsSettingsPanel } from "../components/settings/PluginsSettingsPanel";
+import { McpSettingsPanel } from "../components/settings/McpSettingsPanel";
 
 function SettingsPluginsRoute() {
-  return <PluginsSettingsPanel />;
+  return <McpSettingsPanel />;
 }
 
 export const Route = createFileRoute("/settings/plugins")({

@@ -449,7 +449,16 @@ export type McpServerConnectionStatus = typeof McpServerConnectionStatus.Type;
 export const McpServerConfig = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
-  url: Schema.String.check(Schema.isPattern(/^https?:\/\//u)),
+  transport: Schema.Literals(["streamable-http", "stdio"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("streamable-http" as const)),
+  ),
+  // `url` remains optional for legacy HTTP entries and is unused by stdio servers.
+  url: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  command: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  args: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  env: Schema.Record(Schema.String, Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   authorizationToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   authorizationTokenRedacted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),

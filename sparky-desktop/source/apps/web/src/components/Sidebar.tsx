@@ -720,7 +720,10 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     },
     [attemptArchiveThread, clearConfirmingArchive, threadRef],
   );
-  const handleArchiveFromMenu = useCallback(() => {
+  const handleArchiveFromMenu = useCallback((event: React.MouseEvent) => {
+    // MenuPopup is portaled, but React events still bubble through the row's
+    // component tree. Keep this action from triggering the row navigation.
+    event.stopPropagation();
     if (isThreadRunning) return;
     if (appSettingsConfirmThreadArchive && !window.confirm(`Archive thread "${thread.title}"?`)) {
       return;

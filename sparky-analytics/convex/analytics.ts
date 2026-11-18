@@ -181,10 +181,17 @@ export const recordEvent = internalMutation({
       const visitor = await ctx.db.query("visitors").withIndex("by_visitor_id", (q) => q.eq("visitorId", args.visitorId)).unique();
       if (!visitor) {
         await ctx.db.insert("visitors", { visitorId: args.visitorId, firstSeenAt: at, lastSeenAt: at });
-        daily.uniqueVisitors = 1;
         await incrementTotal(ctx, "uniqueVisitors", 1);
       } else if (at > visitor.lastSeenAt) {
         await ctx.db.patch(visitor._id, { lastSeenAt: at });
+      }
+
+      const visitorDay = await ctx.db.query("visitorDays")
+        .withIndex("by_date_and_visitor", (q) => q.eq("date", date).eq("visitorId", args.visitorId))
+        .unique();
+      if (!visitorDay) {
+        await ctx.db.insert("visitorDays", { visitorId: args.visitorId, date });
+        daily.uniqueVisitors = 1;
       }
     }
 

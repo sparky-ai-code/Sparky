@@ -5,7 +5,7 @@ import {
 } from "@sparky/client-runtime/state/runtime";
 import type { EnvironmentId, VcsRef, ThreadId } from "@sparky/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import { ChevronDownIcon, GitBranchIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
+import { ChevronDownIcon, GitBranchIcon, RefreshCwIcon, SearchIcon } from "./Hugeicons";
 import {
   useCallback,
   useDeferredValue,

@@ -1,0 +1,88 @@
+import {
+  HugeiconsIcon,
+  type HugeiconsIconProps,
+  type IconSvgElement,
+} from "@hugeicons/react";
+import AlertCircleIcon from "@hugeicons/core-free-icons/AlertCircleIcon";
+import Robot01Glyph from "@hugeicons/core-free-icons/Robot01Icon";
+import Archive02Icon from "@hugeicons/core-free-icons/Archive02Icon";
+import AppWindowIcon from "@hugeicons/core-free-icons/AppWindowIcon";
+import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
+import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
+import ArrowUpDownGlyph from "@hugeicons/core-free-icons/ArrowUpDownIcon";
+import Cancel01Glyph from "@hugeicons/core-free-icons/Cancel01Icon";
+import Clock01Glyph from "@hugeicons/core-free-icons/Clock01Icon";
+import CloudGlyph from "@hugeicons/core-free-icons/CloudIcon";
+import ComputerTerminal01Icon from "@hugeicons/core-free-icons/ComputerTerminal01Icon";
+import LockGlyph from "@hugeicons/core-free-icons/LockIcon";
+import LockOpenGlyph from "@hugeicons/core-free-icons/LockOpenIcon";
+import Folder01Glyph from "@hugeicons/core-free-icons/Folder01Icon";
+import FolderAddIcon from "@hugeicons/core-free-icons/FolderAddIcon";
+import FolderGit2Glyph from "@hugeicons/core-free-icons/FolderGit2Icon";
+import FolderGitGlyph from "@hugeicons/core-free-icons/FolderGitIcon";
+import FolderOpenGlyph from "@hugeicons/core-free-icons/FolderOpenIcon";
+import GitBranchGlyph from "@hugeicons/core-free-icons/GitBranchIcon";
+import Globe02Icon from "@hugeicons/core-free-icons/Globe02Icon";
+import Layout2ColumnGlyph from "@hugeicons/core-free-icons/Layout2ColumnIcon";
+import ListTodoGlyph from "@hugeicons/core-free-icons/ListTodoIcon";
+import Loading03Icon from "@hugeicons/core-free-icons/Loading03Icon";
+import MonitorGlyph from "@hugeicons/core-free-icons/MonitorIcon";
+import MoreHorizontalIcon from "@hugeicons/core-free-icons/MoreHorizontalIcon";
+import PencilEdit01Icon from "@hugeicons/core-free-icons/PencilEdit01Icon";
+import PencilRulerGlyph from "@hugeicons/core-free-icons/PencilRulerIcon";
+import PencilLineGlyph from "@hugeicons/core-free-icons/PencilLineIcon";
+import PinGlyph from "@hugeicons/core-free-icons/PinIcon";
+import Refresh01Glyph from "@hugeicons/core-free-icons/Refresh01Icon";
+import Add01Icon from "@hugeicons/core-free-icons/Add01Icon";
+import Alert01Glyph from "@hugeicons/core-free-icons/Alert01Icon";
+import Search01Icon from "@hugeicons/core-free-icons/Search01Icon";
+import Settings01Icon from "@hugeicons/core-free-icons/Settings01Icon";
+import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
+
+export type IconProps = Omit<HugeiconsIconProps, "icon">;
+
+function wrap(icon: IconSvgElement, name: string) {
+  function Icon({ strokeWidth = 1.75, ...props }: IconProps) {
+    return <HugeiconsIcon icon={icon} strokeWidth={strokeWidth} {...props} />;
+  }
+  Icon.displayName = name;
+  return Icon;
+}
+
+// Shared app-chrome glyphs aligned with MonoCode's Hugeicons set.
+export const BotIcon = wrap(Robot01Glyph, "BotIcon");
+export const ArchiveIcon = wrap(Archive02Icon, "ArchiveIcon");
+export const ArrowUpDownIcon = wrap(ArrowUpDownGlyph, "ArrowUpDownIcon");
+export const CalendarClockIcon = wrap(Clock01Glyph, "CalendarClockIcon");
+export const CheckIcon = wrap(Tick02Icon, "CheckIcon");
+export const CircleAlertIcon = wrap(AlertCircleIcon, "CircleAlertIcon");
+export const ChevronRightIcon = wrap(ArrowRight01Icon, "ChevronRightIcon");
+export const ChevronDownIcon = wrap(ArrowDown01Icon, "ChevronDownIcon");
+export const CloudIcon = wrap(CloudGlyph, "CloudIcon");
+export const Columns2Icon = wrap(Layout2ColumnGlyph, "Columns2Icon");
+export const ContainerIcon = wrap(AppWindowIcon, "ContainerIcon");
+export const EllipsisIcon = wrap(MoreHorizontalIcon, "EllipsisIcon");
+export const FolderPlusIcon = wrap(FolderAddIcon, "FolderPlusIcon");
+export const FolderIcon = wrap(Folder01Glyph, "FolderIcon");
+export const FolderOpenIcon = wrap(FolderOpenGlyph, "FolderOpenIcon");
+export const FolderGitIcon = wrap(FolderGitGlyph, "FolderGitIcon");
+export const FolderGit2Icon = wrap(FolderGit2Glyph, "FolderGit2Icon");
+export const GitBranchIcon = wrap(GitBranchGlyph, "GitBranchIcon");
+export const MonitorIcon = wrap(MonitorGlyph, "MonitorIcon");
+export const RefreshCwIcon = wrap(Refresh01Glyph, "RefreshCwIcon");
+export const Globe2Icon = wrap(Globe02Icon, "Globe2Icon");
+export const LoaderIcon = wrap(Loading03Icon, "LoaderIcon");
+export const ListTodoIcon = wrap(ListTodoGlyph, "ListTodoIcon");
+export const LockIcon = wrap(LockGlyph, "LockIcon");
+export const LockOpenIcon = wrap(LockOpenGlyph, "LockOpenIcon");
+export const PlusIcon = wrap(Add01Icon, "PlusIcon");
+export const PinIcon = wrap(PinGlyph, "PinIcon");
+export const SearchIcon = wrap(Search01Icon, "SearchIcon");
+export const SettingsIcon = wrap(Settings01Icon, "SettingsIcon");
+export const SquarePenIcon = wrap(PencilEdit01Icon, "SquarePenIcon");
+export const PencilRulerIcon = wrap(PencilRulerGlyph, "PencilRulerIcon");
+export const PenLineIcon = wrap(PencilLineGlyph, "PenLineIcon");
+export const CancelIcon = wrap(Cancel01Glyph, "CancelIcon");
+export const XIcon = wrap(Cancel01Glyph, "XIcon");
+export const TerminalIcon = wrap(ComputerTerminal01Icon, "TerminalIcon");
+export const TriangleAlertIcon = wrap(Alert01Glyph, "TriangleAlertIcon");

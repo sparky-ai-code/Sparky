@@ -18,7 +18,7 @@ import {
   SquarePenIcon,
   TerminalIcon,
   TriangleAlertIcon,
-} from "lucide-react";
+} from "./Hugeicons";
 import {
   ChangeRequestStatusIcon,
   prStatusIndicator,

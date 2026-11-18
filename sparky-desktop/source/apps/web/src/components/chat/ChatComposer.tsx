@@ -25,6 +25,7 @@ import {
 import { serializeComposerFileLink } from "@sparky/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@sparky/shared/model";
 import {
+  type ComponentType,
   memo,
   useCallback,
   useEffect,
@@ -110,12 +111,12 @@ import {
   CircleAlertIcon,
   ListTodoIcon,
   PencilRulerIcon,
-  type LucideIcon,
   LockIcon,
   LockOpenIcon,
   PenLineIcon,
   XIcon,
-} from "lucide-react";
+} from "../Hugeicons";
+import type { IconProps } from "../Hugeicons";
 import { proposedPlanTitle } from "../../proposedPlan";
 import { getProviderDisplayName, getProviderInteractionModeToggle } from "../../providerModels";
 import {
@@ -143,7 +144,7 @@ const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES 
 
 const runtimeModeConfig: Record<
   RuntimeMode,
-  { label: string; description: string; icon: LucideIcon }
+  { label: string; description: string; icon: ComponentType<IconProps> }
 > = {
   "approval-required": {
     label: "Supervised",

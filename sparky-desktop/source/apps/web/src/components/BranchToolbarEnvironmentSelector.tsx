@@ -1,5 +1,5 @@
 import type { EnvironmentId } from "@sparky/contracts";
-import { CloudIcon, MonitorIcon } from "lucide-react";
+import { CloudIcon, MonitorIcon } from "./Hugeicons";
 import { memo, useMemo } from "react";
 
 import type { EnvironmentOption } from "./BranchToolbar.logic";

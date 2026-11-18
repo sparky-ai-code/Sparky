@@ -101,10 +101,6 @@ export default defineSchema({
     firstSeenAt: v.number(),
     lastSeenAt: v.number(),
   }).index("by_visitor_id", ["visitorId"]),
-  visitorDays: defineTable({
-    visitorId: v.string(),
-    date: v.string(),
-  }).index("by_date_and_visitor", ["date", "visitorId"]),
   installations: defineTable({
     installationId: v.string(),
     firstSeenAt: v.number(),

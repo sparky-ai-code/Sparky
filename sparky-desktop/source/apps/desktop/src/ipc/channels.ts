@@ -52,6 +52,7 @@ export const GITHUB_AUTH_DISCONNECT_CHANNEL = "desktop:github-auth-disconnect";
 export const GITHUB_PLUGIN_SYNC_CHANNEL = "desktop:github-plugin-sync";
 export const GITHUB_CLI_LIST_REPOSITORIES_CHANNEL = "desktop:github-cli-list-repositories";
 export const GITHUB_CLI_LIST_PULL_REQUESTS_CHANNEL = "desktop:github-cli-list-pull-requests";
+export const GITHUB_CLI_LIST_ISSUES_CHANNEL = "desktop:github-cli-list-issues";
 export const GITHUB_CLI_GET_PULL_REQUEST_CHANNEL = "desktop:github-cli-get-pull-request";
 export const GITHUB_CLI_GET_PULL_REQUEST_COMMENTS_CHANNEL =
   "desktop:github-cli-get-pull-request-comments";

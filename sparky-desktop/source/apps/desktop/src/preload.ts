@@ -66,6 +66,26 @@ type GitHubPullRequestListResult = {
   error: string | null;
 };
 
+type GitHubIssue = {
+  number: number;
+  title: string;
+  url: string;
+  state: "open" | "closed";
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  authorLogin: string | null;
+  body: string | null;
+  commentsCount: number;
+  labels: string[];
+  assigneeLogin: string | null;
+};
+type GitHubIssueListResult = {
+  repository: string;
+  issues: GitHubIssue[];
+  error: string | null;
+};
+
 type GitHubPullRequestDetailResult = {
   pullRequest: GitHubPullRequest | null;
   error: string | null;
@@ -126,6 +146,10 @@ type ExtendedDesktopBridge = DesktopBridge & {
     repository: string;
     scope: "all" | "authored";
   }) => Promise<GitHubPullRequestListResult>;
+  listGitHubIssues: (input: {
+    repository: string;
+    state: "open" | "closed" | "all";
+  }) => Promise<GitHubIssueListResult>;
   getGitHubPullRequest: (input: {
     repository: string;
     number: number;
@@ -247,6 +271,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.invoke(IpcChannels.GITHUB_CLI_LIST_REPOSITORIES_CHANNEL, input),
   listGitHubPullRequests: (input) =>
     ipcRenderer.invoke(IpcChannels.GITHUB_CLI_LIST_PULL_REQUESTS_CHANNEL, input),
+  listGitHubIssues: (input) =>
+    ipcRenderer.invoke(IpcChannels.GITHUB_CLI_LIST_ISSUES_CHANNEL, input),
   getGitHubPullRequest: (input) =>
     ipcRenderer.invoke(IpcChannels.GITHUB_CLI_GET_PULL_REQUEST_CHANNEL, input),
   getGitHubPullRequestComments: (input) =>

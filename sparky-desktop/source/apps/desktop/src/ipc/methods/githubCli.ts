@@ -79,6 +79,26 @@ const GitHubPullRequestListResultSchema = Schema.Struct({
   error: Schema.NullOr(Schema.String),
 });
 
+const GitHubIssueSchema = Schema.Struct({
+  number: Schema.Number,
+  title: Schema.String,
+  url: Schema.String,
+  state: Schema.Literals(["open", "closed"]),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  closedAt: Schema.NullOr(Schema.String),
+  authorLogin: Schema.NullOr(Schema.String),
+  body: Schema.NullOr(Schema.String),
+  commentsCount: Schema.Number,
+  labels: Schema.Array(Schema.String),
+  assigneeLogin: Schema.NullOr(Schema.String),
+});
+const GitHubIssueListResultSchema = Schema.Struct({
+  repository: Schema.String,
+  issues: Schema.Array(GitHubIssueSchema),
+  error: Schema.NullOr(Schema.String),
+});
+
 const GitHubPullRequestDetailResultSchema = Schema.Struct({
   pullRequest: Schema.NullOr(GitHubPullRequestSchema),
   error: Schema.NullOr(Schema.String),
@@ -102,6 +122,10 @@ const ListRepositoriesInputSchema = Schema.Struct({ cwds: Schema.Array(Schema.St
 const ListPullRequestsInputSchema = Schema.Struct({
   repository: Schema.String,
   scope: PullRequestScopeSchema,
+});
+const ListIssuesInputSchema = Schema.Struct({
+  repository: Schema.String,
+  state: Schema.Literals(["open", "closed", "all"]),
 });
 const GetPullRequestInputSchema = Schema.Struct({
   repository: Schema.String,
@@ -992,6 +1016,79 @@ async function listPullRequests(input: {
   }
 }
 
+async function listIssues(input: {
+  repository: string;
+  state: "open" | "closed" | "all";
+}): Promise<typeof GitHubIssueListResultSchema.Type> {
+  const status = await getGitHubCliStatus();
+  if (status.auth !== "authenticated") {
+    return {
+      repository: input.repository,
+      issues: [],
+      error: status.detail ?? "GitHub is not authenticated.",
+    };
+  }
+  try {
+    const repository = parseGitHubRepository(input.repository);
+    if (!repository) throw new Error("Invalid GitHub repository name.");
+    const { owner, repo } = repository;
+    const params = new URLSearchParams({
+      state: input.state,
+      per_page: "100",
+      sort: "updated",
+      direction: "desc",
+    });
+    const value = await githubJson(
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues?${params}`,
+    );
+    if (!Array.isArray(value)) throw new Error("GitHub returned an invalid issue list.");
+    const issues = value.flatMap((item): (typeof GitHubIssueSchema.Type)[] => {
+      if (!isJsonRecord(item) || isJsonRecord(item.pull_request)) return [];
+      const user = isJsonRecord(item.user) ? item.user : null;
+      const assignees = Array.isArray(item.assignees) ? item.assignees : [];
+      const firstAssignee = assignees.find(isJsonRecord);
+      const labels = Array.isArray(item.labels) ? item.labels : [];
+      const number = item.number;
+      if (
+        typeof number !== "number" ||
+        typeof item.title !== "string" ||
+        typeof item.html_url !== "string" ||
+        (item.state !== "open" && item.state !== "closed") ||
+        typeof item.created_at !== "string" ||
+        typeof item.updated_at !== "string" ||
+        typeof item.comments !== "number"
+      ) {
+        return [];
+      }
+      return [{
+        number,
+        title: item.title,
+        url: item.html_url,
+        state: item.state,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at,
+        closedAt: typeof item.closed_at === "string" ? item.closed_at : null,
+        authorLogin: typeof user?.login === "string" ? user.login : null,
+        body: typeof item.body === "string" ? item.body : null,
+        commentsCount: item.comments,
+        labels: labels.flatMap((label) =>
+          isJsonRecord(label) && typeof label.name === "string" ? [label.name] : [],
+        ),
+        assigneeLogin: isJsonRecord(firstAssignee) && typeof firstAssignee.login === "string"
+          ? firstAssignee.login
+          : null,
+      }];
+    });
+    return { repository: input.repository, issues, error: null };
+  } catch (error) {
+    return {
+      repository: input.repository,
+      issues: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function getPullRequest(input: {
   repository: string;
   number: number;
@@ -1289,6 +1386,13 @@ export const list = DesktopIpc.makeIpcMethod({
   payload: ListPullRequestsInputSchema,
   result: GitHubPullRequestListResultSchema,
   handler: (input) => Effect.tryPromise(() => listPullRequests(input)),
+});
+
+export const listIssuesMethod = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GITHUB_CLI_LIST_ISSUES_CHANNEL,
+  payload: ListIssuesInputSchema,
+  result: GitHubIssueListResultSchema,
+  handler: (input) => Effect.tryPromise(() => listIssues(input)),
 });
 
 export const getPullRequestMethod = DesktopIpc.makeIpcMethod({

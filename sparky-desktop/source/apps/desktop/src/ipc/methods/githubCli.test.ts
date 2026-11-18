@@ -56,6 +56,29 @@ function setupGitHubMock(headShas: string[]): void {
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     if (url.pathname === "/user") return makeGitHubResponse({ login: "sparky-test" });
+    if (url.pathname === "/repos/example/project/issues") {
+      return makeGitHubResponse([
+        {
+          number: 23,
+          title: "Track a follow-up",
+          html_url: "https://github.com/example/project/issues/23",
+          state: "open",
+          created_at: "2026-09-20T00:00:00Z",
+          updated_at: "2026-10-01T00:00:00Z",
+          closed_at: null,
+          user: { login: "contributor" },
+          body: "Issue details",
+          comments: 4,
+          labels: [{ name: "enhancement" }],
+          assignees: [{ login: "maintainer" }],
+        },
+        {
+          number: 17,
+          title: "Issue-shaped pull request",
+          pull_request: { url: "https://api.github.com/repos/example/project/pulls/17" },
+        },
+      ]);
+    }
     if (url.pathname.endsWith("/check-runs")) {
       return makeGitHubResponse({
         total_count: 2,
@@ -122,6 +145,46 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   await NodeFSP.rm(userDataPath, { recursive: true, force: true });
+});
+
+describe("GitHub issue listing", () => {
+  effectIt.effect("lists issues while excluding pull requests returned by GitHub", () =>
+    Effect.gen(function* () {
+      setupGitHubMock([HEAD_SHA]);
+      const { listIssuesMethod } = yield* Effect.promise(() => loadGitHubCli());
+
+      const result = yield* listIssuesMethod.handler({
+        repository: "example/project",
+        state: "all",
+      });
+
+      expect(result).toEqual({
+        repository: "example/project",
+        issues: [
+          {
+            number: 23,
+            title: "Track a follow-up",
+            url: "https://github.com/example/project/issues/23",
+            state: "open",
+            createdAt: "2026-09-20T00:00:00Z",
+            updatedAt: "2026-10-01T00:00:00Z",
+            closedAt: null,
+            authorLogin: "contributor",
+            body: "Issue details",
+            commentsCount: 4,
+            labels: ["enhancement"],
+            assigneeLogin: "maintainer",
+          },
+        ],
+        error: null,
+      });
+      expect(
+        fetchMock.mock.calls.some(
+          ([input]) => new URL(String(input)).searchParams.get("state") === "all",
+        ),
+      ).toBe(true);
+    }),
+  );
 });
 
 describe("GitHub pull request details", () => {

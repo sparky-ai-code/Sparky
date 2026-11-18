@@ -459,6 +459,7 @@ export const McpServerConfig = Schema.Struct({
   env: Schema.Record(Schema.String, Schema.String).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  envRedacted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   authorizationToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   authorizationTokenRedacted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),

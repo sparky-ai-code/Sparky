@@ -36,6 +36,15 @@ h1{font-size:clamp(42px,4.5vw,65px);line-height:1.06;font-weight:450;letter-spac
 .hero-scene figcaption{position:absolute;bottom:21px;left:26px;color:#fff;font-size:12px;text-shadow:0 1px 8px #111}
 .hero-footnote{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;padding:20px 0;border-bottom:1px solid var(--line)}
 .workflow{padding-top:102px;display:grid;gap:32px}
+.latest-release{display:grid;grid-template-columns:200px 1fr;gap:40px;margin-top:76px;padding-block:36px;border-block:1px solid var(--line)}
+.latest-release-meta{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+.latest-release-meta::before{content:"";width:7px;height:7px;border-radius:50%;background:#c6ef89;box-shadow:0 0 13px #c6ef8955}
+.latest-release-meta strong{color:var(--ink);font-weight:550;letter-spacing:0}
+.latest-release-copy{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:30px}
+.latest-release-copy h2{font-size:clamp(26px,2.5vw,34px)}
+.latest-release-copy p{max-width:54ch;margin-top:11px;color:var(--muted);font-size:15px;line-height:1.6}
+.latest-release-links{display:grid;gap:10px}
+.latest-release-links .text-link{margin:0;white-space:nowrap}
 .feature{display:grid;grid-template-columns:35% 65%;align-items:center;background:var(--panel);overflow:hidden;min-height:460px;border-radius:3px}
 .feature-copy{padding:42px}
 h2{font-size:clamp(28px,2.65vw,38px);line-height:1.15;font-weight:450;letter-spacing:-.03em;text-wrap:balance}
@@ -70,5 +79,6 @@ h2{font-size:clamp(28px,2.65vw,38px);line-height:1.15;font-weight:450;letter-spa
 .copyright{grid-column:1 / -1;color:var(--muted);font-size:12px;padding-top:20px;border-top:1px solid var(--line)}
 @media(min-width:1600px){.hero-copy{padding-top:100px}}
 @media(max-width:1050px){.wrap{width:calc(100% - 56px)}.hero-copy{gap:30px}.hero-intro p{font-size:15px}.feature,.feature-review{grid-template-columns:42% 58%;min-height:400px}.feature-review{grid-template-columns:58% 42%}.feature-copy{padding:30px}.conversation-media{padding:30px}.feature-copy p{font-size:15px}.closing-copy{padding:40px 32px}.site-header nav{gap:20px}}
+@media(max-width:760px){.latest-release{grid-template-columns:1fr;gap:15px;margin-top:44px;padding-block:28px}.latest-release-copy{grid-template-columns:1fr;gap:18px}.latest-release-links{gap:8px}.latest-release-links .text-link{white-space:normal}}
 @media(max-width:760px){html{scroll-padding-top:18px}.wrap{width:calc(100% - 36px)}.site-header{min-height:76px;flex-wrap:wrap;gap:0;padding-top:17px}.site-header .brand{font-size:23px}.site-header nav{order:3;justify-content:center;width:100%;gap:28px;padding:22px 0 8px;font-size:13px}.hero-copy{display:block;padding:54px 0 30px}h1{font-size:48px}.hero-intro{margin-top:25px}.hero-intro p{font-size:15px}.actions{gap:18px;margin-top:20px}.hero-scene{aspect-ratio:1.04}.hero-app{width:83%;left:6%;top:9%}.window-title{height:23px;font-size:8px}.diff-overlay{width:65%;right:4%;bottom:10%}.hero-scene figcaption{font-size:10px;bottom:13px;left:16px}.hero-footnote{font-size:11px;gap:18px;line-height:1.5}.hero-footnote span:last-child{text-align:right}.workflow{padding-top:54px;gap:24px}.feature,.feature-review{display:flex;flex-direction:column;min-height:0;align-items:stretch}.feature-copy{padding:32px 28px}.feature-copy p{max-width:46ch;margin-top:18px}.feature-review .feature-copy{order:-1}.feature-media{padding:28px;min-height:0}.conversation-media img{max-width:420px}.review-media{padding:36px 20px}.ownership{padding-block:64px}.ownership-heading{display:block}.ownership-heading p{margin-top:23px;font-size:16px}.provider-list{display:grid;grid-template-columns:1fr 1fr;gap:28px 20px;margin-top:30px;padding-block:28px}.provider{font-size:20px;gap:10px}.provider img{width:25px;height:25px}.closing{display:flex;flex-direction:column}.closing-landscape{height:230px;min-height:0}.closing-copy{padding:34px 28px 40px}.closing-mark{width:42px;height:42px;margin-bottom:24px}.closing h2{font-size:40px}.site-footer{gap:28px;padding-top:45px;grid-template-columns:1fr}.site-footer nav{flex-wrap:wrap;gap:22px;padding:0}.copyright{padding-top:22px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}

@@ -910,7 +910,7 @@ export function ScheduledTasksPage() {
               ) : null}
 
               <div className="rounded-lg border border-border bg-muted/60 px-3 py-2.5 text-[13px] text-muted-foreground">
-                <span className="block text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                <span className="block text-[10px] font-medium text-muted-foreground">
                   Schedule preview
                 </span>
                 <span className="mt-1 block text-sm text-foreground">

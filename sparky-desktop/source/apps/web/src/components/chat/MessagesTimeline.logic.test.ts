@@ -4,9 +4,22 @@ import {
   computeMessageDurationStart,
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
+  parseAgentThreadAttribution,
   resolveAssistantMessageCopyState,
   resolveStreamingMarkdownFlushDelay,
 } from "./MessagesTimeline.logic";
+
+describe("parseAgentThreadAttribution", () => {
+  it("extracts the sender address and hides the relay instructions from displayed text", () => {
+    expect(parseAgentThreadAttribution(
+      '[Message from Sparky agent in thread parent-thread (environment local-env)]\nReply to this agent with sparky_thread_message(threadId="parent-thread", environmentId="local-env"). A reply in this conversation alone is not delivered to the sender.\n\nReview tests.',
+    )).toEqual({ threadId: "parent-thread", environmentId: "local-env", message: "Review tests." });
+  });
+
+  it("leaves ordinary user messages unchanged", () => {
+    expect(parseAgentThreadAttribution("A normal message.")).toBeNull();
+  });
+});
 
 describe("resolveStreamingMarkdownFlushDelay", () => {
   it("paces markdown renders while allowing an overdue frame immediately", () => {

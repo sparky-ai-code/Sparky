@@ -86,6 +86,7 @@ import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
+  parseAgentThreadAttribution,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
@@ -903,9 +904,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const ctx = use(TimelineRowCtx);
   const userImages = row.message.attachments ?? [];
   const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
+  const agentAttribution = parseAgentThreadAttribution(row.message.text);
   const terminalContexts = ctx.workspaceContextEnabled ? displayedUserMessage.contexts : [];
   const previewAnnotations: ParsedPreviewAnnotation[] = [];
-  let visibleText = displayedUserMessage.visibleText;
+  let visibleText = agentAttribution?.message ?? displayedUserMessage.visibleText;
   if (ctx.workspaceContextEnabled) {
     while (true) {
       const extracted = extractTrailingPreviewAnnotation(visibleText);
@@ -935,6 +937,16 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         </div>
       ) : null}
       <div className="relative max-w-[80%] rounded-2xl border border-border bg-secondary p-3">
+        {agentAttribution ? (
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+            <MessagesSquareIcon className="size-3.5" aria-hidden="true" />
+            <span>Sparky from another chat</span>
+            <span aria-hidden="true">·</span>
+            <span className="max-w-[15rem] truncate" title={agentAttribution.threadId}>
+              {agentAttribution.threadId}
+            </span>
+          </div>
+        ) : null}
         {regularImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
             {regularImages.map((image: NonNullable<TimelineMessage["attachments"]>[number]) => (

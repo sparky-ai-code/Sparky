@@ -97,6 +97,7 @@ import {
 } from "../state/entities";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
+import { useOptimisticThreadActivity } from "../optimisticThreadActivity";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
 import { openDiscoveredPort } from "./preview/openDiscoveredPort";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -3853,7 +3854,29 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
 
 export default function Sidebar() {
   const projects = useProjects();
-  const sidebarThreads = useThreadShells();
+  const serverSidebarThreads = useThreadShells();
+  const optimisticActivityByThreadKey = useOptimisticThreadActivity(
+    (state) => state.updatedAtByThreadKey,
+  );
+  const sidebarThreads = useMemo(
+    () =>
+      serverSidebarThreads.map((thread) => {
+        const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+        const optimisticUpdatedAt = optimisticActivityByThreadKey[threadKey];
+        if (
+          !optimisticUpdatedAt ||
+          Date.parse(thread.updatedAt) >= Date.parse(optimisticUpdatedAt)
+        ) {
+          return thread;
+        }
+        return {
+          ...thread,
+          updatedAt: optimisticUpdatedAt,
+          latestUserMessageAt: optimisticUpdatedAt,
+        };
+      }),
+    [optimisticActivityByThreadKey, serverSidebarThreads],
+  );
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);

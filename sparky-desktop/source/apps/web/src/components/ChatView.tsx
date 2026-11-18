@@ -97,6 +97,7 @@ import {
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
 import { useUiStateStore } from "../uiStateStore";
+import { useOptimisticThreadActivity } from "../optimisticThreadActivity";
 import {
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
@@ -4459,6 +4460,9 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     sendInFlightRef.current = true;
+    // Start local working state before transitions or backend work so the timer
+    // begins as soon as the user submits, including while creating a worktree.
+    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
     if (isDraftHeroState && activeThreadKey) {
       let resolveDockStarted: (() => void) | undefined;
       const dockStarted = new Promise<void>((resolve) => {
@@ -4474,7 +4478,6 @@ function ChatViewContent(props: ChatViewProps) {
       void dockTransition.catch(() => resolveDockStarted?.());
       await dockStarted;
     }
-    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
@@ -4539,6 +4542,12 @@ function ChatViewContent(props: ChatViewProps) {
       messageId: messageIdForSend,
     });
     optimisticUserMessageThreadIdsRef.current.set(messageIdForSend, threadIdForSend);
+    useOptimisticThreadActivity
+      .getState()
+      .markThreadMessage(
+        scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
+        messageCreatedAt,
+      );
     setOptimisticUserMessages((existing) => [
       ...existing,
       {

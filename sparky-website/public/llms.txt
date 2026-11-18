@@ -4,12 +4,28 @@
 
 Sparky runs locally on Windows, macOS, and Linux and works with the AI provider you choose. The public website contains product information, downloads, documentation, and release notes.
 
+Current stable release: **v1.1.47** (2026-11-17 release tag). See the [changelog](https://sparky.llc/changelog.html) for shipped updates.
+
 ## Public pages
 
 - [Product](https://sparky.llc/): product overview and workflows.
 - [Downloads](https://sparky.llc/download.html): Windows, macOS, and Linux installers.
 - [Documentation](https://sparky.llc/docs/overview.html): setup, tools, models, sessions, and troubleshooting.
+- [AI providers and models](https://sparky.llc/docs/models.html): account-specific model catalogs and provider setup.
+- [Pull requests](https://sparky.llc/docs/pull-requests.html): GitHub reviews and individual PR actions.
+- [Website previews](https://sparky.llc/docs/preview.html): local previews and browser-profile settings.
+- [Sessions](https://sparky.llc/docs/sessions.html): saved conversations and steering a running thread.
 - [Changelog](https://sparky.llc/changelog.html): published product updates.
+
+## Current capabilities
+
+- Connect OpenAI, Anthropic, Google Gemini, Fireworks, Ollama Cloud, Cerebras, and Groq. The available model catalog depends on the connected account and is shown in Settings, Models.
+- Sign in to ChatGPT using device-code authorization, or use an eligible account's subscription models.
+- Review GitHub pull requests with AI-generated actionable inline comments; review, merge, squash, and close actions apply to an individual selected request.
+- Customize appearance with color palettes, saved themes, color mode, hover style, corner shape, and compact spacing.
+- View local model usage, token totals, estimated API costs, and ChatGPT plan limits. Usage metadata stays on-device; prompts and responses are not included.
+- Add streamable HTTP MCP servers; use built-in Browser and pull-request-review tools; keep browser profiles persistent or temporary.
+- Split chats, focus the sidebar, steer active work, use project and user-installed skills, and coordinate agent threads across connected projects.
 
 ## Content guidance
 

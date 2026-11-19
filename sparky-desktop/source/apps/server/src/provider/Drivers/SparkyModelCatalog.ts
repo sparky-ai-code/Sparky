@@ -138,6 +138,8 @@ const REQUEST_TIMEOUT_MS = 12_000;
 const CODEX_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
 
 const CHATGPT_CODEX_MODELS = [
+  { id: "gpt-6.2-sol", name: "GPT-6.2 Sol" },
+  { id: "gpt-6.2-astra", name: "GPT-6.2 Astra" },
   { id: "gpt-6.1-sol", name: "GPT-6.1 Sol" },
   { id: "gpt-6-astra", name: "GPT-6 Astra" },
   { id: "gpt-6-sol", name: "GPT-6 Sol" },

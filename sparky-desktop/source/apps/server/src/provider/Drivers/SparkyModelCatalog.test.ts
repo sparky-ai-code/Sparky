@@ -221,6 +221,8 @@ describe("discoverSparkyModels", () => {
         SPARKY_CODEX_HOME: authDirectory,
       });
       expect(models.map((model) => model.id)).toEqual([
+        "gpt-6.2-sol",
+        "gpt-6.2-astra",
         "gpt-6.1-sol",
         "gpt-6-astra",
         "gpt-6-sol",
@@ -230,7 +232,7 @@ describe("discoverSparkyModels", () => {
         "gpt-5.6-luna",
       ]);
       expect(models[0]).toMatchObject({
-        name: "GPT-6.1 Sol",
+        name: "GPT-6.2 Sol",
         reasoningSupported: true,
         reasoningEfforts: [
           { id: "low", description: "Fast" },
@@ -291,6 +293,8 @@ describe("discoverSparkyModels", () => {
         SPARKY_CODEX_HOME: authDirectory,
       });
       expect(models.map((model) => model.id)).toEqual([
+        "gpt-6.2-sol",
+        "gpt-6.2-astra",
         "gpt-6.1-sol",
         "gpt-6-astra",
         "gpt-6-sol",

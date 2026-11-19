@@ -5,6 +5,10 @@ import { recordAccountUsageEvent } from "./accountApi";
 import { recordModelAnalyticsEvent } from "./modelAnalytics";
 
 type NumericUsage = {
+  readonly inputTokens?: unknown;
+  readonly cachedInputTokens?: unknown;
+  readonly outputTokens?: unknown;
+  readonly reasoningOutputTokens?: unknown;
   readonly lastInputTokens?: unknown;
   readonly lastCachedInputTokens?: unknown;
   readonly lastOutputTokens?: unknown;
@@ -18,13 +22,45 @@ function numeric(value: unknown): number | undefined {
 }
 
 function usageForTurn(thread: OrchestrationThread, turnId: string): NumericUsage {
-  const activity = [...thread.activities]
-    .reverse()
-    .find(
-      (candidate) => candidate.turnId === turnId && candidate.kind === "context-window.updated",
-    );
-  if (!activity || typeof activity.payload !== "object" || activity.payload === null) return {};
-  return activity.payload as NumericUsage;
+  const updates = thread.activities.filter(
+    (candidate) => candidate.turnId === turnId && candidate.kind === "context-window.updated",
+  );
+  if (updates.length === 0) return {};
+
+  const sum = (key: keyof NumericUsage, alternate?: keyof NumericUsage) => {
+    let total = 0;
+    let found = false;
+    for (const activity of updates) {
+      if (typeof activity.payload !== "object" || activity.payload === null) continue;
+      const payload = activity.payload as NumericUsage;
+      const value = numeric(payload[key]) ?? (alternate ? numeric(payload[alternate]) : undefined);
+      if (value !== undefined) {
+        total += value;
+        found = true;
+      }
+    }
+    return found ? total : undefined;
+  };
+
+  const latestPayload = updates[updates.length - 1]?.payload;
+  const latestToolUses =
+    typeof latestPayload === "object" && latestPayload !== null
+      ? numeric((latestPayload as NumericUsage).toolUses)
+      : undefined;
+
+  return {
+    lastInputTokens: sum("lastInputTokens", "inputTokens"),
+    lastCachedInputTokens: sum("lastCachedInputTokens", "cachedInputTokens"),
+    lastOutputTokens: sum("lastOutputTokens", "outputTokens"),
+    lastReasoningOutputTokens: sum("lastReasoningOutputTokens", "reasoningOutputTokens"),
+    lastUsedTokens:
+      sum("lastUsedTokens") ??
+      (sum("lastInputTokens", "inputTokens") ?? 0) +
+        (sum("lastCachedInputTokens", "cachedInputTokens") ?? 0) +
+        (sum("lastOutputTokens", "outputTokens") ?? 0) +
+        (sum("lastReasoningOutputTokens", "reasoningOutputTokens") ?? 0),
+    toolUses: latestToolUses,
+  };
 }
 
 function modelRequestCountForTurn(thread: OrchestrationThread, turnId: string): number {

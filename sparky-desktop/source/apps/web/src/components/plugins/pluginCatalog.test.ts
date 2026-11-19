@@ -9,16 +9,8 @@ import {
 } from "./pluginCatalog";
 
 describe("plugin catalog", () => {
-  it("contains only the seven active integrations", () => {
-    expect(PLUGINS.map((plugin) => plugin.id)).toEqual([
-      "github",
-      "jira",
-      "notion",
-      "gmail",
-      "outlook",
-      "slack",
-      "sentry",
-    ]);
+  it("keeps GitHub as the only active marketplace connector", () => {
+    expect(PLUGINS.map((plugin) => plugin.id)).toEqual(["github"]);
   });
 
   it("serializes stable inline tokens and resolves their display names", () => {
@@ -31,10 +23,9 @@ describe("plugin catalog", () => {
     );
   });
 
-  it("searches names, descriptions, and keywords", () => {
-    expect(searchPlugins("micro")[0]?.id).toBe("outlook");
-    expect(searchPlugins("monitor")[0]?.id).toBe("sentry");
-    expect(searchPlugins("atlassian")[0]?.id).toBe("jira");
-    expect(getPluginById("discord")).toBeNull();
+  it("searches the GitHub connector and excludes retired integrations", () => {
+    expect(searchPlugins("pull request")[0]?.id).toBe("github");
+    expect(searchPlugins("atlassian")).toEqual([]);
+    expect(getPluginById("jira")).toBeNull();
   });
 });

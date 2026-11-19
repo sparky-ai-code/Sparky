@@ -18,47 +18,9 @@ export const PLUGINS: readonly PluginDefinition[] = [
   {
     id: "github",
     name: "GitHub",
-    description: "Work with repositories, pull requests, issues, and comments",
+    description: "Connect GitHub for the Pull Requests page and repository tools",
     keywords: ["code", "repository", "pull request", "issue"],
   },
-  {
-    id: "jira",
-    name: "Jira",
-    description: "Search, create, and update Jira issues",
-    keywords: ["atlassian", "issue", "board", "sprint"],
-  },
-  {
-    id: "notion",
-    name: "Notion",
-    description: "Search and update pages and team knowledge",
-    keywords: ["docs", "database", "knowledge", "wiki"],
-  },
-  {
-    id: "gmail",
-    name: "Gmail",
-    description: "Read, draft, and send email",
-    keywords: ["google", "email", "inbox", "message"],
-  },
-  {
-    id: "outlook",
-    name: "Outlook",
-    description: "Read, draft, and send Microsoft email",
-    keywords: ["microsoft", "email", "inbox", "message"],
-  },
-  {
-    id: "slack",
-    name: "Slack",
-    description: "Read channels and send team messages",
-    keywords: ["chat", "message", "channel", "team"],
-  },
-  {
-    id: "sentry",
-    name: "Sentry",
-    description: "Inspect and update application issues",
-    keywords: ["errors", "issues", "monitoring", "observability"],
-  },
-  // Figma is intentionally retired from the desktop catalog. Re-enable it here
-  // with its PluginId member when the OAuth integration is ready again.
 ] as const;
 
 export const PLUGIN_TOKEN_PREFIX = "@plugin:";

@@ -14,10 +14,14 @@ export const McpListTools = Tool.make("sparky_mcp_list_tools", {
 
 export const McpSetupServer = Tool.make("sparky_mcp_setup_server", {
   description:
-    "Set up a streamable HTTP MCP server for the user: validate the URL, connect and discover its tools, then save it in Sparky settings. Only do this when the user asks to configure the server. The bearer token is stored as a secret and must never be repeated in the response.",
+    "Set up an MCP server for the user: configure a streamable HTTP endpoint or a local stdio command, connect and discover its tools, then save it in Sparky settings. Only do this when the user asks to configure the server. Never repeat authorization tokens or environment secrets in the response.",
   parameters: Schema.Struct({
     name: Schema.String,
-    url: Schema.String,
+    transport: Schema.optional(Schema.Literals(["streamable-http", "stdio"])),
+    url: Schema.optional(Schema.String),
+    command: Schema.optional(Schema.String),
+    args: Schema.optional(Schema.Array(Schema.String)),
+    env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
     authorizationToken: Schema.optional(Schema.String),
   }),
   success: Schema.Unknown,

@@ -1,11 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-
-import { McpSettingsPanel } from "../components/settings/McpSettingsPanel";
-
-function SettingsMcpRoute() {
-  return <McpSettingsPanel />;
-}
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/settings/mcp")({
-  component: SettingsMcpRoute,
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/plugins", replace: true });
+  },
 });

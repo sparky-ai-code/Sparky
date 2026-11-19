@@ -95,6 +95,8 @@ function redactProviderEnvironmentVariable(
 
 const mcpServerSecretName = (serverId: string) =>
   `mcp-server-${Buffer.from(serverId, "utf8").toString("base64url")}`;
+const mcpServerEnvironmentSecretName = (serverId: string) =>
+  `mcp-server-env-${Buffer.from(serverId, "utf8").toString("base64url")}`;
 
 export function redactServerSettingsForClient(settings: ServerSettings): ServerSettings {
   const providerInstances = Object.fromEntries(
@@ -112,6 +114,8 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
     ...settings,
     mcpServers: settings.mcpServers.map((server) => ({
       ...server,
+      env: {},
+      envRedacted: server.envRedacted || Object.keys(server.env).length > 0,
       authorizationToken: "",
       authorizationTokenRedacted:
         server.authorizationTokenRedacted || server.authorizationToken.length > 0,
@@ -384,24 +388,39 @@ const make = Effect.gen(function* () {
       }
       const mcpServers: ServerSettings["mcpServers"][number][] = [];
       for (const server of settings.mcpServers) {
-        if (!server.authorizationTokenRedacted) {
-          mcpServers.push(server);
-          continue;
+        let authorizationToken = server.authorizationToken;
+        let env = server.env;
+        if (server.authorizationTokenRedacted) {
+          const secret = yield* secretStore.get(mcpServerSecretName(server.id)).pipe(
+            Effect.mapError(
+              (cause) => new ServerSettingsError({ settingsPath, operation: "read-secret", cause }),
+            ),
+          );
+          authorizationToken = Option.isSome(secret) ? textDecoder.decode(secret.value) : "";
         }
-        const secret = yield* secretStore.get(mcpServerSecretName(server.id)).pipe(
-          Effect.mapError(
-            (cause) =>
-              new ServerSettingsError({
+        if (server.envRedacted) {
+          const secret = yield* secretStore.get(mcpServerEnvironmentSecretName(server.id)).pipe(
+            Effect.mapError(
+              (cause) => new ServerSettingsError({ settingsPath, operation: "read-secret", cause }),
+            ),
+          );
+          if (Option.isSome(secret)) {
+            const parsed: unknown = yield* Effect.try({
+              try: () => JSON.parse(textDecoder.decode(secret.value)),
+              catch: (cause) => new ServerSettingsError({ settingsPath, operation: "read-secret", cause }),
+            });
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+                Object.values(parsed).some((value) => typeof value !== "string")) {
+              return yield* Effect.fail(new ServerSettingsError({
                 settingsPath,
                 operation: "read-secret",
-                cause,
-              }),
-          ),
-        );
-        mcpServers.push({
-          ...server,
-          authorizationToken: Option.isSome(secret) ? textDecoder.decode(secret.value) : "",
-        });
+                cause: new Error("Stored MCP environment is invalid."),
+              }));
+            }
+            env = parsed as Record<string, string>;
+          }
+        }
+        mcpServers.push({ ...server, authorizationToken, env });
       }
       return {
         ...settings,
@@ -520,32 +539,54 @@ const make = Effect.gen(function* () {
       const retainedIds = new Set<string>();
       for (const server of next.mcpServers) {
         const secretName = mcpServerSecretName(server.id);
+        const environmentSecretName = mcpServerEnvironmentSecretName(server.id);
         retainedIds.add(server.id);
+        let persistedServer = server;
         if (server.authorizationTokenRedacted) {
-          mcpServers.push({ ...server, authorizationToken: "", authorizationTokenRedacted: true });
+          persistedServer = { ...persistedServer, authorizationToken: "", authorizationTokenRedacted: true };
         } else if (server.authorizationToken.length > 0) {
           yield* secretStore.set(secretName, textEncoder.encode(server.authorizationToken)).pipe(
             Effect.mapError(
               (cause) => new ServerSettingsError({ settingsPath, operation: "write-secret", cause }),
             ),
           );
-          mcpServers.push({ ...server, authorizationToken: "", authorizationTokenRedacted: true });
+          persistedServer = { ...persistedServer, authorizationToken: "", authorizationTokenRedacted: true };
         } else {
           yield* secretStore.remove(secretName).pipe(
             Effect.mapError(
               (cause) => new ServerSettingsError({ settingsPath, operation: "remove-secret", cause }),
             ),
           );
-          mcpServers.push({ ...server, authorizationTokenRedacted: false });
+          persistedServer = { ...persistedServer, authorizationTokenRedacted: false };
         }
+        if (server.envRedacted) {
+          persistedServer = { ...persistedServer, env: {}, envRedacted: true };
+        } else if (Object.keys(server.env).length > 0) {
+          yield* secretStore.set(environmentSecretName, textEncoder.encode(JSON.stringify(server.env))).pipe(
+            Effect.mapError(
+              (cause) => new ServerSettingsError({ settingsPath, operation: "write-secret", cause }),
+            ),
+          );
+          persistedServer = { ...persistedServer, env: {}, envRedacted: true };
+        } else {
+          yield* secretStore.remove(environmentSecretName).pipe(
+            Effect.mapError(
+              (cause) => new ServerSettingsError({ settingsPath, operation: "remove-secret", cause }),
+            ),
+          );
+          persistedServer = { ...persistedServer, envRedacted: false };
+        }
+        mcpServers.push(persistedServer);
       }
       for (const server of current.mcpServers) {
         if (retainedIds.has(server.id)) continue;
-        yield* secretStore.remove(mcpServerSecretName(server.id)).pipe(
-          Effect.mapError(
-            (cause) => new ServerSettingsError({ settingsPath, operation: "remove-stale-secret", cause }),
-          ),
-        );
+        for (const secretName of [mcpServerSecretName(server.id), mcpServerEnvironmentSecretName(server.id)]) {
+          yield* secretStore.remove(secretName).pipe(
+            Effect.mapError(
+              (cause) => new ServerSettingsError({ settingsPath, operation: "remove-stale-secret", cause }),
+            ),
+          );
+        }
       }
       return { ...next, mcpServers };
     });

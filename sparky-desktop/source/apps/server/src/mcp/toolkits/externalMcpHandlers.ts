@@ -12,18 +12,22 @@ const handlers = {
       const current = yield* settings.getSettings;
       const name = input.name.trim();
       if (!name) return { error: "Enter a name for the MCP server." };
-      let parsedUrl: URL;
-      try {
-        parsedUrl = new URL(input.url);
-      } catch {
-        return { error: "Enter a valid HTTP or HTTPS MCP server URL." };
-      }
-      if (
-        !["http:", "https:"].includes(parsedUrl.protocol) ||
-        parsedUrl.username ||
-        parsedUrl.password
-      ) {
-        return { error: "MCP server URLs must use HTTP or HTTPS and cannot embed credentials." };
+      const transport = input.transport ?? "streamable-http";
+      let url = "";
+      let command = "";
+      if (transport === "stdio") {
+        command = input.command?.trim() ?? "";
+        if (!command) return { error: "Enter the executable for the local MCP server." };
+      } else {
+        try {
+          const parsedUrl = new URL(input.url ?? "");
+          if (!["http:", "https:"].includes(parsedUrl.protocol) || parsedUrl.username || parsedUrl.password) {
+            return { error: "MCP server URLs must use HTTP or HTTPS and cannot embed credentials." };
+          }
+          url = parsedUrl.toString();
+        } catch {
+          return { error: "Enter a valid HTTP or HTTPS MCP server URL." };
+        }
       }
       if (current.mcpServers.some((server) => server.name.toLowerCase() === name.toLowerCase())) {
         return { error: `An MCP server named '${name}' is already configured.` };
@@ -31,7 +35,11 @@ const handlers = {
       const server: McpServerConfig = {
         id: crypto.randomUUID(),
         name,
-        url: parsedUrl.toString(),
+        transport,
+        url,
+        command,
+        args: input.args ?? [],
+        env: input.env ?? {},
         authorizationToken: input.authorizationToken ?? "",
         authorizationTokenRedacted: false,
         enabled: true,

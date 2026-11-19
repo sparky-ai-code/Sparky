@@ -221,6 +221,28 @@ describe("ServerSettingsPatch.providerInstances", () => {
   });
 });
 
+describe("ServerSettings MCP transports", () => {
+  it("keeps legacy HTTP server settings compatible", () => {
+    const decoded = decodeServerSettings({
+      mcpServers: [{ id: "legacy", name: "Legacy", url: "https://example.com/mcp" }],
+    });
+    expect(decoded.mcpServers[0]?.transport).toBe("streamable-http");
+    expect(decoded.mcpServers[0]?.url).toBe("https://example.com/mcp");
+  });
+
+  it("accepts local stdio server configurations", () => {
+    const decoded = decodeServerSettings({
+      mcpServers: [{
+        id: "local", name: "Local app", transport: "stdio", command: "npx",
+        args: ["--yes", "@example/mcp"], env: { API_KEY: "secret" },
+      }],
+    });
+    expect(decoded.mcpServers[0]).toMatchObject({
+      transport: "stdio", command: "npx", args: ["--yes", "@example/mcp"], env: { API_KEY: "secret" },
+    });
+  });
+});
+
 describe("ServerSettingsPatch string normalization", () => {
   it("trims string settings while decoding patches", () => {
     const patch = decodeServerSettingsPatch({

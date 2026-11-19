@@ -22,6 +22,28 @@ import * as ServerSettingsModule from "./serverSettings.ts";
 const decodeSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 
+it("redacts stdio environment secrets from client settings", () => {
+  const settings = Schema.decodeUnknownSync(ServerSettings)({
+    ...DEFAULT_SERVER_SETTINGS,
+    mcpServers: [{
+      id: "local-app",
+      name: "Local app",
+      transport: "stdio" as const,
+      url: "",
+      command: "npx",
+      args: ["--yes", "example"],
+      env: { API_KEY: "should-not-leak" },
+      envRedacted: false,
+      authorizationToken: "",
+      authorizationTokenRedacted: false,
+      enabled: true,
+    }],
+  });
+  const redacted = ServerSettingsModule.redactServerSettingsForClient(settings);
+  assert.deepEqual(redacted.mcpServers[0]?.env, {});
+  assert.equal(redacted.mcpServers[0]?.envRedacted, true);
+});
+
 const makeServerSettingsLayer = () =>
   ServerSettingsModule.layer.pipe(
     Layer.provide(ServerSecretStore.layer),

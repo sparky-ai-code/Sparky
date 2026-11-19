@@ -122,13 +122,19 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
       }
     });
 
+    const safeStopAllSessions = stopAllSessions.pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("provider.session.reaper.shutdown-reconciliation-failed", { cause }),
+      ),
+    );
+
     const start: ProviderSessionReaperShape["start"] = () =>
       Effect.gen(function* () {
         // A server restart cannot resume an in-flight turn safely. Reconcile
         // persisted provider sessions before accepting new work, and stop live
         // sessions again during graceful shutdown.
-        yield* stopAllSessions;
-        yield* Effect.addFinalizer(() => stopAllSessions);
+        yield* safeStopAllSessions;
+        yield* Effect.addFinalizer(() => safeStopAllSessions);
 
         yield* Effect.forkScoped(
           sweep.pipe(

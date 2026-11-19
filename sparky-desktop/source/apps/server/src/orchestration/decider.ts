@@ -185,6 +185,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       const activeThreads = listThreadsByProjectId(readModel, command.projectId).filter(
         (thread) => thread.deletedAt === null,
       );
+      const topLevelThreads = activeThreads.filter(
+        (thread) => thread.parentThreadId === undefined,
+      );
       if (activeThreads.length > 0 && command.force !== true) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
@@ -195,7 +198,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         return yield* decideCommandSequence({
           readModel,
           commands: [
-            ...activeThreads.map(
+            ...topLevelThreads.map(
               (thread): Extract<OrchestrationCommand, { type: "thread.delete" }> => ({
                 type: "thread.delete",
                 commandId: command.commandId,
@@ -240,6 +243,24 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (command.parentThreadId !== undefined) {
+        const parent = yield* requireThread({
+          readModel,
+          command,
+          threadId: command.parentThreadId,
+        });
+        if (parent.deletedAt !== null || parent.archivedAt !== null ||
+          parent.projectId !== command.projectId ||
+          parent.runtimeMode !== command.runtimeMode ||
+          parent.interactionMode !== command.interactionMode ||
+          parent.branch !== command.branch ||
+          parent.worktreePath !== command.worktreePath) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "Subagents must inherit the active parent project, workspace and access modes.",
+          });
+        }
+      }
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -251,6 +272,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           projectId: command.projectId,
+          ...(command.parentThreadId !== undefined ? { parentThreadId: command.parentThreadId } : {}),
           title: command.title,
           modelSelection: command.modelSelection,
           runtimeMode: command.runtimeMode,
@@ -269,6 +291,22 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const activeChildren = readModel.threads.filter(
+        (thread) => thread.parentThreadId === command.threadId && thread.deletedAt === null,
+      );
+      if (activeChildren.length > 0) {
+        return yield* decideCommandSequence({
+          readModel,
+          commands: [
+            ...activeChildren.map((thread): Extract<OrchestrationCommand, { type: "thread.delete" }> => ({
+              type: "thread.delete",
+              commandId: command.commandId,
+              threadId: thread.id,
+            })),
+            command,
+          ],
+        });
+      }
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({

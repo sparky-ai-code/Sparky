@@ -323,7 +323,9 @@ describe("ProviderSessionReaper", () => {
   it("keeps sessions warm for at least one hour with the default threshold", async () => {
     const threadId = ThreadId.make("thread-reaper-fresh");
     const now = DateTime.formatIso(await Effect.runPromise(DateTime.now));
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1_000).toISOString();
+    const oneHourAgo = DateTime.formatIso(
+      DateTime.subtract(await Effect.runPromise(DateTime.now), { hours: 1 }),
+    );
     const harness = await createHarness({
       readModel: makeReadModel([
         {

@@ -1120,6 +1120,13 @@ function runPersistentSparky(input: {
         }
         const currentProcess = processState;
         const child = currentProcess.child;
+        const { stdin, stdout, stderr } = child;
+        if (!stdin || !stdout || !stderr) {
+          input.processes.delete(input.processKey);
+          child.kill();
+          reject(new Error("Sparky persistent process does not expose piped stdio."));
+          return;
+        }
         let settled = false;
         currentProcess.stderr = "";
         const appendStderr = (chunk: string) => {
@@ -1132,7 +1139,7 @@ function runPersistentSparky(input: {
           }
         };
         const clearPending = () => {
-          currentProcess.pending = undefined;
+          delete currentProcess.pending;
           removeActiveChild();
         };
         const settle = (result?: SparkyProcessResult, cause?: unknown) => {
@@ -1177,17 +1184,17 @@ function runPersistentSparky(input: {
         input.activeChildren.set(input.childKey, child);
         pending.fail = (cause) => settle(undefined, cause);
         if (createdProcess) {
-          child.stdout.setEncoding("utf8");
-          child.stderr.setEncoding("utf8");
-          child.stdout.on("data", (chunk: string) => {
+          stdout.setEncoding("utf8");
+          stderr.setEncoding("utf8");
+          stdout.on("data", (chunk: string) => {
             const activeTurn = currentProcess.pending;
             if (!activeTurn) return;
             activeTurn.decoder.push(chunk);
           });
-          child.stderr.on("data", (chunk: string) => {
+          stderr.on("data", (chunk: string) => {
             appendStderr(chunk);
           });
-          child.stdin.on("error", (error) => {
+          stdin.on("error", (error) => {
             const activeTurn = currentProcess.pending;
             if (!activeTurn) return;
             activeTurn.fail?.(new Error(`Unable to send the prompt to Sparky: ${error.message}`));
@@ -1212,7 +1219,7 @@ function runPersistentSparky(input: {
         }
         try {
           const modelSelection = parseSparkyModelSelection(input.model);
-          child.stdin.write(
+          stdin.write(
             `${JSON.stringify({
               prompt: input.prompt,
               imagePaths: (input.images ?? []).map((image) => image.path),

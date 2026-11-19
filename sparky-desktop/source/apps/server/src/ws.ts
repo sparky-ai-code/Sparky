@@ -1,4 +1,6 @@
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
+import * as Data from "effect/Data";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -63,6 +65,8 @@ import {
 import { clamp } from "effect/Number";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
+
+class McpConnectivityError extends Data.TaggedError("McpConnectivityError") {}
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
@@ -1644,27 +1648,21 @@ const makeWsRpcLayer = (
               return yield* Effect.forEach(
                 configs,
                 (config) =>
-                  Effect.tryPromise({
-                    try: async () => {
-                      const tools = await listExternalMcpTools(config);
-                      return {
-                        id: config.id,
-                        status: "online" as const,
-                        checkedAt: Date.now(),
-                        toolCount: Array.isArray(tools) ? tools.length : 0,
-                      };
-                    },
-                    catch: () => new Error("MCP server is unavailable."),
-                  }).pipe(
-                    Effect.catch(() =>
-                      Effect.succeed({
-                        id: config.id,
-                        status: "offline" as const,
-                        checkedAt: Date.now(),
-                        toolCount: 0,
-                      }),
-                    ),
-                  ),
+                  Effect.gen(function* () {
+                    const tools = yield* Effect.tryPromise({
+                      try: () => listExternalMcpTools(config),
+                      catch: () => new McpConnectivityError(),
+                    }).pipe(Effect.option);
+                    const checkedAt = yield* Clock.currentTimeMillis;
+                    return {
+                      id: config.id,
+                      status: Option.isSome(tools) ? ("online" as const) : ("offline" as const),
+                      checkedAt,
+                      toolCount: Option.isSome(tools) && Array.isArray(tools.value)
+                        ? tools.value.length
+                        : 0,
+                    };
+                  }),
                 { concurrency: 4 },
               );
             }),

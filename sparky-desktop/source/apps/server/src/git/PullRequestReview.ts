@@ -1,4 +1,6 @@
-import * as NodeFS from "node:fs";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Data from "effect/Data";
+import * as FileSystem from "effect/FileSystem";
 
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -164,14 +166,29 @@ class ReviewOutputValidationError extends Error {
   }
 }
 
-function resolveReviewCwd(cwd: string): string {
-  try {
-    if (NodeFS.statSync(cwd).isDirectory()) return cwd;
-  } catch {
-    // A review uses only the supplied diff, so it can safely run from the server's cwd.
-  }
-  return process.cwd();
+function resolveReviewCwd(cwd: string) {
+  // Reviews use the provided diff, so a missing working tree can safely fall
+  // back to the server cwd. Check it through the platform filesystem service.
+  return FileSystem.FileSystem.pipe(
+    Effect.flatMap((fs) =>
+      fs.stat(cwd).pipe(
+        Effect.match({
+          onFailure: () => process.cwd(),
+          onSuccess: (info) => info.type === "Directory" ? cwd : process.cwd(),
+        }),
+      ),
+    ),
+    Effect.provide(NodeServices.layer),
+  );
 }
+
+class PullRequestReviewProcessingError extends Data.TaggedError("PullRequestReviewProcessingError")<{
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
+
+const reviewError = (message: string, cause?: unknown) =>
+  new PullRequestReviewProcessingError({ message, ...(cause === undefined ? {} : { cause }) });
 
 function parseOutput(raw: string) {
   const text = raw.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/iu, "$1");
@@ -206,13 +223,14 @@ function retryGuidance(error: unknown): string {
     : 'The previous output was not valid JSON matching the requested schema. Return exactly one JSON object with non-empty "summary" and an explicit "findings" array. Each finding must include path, line, severity, title, and body.';
 }
 
-function invalidReviewAfterRetry(error: unknown): Error {
+function invalidReviewAfterRetry(error: unknown): PullRequestReviewProcessingError {
   const detail =
     error instanceof ReviewOutputValidationError
       ? error.message
       : "response could not be validated against the required review schema";
-  return new Error(
+  return reviewError(
     `The model returned an invalid review after a retry: ${detail}. No review was posted; try another review model.`,
+    error,
   );
 }
 
@@ -224,15 +242,16 @@ export const runPullRequestReview = (
   Effect.gen(function* () {
     const segments = yield* Effect.try({
       try: () => splitPullRequestDiffForReview(input.context.diff),
-      catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+      catch: (cause) => reviewError(cause instanceof Error ? cause.message : String(cause), cause),
     });
     if (segments.length === 0 || getPullRequestAddedLineMap(input.context.diff).size === 0) {
       return yield* Effect.fail(
-        new Error(
+        reviewError(
           "No reviewable added lines were found. Binary, deleted-only, and metadata-only changes cannot receive this review.",
         ),
       );
     }
+    const reviewCwd = yield* resolveReviewCwd(input.cwd);
     const systemPrompt = buildPullRequestReviewSystemPrompt(input);
     const findings: PullRequestReviewFinding[] = [];
     const seen = new Set<string>();
@@ -242,7 +261,7 @@ export const runPullRequestReview = (
       const prompt = yield* Effect.try({
         try: () => buildPullRequestReviewPrompt({ ...input.context, diff: segment }),
         catch: () =>
-          new Error("The diff segment could not be encoded safely. No review was posted."),
+          reviewError("The diff segment could not be encoded safely. No review was posted."),
       });
       for (let pass = 0; pass < passes; pass += 1) {
         const request =
@@ -251,7 +270,7 @@ export const runPullRequestReview = (
             : `${prompt}\n\nPerform an independent second pass concentrating on edge cases and failure paths. Report only bugs you can substantiate.`;
         const call = (text: string) =>
           generate({
-            cwd: resolveReviewCwd(input.cwd),
+            cwd: reviewCwd,
             modelSelection: input.modelSelection,
             systemPrompt,
             prompt: text,
@@ -259,7 +278,7 @@ export const runPullRequestReview = (
         const response = yield* call(request);
         const review = yield* Effect.try({
           try: () => validateOutput(response.response, segment),
-          catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+          catch: (cause) => reviewError(cause instanceof Error ? cause.message : String(cause), cause),
         }).pipe(
           Effect.catch((validationError) =>
             call(
@@ -268,7 +287,7 @@ export const runPullRequestReview = (
               Effect.flatMap((retry) =>
                 Effect.try({
                   try: () => validateOutput(retry.response, segment),
-                  catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+                  catch: (cause) => reviewError(cause instanceof Error ? cause.message : String(cause), cause),
                 }).pipe(
                   Effect.catch((retryError) => Effect.fail(invalidReviewAfterRetry(retryError))),
                 ),
@@ -349,7 +368,7 @@ export const runPullRequestReview = (
           skippedFindings,
         }),
       catch: () =>
-        new Error(
+        reviewError(
           "The combined review exceeds the report limit. No review was posted; review a smaller PR.",
         ),
     });

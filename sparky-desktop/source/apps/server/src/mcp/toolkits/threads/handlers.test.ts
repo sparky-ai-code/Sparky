@@ -6,11 +6,20 @@ import {
   canAgentSendThreadMessage,
   formatAgentThreadMessage,
   formatInitialThreadMessage,
+  formatSubagentTaskMessage,
   resolveAgentThreadModelSelection,
   resolveCurrentWorkspaceBranch,
   resolveExistingWorktreeRef,
 } from "./handlers.ts";
-import { CreateThreadTool, ProjectBranchesTool, ReadThreadTool, ThreadTools } from "./tools.ts";
+import {
+  CreateThreadTool,
+  ProjectBranchesTool,
+  ReadThreadTool,
+  SpawnSubagentTool,
+  StopSubagentTool,
+  ListSubagentsTool,
+  ThreadTools,
+} from "./tools.ts";
 
 describe("agent-managed thread collaboration tools", () => {
   it("exposes each operation to MCP with a stable name", () => {
@@ -22,6 +31,9 @@ describe("agent-managed thread collaboration tools", () => {
       "sparky_thread_create",
       "sparky_thread_message",
       "sparky_thread_steer",
+      "sparky_subagent_spawn",
+      "sparky_subagents_list",
+      "sparky_subagent_stop",
     ]);
   });
 
@@ -33,6 +45,40 @@ describe("agent-managed thread collaboration tools", () => {
     );
     expect(message.endsWith("\n\nReview tests.")).toBe(true);
     expect(formatInitialThreadMessage("parent-thread", "local-env", "Review tests.  ")).toBe(message);
+  });
+
+  it("gives independent subagents a parent reply address and team collaboration instructions", () => {
+    const prompt = formatSubagentTaskMessage("parent-123", "environment-1", "Review the patch.  ");
+    expect(prompt).toContain("parent-123");
+    expect(prompt).toContain("sparky_thread_message");
+    expect(prompt).toContain("sparky_thread_steer");
+    expect(prompt).toContain("sparky_subagents_list");
+    expect(prompt.endsWith("Task:\\nReview the patch.")).toBe(false);
+    expect(prompt.endsWith("Task:\nReview the patch.")).toBe(true);
+  });
+
+  it("accepts any advertised provider/model and forbids blank or invalid task parameters", () => {
+    const input = Schema.decodeUnknownSync(SpawnSubagentTool.parametersSchema)({
+      title: "Implement API",
+      task: "Implement and test the API.",
+      modelSelection: {
+        instanceId: "any-connected-provider",
+        model: "provider/any-model",
+        options: [{ id: "effort", value: "max" }],
+      },
+    });
+    expect(input.modelSelection?.model).toBe("provider/any-model");
+    expect(Schema.decodeUnknownSync(ListSubagentsTool.parametersSchema)({})).toEqual({});
+    expect(Schema.decodeUnknownSync(StopSubagentTool.parametersSchema)({ threadId: "child-1" }).threadId)
+      .toBe("child-1");
+    expect(() => Schema.decodeUnknownSync(SpawnSubagentTool.parametersSchema)({
+      title: " ",
+      task: "Work",
+    })).toThrow();
+    expect(() => Schema.decodeUnknownSync(SpawnSubagentTool.parametersSchema)({
+      title: "Work",
+      task: "  \n",
+    })).toThrow();
   });
 
   it("inherits the caller's Codex OAuth model instead of an API-key project default", () => {

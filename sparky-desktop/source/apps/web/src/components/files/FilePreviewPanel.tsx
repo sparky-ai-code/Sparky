@@ -5,6 +5,7 @@ import type {
   ScopedThreadRef,
 } from "@sparky/contracts";
 import { isWorkspaceImagePreviewPath } from "@sparky/shared/filePreview";
+import { serializeComposerFileLink } from "@sparky/shared/composerTrigger";
 import { VirtualizedFile, type SelectedLineRange } from "@pierre/diffs";
 import { Editor } from "@pierre/diffs/editor";
 import { EditorProvider, File, type FileOptions, Virtualizer } from "@pierre/diffs/react";
@@ -12,12 +13,13 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@sparky/client-runtime/state/runtime";
-import { ChevronRight, Code2, Eye, FolderTree, Globe2, LoaderCircle } from "lucide-react";
+import { ChevronRight, Code2, Eye, FolderTree, Globe2, LoaderCircle, MessageSquarePlus } from "lucide-react";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
 import { useAssetUrlState } from "~/assets/assetUrls";
+import { useComposerHandleContext } from "~/composerHandleContext";
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { OpenInPicker } from "~/components/chat/OpenInPicker";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -41,6 +43,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 import FileBrowserPanel from "./FileBrowserPanel";
+import { buildSandboxedPresentationHtml, isAuthoredDocumentFile, isAuthoredPresentationFile } from "./artifactFiles";
 import {
   type FileCommentAnnotationEntry,
   type FileCommentAnnotationGroup,
@@ -660,6 +663,7 @@ export default function FilePreviewPanel({
   onPendingChange,
 }: FilePreviewPanelProps) {
   const { resolvedTheme } = useTheme();
+  const composerRef = useComposerHandleContext();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
@@ -672,16 +676,22 @@ export default function FilePreviewPanel({
   const isImage = relativePath !== null && isWorkspaceImagePreviewPath(relativePath);
   const file = useProjectFileQuery(environmentId, cwd, relativePath, !isImage);
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
-  const [markdownView, setMarkdownView] = useState<{
+  const [fileView, setFileView] = useState<{
     path: string | null;
+    render: boolean;
     revealRequestId: number | null;
-  }>({ path: null, revealRequestId: null });
+  }>({ path: null, render: false, revealRequestId: null });
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const isMarkdown = relativePath ? isMarkdownPreviewFile(relativePath) : false;
-  const renderMarkdown =
-    isMarkdown &&
-    markdownView.path === relativePath &&
-    (revealLine === null || markdownView.revealRequestId === revealRequestId);
+  const isDocument = relativePath ? isAuthoredDocumentFile(relativePath) : false;
+  const isPresentation = relativePath ? isAuthoredPresentationFile(relativePath) : false;
+  const previewRequested =
+    fileView.path === relativePath ? fileView.render : isDocument || isPresentation;
+  const canRenderPreview =
+    revealLine === null ||
+    (fileView.path === relativePath && fileView.revealRequestId === revealRequestId);
+  const renderMarkdown = isMarkdown && previewRequested && canRenderPreview;
+  const renderPresentation = isPresentation && previewRequested && canRenderPreview;
   const canOpenInBrowser =
     relativePath !== null && isPreviewSupportedInRuntime() && isBrowserPreviewFile(relativePath);
   const absolutePath = relativePath ? resolvePathLinkTarget(relativePath, cwd) : null;
@@ -697,6 +707,21 @@ export default function FilePreviewPanel({
     );
     currentCrumb?.scrollIntoView({ block: "nearest", inline: "end" });
   }, [relativePath]);
+
+  const insertArtifactMention = useCallback(() => {
+    if (!relativePath) return;
+    const inserted = composerRef?.current?.insertTextAtEnd(
+      `${serializeComposerFileLink(relativePath)} `,
+      { ensureLeadingBoundary: true },
+    );
+    if (!inserted) {
+      toastManager.add({
+        type: "error",
+        title: "Unable to reference file",
+        description: "Open a chat in this workspace and try again.",
+      });
+    }
+  }, [composerRef, relativePath]);
 
   const toggleExplorer = () => {
     setExplorerOpen((current) => {
@@ -780,29 +805,49 @@ export default function FilePreviewPanel({
               enableShortcut={false}
             />
           ) : null}
-          {isMarkdown ? (
+          {isDocument || isPresentation ? (
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Toggle
                     className="shrink-0"
-                    pressed={renderMarkdown}
-                    onPressedChange={(pressed) => {
-                      setMarkdownView({
-                        path: pressed ? relativePath : null,
-                        revealRequestId: pressed ? revealRequestId : null,
-                      });
-                    }}
-                    aria-label={renderMarkdown ? "Show markdown source" : "Show rendered markdown"}
+                    pressed={false}
+                    onPressedChange={insertArtifactMention}
+                    aria-label="Reference this artifact in chat"
                     variant="ghost"
                     size="sm"
                   >
-                    {renderMarkdown ? <Code2 className="size-3.5" /> : <Eye className="size-3.5" />}
+                    <MessageSquarePlus className="size-3.5" />
+                  </Toggle>
+                }
+              />
+              <TooltipPopup>Reference in chat</TooltipPopup>
+            </Tooltip>
+          ) : null}
+          {isMarkdown || isPresentation ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Toggle
+                    className="shrink-0"
+                    pressed={renderMarkdown || renderPresentation}
+                    onPressedChange={(pressed) => {
+                      setFileView({
+                        path: relativePath,
+                        render: pressed,
+                        revealRequestId: pressed ? revealRequestId : null,
+                      });
+                    }}
+                    aria-label={renderMarkdown || renderPresentation ? "Show source" : "Show preview"}
+                    variant="ghost"
+                    size="sm"
+                  >
+                    {renderMarkdown || renderPresentation ? <Code2 className="size-3.5" /> : <Eye className="size-3.5" />}
                   </Toggle>
                 }
               />
               <TooltipPopup>
-                {renderMarkdown ? "Show markdown source" : "Show rendered markdown"}
+                {renderMarkdown || renderPresentation ? "Show source" : "Show preview"}
               </TooltipPopup>
             </Tooltip>
           ) : null}
@@ -875,7 +920,16 @@ export default function FilePreviewPanel({
               <LoaderCircle className="size-5 animate-spin" />
             </div>
           ) : relativePath && file.data ? (
-            isMarkdown && renderMarkdown ? (
+            isPresentation && renderPresentation && !file.data.truncated ? (
+              <iframe
+                key={projectFileCacheKey(cwd, relativePath, file.data.contents)}
+                title={`Presentation: ${relativePath}`}
+                sandbox=""
+                referrerPolicy="no-referrer"
+                srcDoc={buildSandboxedPresentationHtml(file.data.contents)}
+                className="min-h-0 w-full flex-1 border-0 bg-white"
+              />
+            ) : isMarkdown && renderMarkdown ? (
               <RenderedMarkdownSurface
                 environmentId={environmentId}
                 cwd={cwd}

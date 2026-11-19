@@ -5,33 +5,87 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::process::Command as StdCommand;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
-const OAUTH_ISSUER: &str = "https://auth.openai.com";
-const OAUTH_AUTHORIZE_URL: &str = "https://auth.openai.com/api/accounts/authorize";
-const OAUTH_TOKEN_URL: &str = "https://auth.openai.com/api/accounts/oauth/token";
-const OAUTH_DISCOVERY_URL: &str = "https://auth.openai.com/.well-known/openid-configuration";
-const OAUTH_RESOURCE: &str = "https://api.openai.com/v1";
-const OAUTH_DYNAMIC_CLIENT_ID: &str = "dynamic_agent_client";
-const OAUTH_AGENT_NAME: &str = "Sparky";
-const OAUTH_SCOPE: &str = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
+// Legacy OpenAI Codex subscription OAuth, following Pi's openai-codex provider.
+// This is deliberately NOT the dynamic-client Sign in with ChatGPT API flow.
+const OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+const OAUTH_AUTHORIZE_URL: &str = "https://auth.openai.com/oauth/authorize";
+const OAUTH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
+const DEVICE_USER_CODE_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/usercode";
+const DEVICE_TOKEN_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/token";
+const DEVICE_VERIFICATION_URI: &str = "https://auth.openai.com/codex/device";
+const DEVICE_REDIRECT_URI: &str = "https://auth.openai.com/deviceauth/callback";
+const OAUTH_SCOPE: &str = "openid profile email offline_access";
 const OAUTH_CALLBACK_PORT: u16 = 1455;
 const OAUTH_CALLBACK_PATH: &str = "/auth/callback";
+const OAUTH_REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
+const OAUTH_CALLBACK_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const OAUTH_CALLBACK_READ_TIMEOUT: Duration = Duration::from_secs(10);
+const OAUTH_CONNECT_TIMEOUT: Duration = Duration::from_secs(90);
+const OAUTH_REQUEST_TIMEOUT: Duration = Duration::from_secs(240);
+const OAUTH_TOKEN_MAX_ATTEMPTS: usize = 3;
+static REFRESH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+fn oauth_http_client() -> anyhow::Result<Client> {
+    Ok(Client::builder()
+        .connect_timeout(OAUTH_CONNECT_TIMEOUT)
+        .timeout(OAUTH_REQUEST_TIMEOUT)
+        .build()?)
+}
+
+/// OAuth codes are one-use credentials. Retry transient transport/server
+/// failures and rate limits, but never retry an explicit grant rejection.
+async fn send_oauth_token_request(
+    client: &Client,
+    token_url: &str,
+    form: &[(&str, &str)],
+    operation: &str,
+) -> anyhow::Result<reqwest::Response> {
+    for attempt in 0..OAUTH_TOKEN_MAX_ATTEMPTS {
+        match client.post(token_url).form(form).send().await {
+            Ok(response) if response.status().is_success() => return Ok(response),
+            Ok(response) => {
+                let status = response.status();
+                let transient = status == reqwest::StatusCode::REQUEST_TIMEOUT
+                    || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+                    || status.is_server_error();
+                if transient && attempt + 1 < OAUTH_TOKEN_MAX_ATTEMPTS {
+                    tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
+                    continue;
+                }
+                if status == reqwest::StatusCode::BAD_REQUEST {
+                    let problem = response.json::<serde_json::Value>().await.unwrap_or_default();
+                    if problem.get("error").and_then(serde_json::Value::as_str) == Some("invalid_grant") {
+                        anyhow::bail!(
+                            "{operation} failed: OpenAI rejected an expired, invalid, or already used OAuth grant (HTTP 400). Start ChatGPT sign-in again."
+                        );
+                    }
+                }
+                anyhow::bail!("{operation} failed: OpenAI returned HTTP {status}.");
+            }
+            Err(error) if (error.is_connect() || error.is_timeout())
+                && attempt + 1 < OAUTH_TOKEN_MAX_ATTEMPTS =>
+            {
+                tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
+            }
+            Err(error) => anyhow::bail!("{operation} failed: {error}"),
+        }
+    }
+    unreachable!("the final OAuth attempt always returns or errors")
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodexCredentials {
-    #[serde(rename = "access_token")]
     pub access: String,
-    #[serde(rename = "refresh_token")]
     pub refresh: String,
     pub expires: i64,
-    pub subject: String,
-    pub client_id: String,
-    pub scope: String,
-    pub resource: String,
+    pub account_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,24 +94,143 @@ pub struct CodexAuthStatus {
     pub authenticated: bool,
     pub subject: Option<String>,
     pub expires: Option<i64>,
+    // Retained as a wire-compatible field for the desktop settings UI.
     pub plan_usage_authorized: bool,
 }
 
-#[derive(Debug, Deserialize)]
-struct ManagedCodexAuth {
-    auth_mode: Option<String>,
-    tokens: Option<ManagedCodexTokens>,
+// Device authorization is an independent, callback-free login path. The
+// external browser never needs to navigate to localhost:1455.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexDeviceLogin {
+    device_auth_id: String,
+    user_code: String,
+    verification_uri: &'static str,
+    interval_seconds: u64,
+    expires_in_seconds: u64,
 }
 
-#[derive(Debug, Deserialize)]
-struct ManagedCodexTokens {
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexDeviceLoginProgress {
+    authenticated: bool,
+    pending: bool,
+}
+
+pub async fn start_codex_device_login() -> anyhow::Result<CodexDeviceLogin> {
+    request_codex_device_login(&oauth_http_client()?, DEVICE_USER_CODE_URL).await
+}
+
+async fn request_codex_device_login(client: &Client, url: &str) -> anyhow::Result<CodexDeviceLogin> {
+    let response = client
+        .post(url)
+        .json(&json!({ "client_id": OAUTH_CLIENT_ID }))
+        .send().await?;
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "ChatGPT device login is unavailable (HTTP {}). Enable device-code authorization in ChatGPT security settings or ask your workspace administrator.",
+            response.status()
+        );
+    }
+    let value: serde_json::Value = response.json().await?;
+    let device_auth_id = value["device_auth_id"].as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no device ID"))?;
+    let user_code = value["user_code"].as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no user code"))?;
+    let interval = value["interval"].as_u64()
+        .or_else(|| value["interval"].as_str().and_then(|value| value.parse().ok()))
+        .unwrap_or(5);
+    Ok(CodexDeviceLogin {
+        device_auth_id: device_auth_id.to_owned(),
+        user_code: user_code.to_owned(),
+        verification_uri: DEVICE_VERIFICATION_URI,
+        interval_seconds: interval.clamp(2, 30),
+        expires_in_seconds: 15 * 60,
+    })
+}
+
+pub async fn poll_codex_device_login(
+    device_auth_id: &str,
+    user_code: &str,
+) -> anyhow::Result<CodexDeviceLoginProgress> {
+    let result = request_codex_device_approval(
+        &oauth_http_client()?, DEVICE_TOKEN_URL, device_auth_id, user_code,
+    ).await?;
+    let Some((code, verifier)) = result else {
+        return Ok(CodexDeviceLoginProgress { authenticated: false, pending: true });
+    };
+    let credentials = exchange_or_refresh(
+        &[
+            ("grant_type", "authorization_code"),
+            ("client_id", OAUTH_CLIENT_ID),
+            ("code", &code),
+            ("code_verifier", &verifier),
+            ("redirect_uri", DEVICE_REDIRECT_URI),
+        ],
+        "ChatGPT device token exchange",
+    ).await?;
+    save_credentials(&credentials)?;
+    Ok(CodexDeviceLoginProgress { authenticated: true, pending: false })
+}
+
+async fn request_codex_device_approval(
+    client: &Client,
+    url: &str,
+    device_auth_id: &str,
+    user_code: &str,
+) -> anyhow::Result<Option<(String, String)>> {
+    anyhow::ensure!(
+        !device_auth_id.is_empty() && device_auth_id.len() <= 512
+            && !user_code.is_empty() && user_code.len() <= 128,
+        "Invalid ChatGPT device authorization"
+    );
+    let response = client
+        .post(url)
+        .json(&json!({
+            "device_auth_id": device_auth_id,
+            "user_code": user_code,
+        }))
+        .send().await?;
+    let status = response.status();
+    // The OpenAI device endpoint returns 403 or 404 while approval is pending.
+    if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::NOT_FOUND
+        || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Ok(None);
+    }
+    if !status.is_success() {
+        anyhow::bail!("ChatGPT device authorization failed (HTTP {status}). Retry sign-in.");
+    }
+    let payload: serde_json::Value = response.json().await?;
+    let code = payload["authorization_code"].as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no authorization code"))?;
+    let verifier = payload["code_verifier"].as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ChatGPT device authorization returned no PKCE verifier"))?;
+    Ok(Some((code.to_owned(), verifier.to_owned())))
+}
+
+#[derive(Deserialize)]
+struct StoredAuth {
+    auth_mode: Option<String>,
+    tokens: Option<StoredTokens>,
+}
+
+#[derive(Deserialize)]
+struct StoredTokens {
     access_token: String,
-    refresh_token: Option<String>,
-    subject: Option<String>,
-    client_id: Option<String>,
-    scope: Option<String>,
-    resource: Option<String>,
-    expires: Option<i64>,
+    refresh_token: String,
+    expires: i64,
+    account_id: String,
+}
+
+#[derive(Deserialize)]
+struct TokenResponse {
+    access_token: String,
+    refresh_token: String,
+    expires_in: u64,
 }
 
 fn home_dir() -> anyhow::Result<PathBuf> {
@@ -78,56 +251,68 @@ pub fn codex_auth_path() -> anyhow::Result<PathBuf> {
     Ok(codex_home()?.join("auth.json"))
 }
 
-fn has_chatgpt_plan_scope(scope: &str) -> bool {
-    let scopes: std::collections::HashSet<_> = scope.split_whitespace().collect();
-    ["offline_access", "resource.invoke", "chatgpt.tokens.use.direct"]
-        .iter()
-        .all(|required| scopes.contains(required))
+// The access token was obtained from the OpenAI token endpoint with PKCE.
+// Its account claim is needed by the ChatGPT Codex backend request header.
+// We do not use an unverified JWT to grant local privileges.
+fn account_id_from_access_token(access_token: &str) -> anyhow::Result<String> {
+    let parts: Vec<_> = access_token.split('.').collect();
+    anyhow::ensure!(parts.len() == 3, "OpenAI Codex access token is not a JWT");
+    let payload = URL_SAFE_NO_PAD.decode(parts[1])
+        .map_err(|_| anyhow::anyhow!("OpenAI Codex access token has an invalid payload"))?;
+    let claims: serde_json::Value = serde_json::from_slice(&payload)?;
+    let account_id = claims["https://api.openai.com/auth"]["chatgpt_account_id"]
+        .as_str()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("OpenAI Codex token has no ChatGPT account ID"))?;
+    Ok(account_id.to_owned())
+}
+
+fn credentials_from_token(response: TokenResponse) -> anyhow::Result<CodexCredentials> {
+    anyhow::ensure!(!response.access_token.trim().is_empty(), "OpenAI Codex token response has no access token");
+    anyhow::ensure!(!response.refresh_token.trim().is_empty(), "OpenAI Codex token response has no refresh token");
+    anyhow::ensure!(response.expires_in > 0, "OpenAI Codex token response has an invalid expiry");
+    let account_id = account_id_from_access_token(&response.access_token)?;
+    Ok(CodexCredentials {
+        access: response.access_token,
+        refresh: response.refresh_token,
+        expires: chrono::Utc::now().timestamp_millis()
+            .saturating_add((response.expires_in.min(i64::MAX as u64 / 1000) as i64).saturating_mul(1000)),
+        account_id,
+    })
 }
 
 fn read_managed_credentials(path: &Path) -> anyhow::Result<CodexCredentials> {
-    let data = std::fs::read(path)?;
-    let auth: ManagedCodexAuth = serde_json::from_slice(&data)?;
-    anyhow::ensure!(auth.auth_mode.as_deref() == Some("siwc"), "No Sign in with ChatGPT session found");
-    let tokens = auth.tokens.ok_or_else(|| anyhow::anyhow!("Saved ChatGPT credentials are incomplete"))?;
-    let scope = tokens.scope.unwrap_or_default();
+    let auth: StoredAuth = serde_json::from_slice(&std::fs::read(path)?)?;
     anyhow::ensure!(
-        scope.split_whitespace().any(|granted| ["openid", "profile", "email"].contains(&granted)),
-        "The saved ChatGPT sign-in did not include identity permission"
+        auth.auth_mode.as_deref() == Some("codex_legacy"),
+        "The previous ChatGPT sign-in uses a different provider. Reconnect using OpenAI Codex."
     );
-    let client_id = tokens.client_id.filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("The saved ChatGPT client registration is missing"))?;
-    let resource = tokens.resource.unwrap_or_else(|| OAUTH_RESOURCE.to_owned());
-    anyhow::ensure!(resource == OAUTH_RESOURCE, "The saved ChatGPT credential has an unexpected resource");
-    let expires = tokens.expires.ok_or_else(|| anyhow::anyhow!("The saved ChatGPT token expiry is missing"))?;
-    let subject = tokens.subject.filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("The saved ChatGPT identity subject is missing"))?;
-    anyhow::ensure!(!tokens.access_token.trim().is_empty(), "Saved ChatGPT credentials are incomplete");
+    let tokens = auth.tokens.ok_or_else(|| anyhow::anyhow!("Saved OpenAI Codex credentials are incomplete"))?;
+    anyhow::ensure!(
+        !tokens.refresh_token.trim().is_empty() && !tokens.access_token.trim().is_empty(),
+        "Saved OpenAI Codex credentials are incomplete"
+    );
+    let account_id = account_id_from_access_token(&tokens.access_token)?;
+    anyhow::ensure!(account_id == tokens.account_id, "Saved OpenAI Codex account ID does not match its token");
     Ok(CodexCredentials {
         access: tokens.access_token,
-        refresh: tokens.refresh_token.unwrap_or_default(),
-        expires,
-        subject,
-        client_id,
-        scope,
-        resource,
+        refresh: tokens.refresh_token,
+        expires: tokens.expires,
+        account_id,
     })
 }
 
 fn save_credentials(credentials: &CodexCredentials) -> anyhow::Result<()> {
     let path = codex_auth_path()?;
-    let directory = path.parent().ok_or_else(|| anyhow::anyhow!("Invalid ChatGPT credentials path"))?;
+    let directory = path.parent().ok_or_else(|| anyhow::anyhow!("Invalid OpenAI Codex credential path"))?;
     std::fs::create_dir_all(directory)?;
-    let temporary_path = directory.join(format!(".siwc-{}.tmp", uuid::Uuid::new_v4()));
+    let temporary_path = directory.join(format!(".codex-{}.tmp", uuid::Uuid::new_v4()));
     let value = json!({
-        "auth_mode": "siwc",
+        "auth_mode": "codex_legacy",
         "tokens": {
             "access_token": credentials.access,
             "refresh_token": credentials.refresh,
-            "subject": credentials.subject,
-            "client_id": credentials.client_id,
-            "scope": credentials.scope,
-            "resource": credentials.resource,
+            "account_id": credentials.account_id,
             "expires": credentials.expires,
         }
     });
@@ -141,221 +326,213 @@ fn save_credentials(credentials: &CodexCredentials) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn refresh_managed_auth() -> anyhow::Result<()> {
-    let mut credentials = read_managed_credentials(&codex_auth_path()?)?;
-    #[derive(Deserialize)]
-    struct TokenResponse {
-        access_token: String,
-        refresh_token: Option<String>,
-        expires_in: u64,
-        scope: Option<String>,
-    }
-    let response = Client::new()
-        .post(OAUTH_TOKEN_URL)
-        .form(&[
-            ("grant_type", "refresh_token"),
-            ("client_id", credentials.client_id.as_str()),
-            ("refresh_token", credentials.refresh.as_str()),
-            ("resource", credentials.resource.as_str()),
-        ])
-        .send()
-        .await?
-        .error_for_status()
-        .map_err(|error| anyhow::anyhow!("ChatGPT token refresh failed: {error}"))?;
-    let refreshed: TokenResponse = response.json().await?;
-    let granted_scope = refreshed
-        .scope
-        .filter(|scope| !scope.trim().is_empty())
-        .unwrap_or_else(|| credentials.scope.clone());
-    credentials.access = refreshed.access_token;
-    if let Some(refresh_token) = refreshed.refresh_token {
-        credentials.refresh = refresh_token;
-    }
-    credentials.expires = chrono::Utc::now()
-        .timestamp_millis()
-        .saturating_add((refreshed.expires_in.min(i64::MAX as u64) as i64).saturating_mul(1000));
-    credentials.scope = granted_scope;
-    save_credentials(&credentials)?;
-    Ok(())
+async fn exchange_or_refresh(form: &[(&str, &str)], operation: &str) -> anyhow::Result<CodexCredentials> {
+    let client = oauth_http_client()?;
+    let response = send_oauth_token_request(&client, OAUTH_TOKEN_URL, form, operation).await?;
+    let token: TokenResponse = response.json().await?;
+    credentials_from_token(token)
 }
 
-fn build_oauth_authorize_url(
-    redirect_uri: &str,
-    state: &str,
-    nonce: &str,
-    challenge: &str,
-    client_id: &str,
-    is_new_registration: bool,
-) -> String {
+async fn refresh_managed_auth(credentials: &CodexCredentials) -> anyhow::Result<CodexCredentials> {
+    let refreshed = exchange_or_refresh(
+        &[
+            ("grant_type", "refresh_token"),
+            ("client_id", OAUTH_CLIENT_ID),
+            ("refresh_token", credentials.refresh.as_str()),
+        ],
+        "OpenAI Codex token refresh",
+    ).await?;
+    anyhow::ensure!(
+        refreshed.account_id == credentials.account_id,
+        "OpenAI Codex refreshed an unexpected ChatGPT account; reconnect your account"
+    );
+    save_credentials(&refreshed)?;
+    Ok(refreshed)
+}
+
+fn build_oauth_authorize_url(state: &str, challenge: &str) -> String {
     let mut query = url::form_urlencoded::Serializer::new(String::new());
     query.append_pair("response_type", "code");
-    query.append_pair("client_id", client_id);
-    query.append_pair("redirect_uri", redirect_uri);
+    query.append_pair("client_id", OAUTH_CLIENT_ID);
+    query.append_pair("redirect_uri", OAUTH_REDIRECT_URI);
     query.append_pair("scope", OAUTH_SCOPE);
-    query.append_pair("resource", OAUTH_RESOURCE);
     query.append_pair("code_challenge", challenge);
     query.append_pair("code_challenge_method", "S256");
     query.append_pair("state", state);
-    query.append_pair("nonce", nonce);
-    if is_new_registration {
-        query.append_pair("agent_name_hint", OAUTH_AGENT_NAME);
-    }
+    query.append_pair("id_token_add_organizations", "true");
+    query.append_pair("codex_cli_simplified_flow", "true");
+    query.append_pair("originator", "sparky");
     format!("{OAUTH_AUTHORIZE_URL}?{}", query.finish())
 }
 
-#[derive(Debug, Deserialize)]
-struct IdTokenClaims {
-    sub: String,
-    nonce: String,
-}
-
-async fn validate_id_token(
-    id_token: &str,
-    client_id: &str,
-    expected_nonce: &str,
-) -> anyhow::Result<String> {
-    use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
-
-    #[derive(Deserialize)]
-    struct OpenIdConfiguration {
-        issuer: String,
-        jwks_uri: String,
-    }
-    let configuration: OpenIdConfiguration = Client::new()
-        .get(OAUTH_DISCOVERY_URL)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-    anyhow::ensure!(configuration.issuer == OAUTH_ISSUER, "OpenAI OIDC discovery returned an unexpected issuer");
-
-    let header = decode_header(id_token)?;
-    anyhow::ensure!(
-        matches!(header.alg, Algorithm::RS256 | Algorithm::ES256),
-        "OpenAI returned an unsupported ID-token signing algorithm"
+// Browsers may resolve "localhost" to either loopback family. Listening only
+// on 127.0.0.1 can strand the OAuth redirect on ::1 after account selection.
+async fn bind_oauth_callback_listeners(
+    port: u16,
+) -> anyhow::Result<(Option<TcpListener>, Option<TcpListener>)> {
+    let (ipv4, ipv6) = tokio::join!(
+        TcpListener::bind(("127.0.0.1", port)),
+        TcpListener::bind(("::1", port)),
     );
-    let key_id = header.kid.ok_or_else(|| anyhow::anyhow!("OpenAI ID token has no signing key id"))?;
-    let jwks: JwkSet = Client::new()
-        .get(configuration.jwks_uri)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-    let jwk = jwks
-        .keys
-        .iter()
-        .find(|key| key.common.key_id.as_deref() == Some(key_id.as_str()))
-        .ok_or_else(|| anyhow::anyhow!("Could not find the OpenAI ID-token signing key"))?;
-    let mut validation = Validation::new(header.alg);
-    validation.set_issuer(&[OAUTH_ISSUER]);
-    validation.set_audience(&[client_id]);
-    let claims = decode::<IdTokenClaims>(id_token, &DecodingKey::from_jwk(jwk)?, &validation)?.claims;
-    anyhow::ensure!(claims.nonce == expected_nonce, "OpenAI ID-token nonce did not match the sign-in request");
-    anyhow::ensure!(!claims.sub.trim().is_empty(), "OpenAI ID token did not identify an account");
-    Ok(claims.sub)
+    if ipv4.is_err() && ipv6.is_err() {
+        anyhow::bail!(
+            "Could not start ChatGPT sign-in on localhost port {port} (IPv4: {}; IPv6: {}). Close any other Codex login and retry.",
+            ipv4.unwrap_err(),
+            ipv6.unwrap_err(),
+        );
+    }
+    Ok((ipv4.ok(), ipv6.ok()))
 }
 
-async fn oauth_login() -> anyhow::Result<()> {
-    let existing = codex_auth_path()
-        .ok()
-        .and_then(|path| read_managed_credentials(&path).ok());
-    let callback_port = if existing.is_some() { 0 } else { OAUTH_CALLBACK_PORT };
-    let listener = TcpListener::bind(("127.0.0.1", callback_port)).await
-        .map_err(|error| anyhow::anyhow!("Could not open the Sign in with ChatGPT loopback callback: {error}"))?;
-    let port = listener.local_addr()?.port();
-    let redirect_uri = format!("http://127.0.0.1:{port}{OAUTH_CALLBACK_PATH}");
-    let client_id = existing.as_ref().map(|credentials| credentials.client_id.clone())
-        .unwrap_or_else(|| OAUTH_DYNAMIC_CLIENT_ID.to_owned());
-    let is_new_registration = client_id == OAUTH_DYNAMIC_CLIENT_ID;
+async fn accept_oauth_connection(
+    ipv4: Option<&TcpListener>,
+    ipv6: Option<&TcpListener>,
+) -> std::io::Result<(TcpStream, std::net::SocketAddr)> {
+    match (ipv4, ipv6) {
+        (Some(ipv4), Some(ipv6)) => {
+            tokio::select! {
+                connection = ipv4.accept() => connection,
+                connection = ipv6.accept() => connection,
+            }
+        }
+        (Some(ipv4), None) => ipv4.accept().await,
+        (None, Some(ipv6)) => ipv6.accept().await,
+        (None, None) => unreachable!("OAuth callback requires at least one listener"),
+    }
+}
 
-    let mut random = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut random);
-    let state = URL_SAFE_NO_PAD.encode(random);
-    rand::thread_rng().fill_bytes(&mut random);
-    let nonce = URL_SAFE_NO_PAD.encode(random);
-    rand::thread_rng().fill_bytes(&mut random);
-    let verifier = URL_SAFE_NO_PAD.encode(random);
-    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-    let auth_url = build_oauth_authorize_url(&redirect_uri, &state, &nonce, &challenge, &client_id, is_new_registration);
-    open_oauth_browser(&auth_url);
+// Read a complete HTTP request line, not the first arbitrary TCP packet.
+// A split request could otherwise be discarded after the browser redirects.
+async fn read_oauth_request_line(stream: &mut TcpStream) -> anyhow::Result<String> {
+    let mut request = [0u8; 8192];
+    let mut size = 0;
+    loop {
+        let read = tokio::time::timeout(
+            OAUTH_CALLBACK_READ_TIMEOUT,
+            stream.read(&mut request[size..]),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("ChatGPT callback request timed out"))??;
+        if read == 0 {
+            anyhow::bail!("ChatGPT callback connection closed before the request line");
+        }
+        size += read;
+        if let Some(newline) = request[..size].iter().position(|byte| *byte == b'\n') {
+            return Ok(String::from_utf8_lossy(&request[..newline])
+                .trim_end_matches('\r')
+                .to_string());
+        }
+        if size == request.len() {
+            anyhow::bail!("ChatGPT callback request line is too long");
+        }
+    }
+}
 
-    let (code, issued_client_id, callback_scope) = loop {
-        let (mut stream, _) = listener.accept().await?;
-        let mut request = vec![0u8; 8192];
-        let size = stream.read(&mut request).await?;
-        let request = String::from_utf8_lossy(&request[..size]);
-        let target = request.lines().next()
-            .and_then(|line| line.strip_prefix("GET "))
-            .and_then(|line| line.split_whitespace().next())
-            .ok_or_else(|| anyhow::anyhow!("Invalid OAuth callback request"))?;
-        let parsed = url::Url::parse(&format!("http://127.0.0.1{target}"))?;
+async fn wait_for_oauth_callback(
+    ipv4: Option<&TcpListener>,
+    ipv6: Option<&TcpListener>,
+    expected_state: &str,
+    deadline: Duration,
+) -> anyhow::Result<(String, TcpStream)> {
+    let started = tokio::time::Instant::now();
+    loop {
+        let remaining = deadline.checked_sub(started.elapsed())
+            .filter(|duration| !duration.is_zero())
+            .ok_or_else(|| anyhow::anyhow!("ChatGPT sign-in timed out. Start sign-in again."))?;
+        let (mut stream, _) = tokio::time::timeout(
+            remaining,
+            accept_oauth_connection(ipv4, ipv6),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("ChatGPT sign-in timed out. Start sign-in again."))??;
+
+        // An unrelated connection (including a browser preconnect) should not
+        // terminate the sign-in, but neither may it block the listener forever.
+        let Ok(request_line) = read_oauth_request_line(&mut stream).await else {
+            continue;
+        };
+        let Some(target) = request_line.strip_prefix("GET ")
+            .and_then(|line| line.split_whitespace().next()) else {
+            let _ = write_oauth_response(&mut stream, "Invalid callback request", "400 Bad Request").await;
+            continue;
+        };
+        let Ok(parsed) = url::Url::parse(&format!("http://localhost{target}")) else {
+            let _ = write_oauth_response(&mut stream, "Invalid callback URL", "400 Bad Request").await;
+            continue;
+        };
         if parsed.path() != OAUTH_CALLBACK_PATH {
-            write_oauth_response(&mut stream, "Not Found", "404 Not Found").await?;
+            let _ = write_oauth_response(&mut stream, "Not Found", "404 Not Found").await;
             continue;
         }
         let params: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
-        if params.get("state").map(String::as_str) != Some(state.as_str()) {
-            write_oauth_response(&mut stream, "Sign-in state did not match", "400 Bad Request").await?;
-            continue;
+        if params.get("state").map(String::as_str) != Some(expected_state) {
+            let _ = write_oauth_response(&mut stream, "ChatGPT sign-in state did not match; retry sign-in.", "400 Bad Request").await;
+            anyhow::bail!("ChatGPT sign-in state did not match. Start sign-in again.");
         }
         if let Some(error) = params.get("error") {
-            let description = params.get("error_description").map(String::as_str).unwrap_or(error);
-            write_oauth_response(&mut stream, "Sign-in was cancelled", "400 Bad Request").await?;
-            anyhow::bail!("ChatGPT sign-in failed: {description}");
+            let _ = write_oauth_response(&mut stream, "ChatGPT sign-in was not completed.", "400 Bad Request").await;
+            anyhow::bail!("ChatGPT sign-in failed: {error}");
         }
-        let code = params.get("code").filter(|value| !value.is_empty()).cloned()
-            .ok_or_else(|| anyhow::anyhow!("ChatGPT sign-in did not return an authorization code"))?;
-        let returned_client_id = params.get("client_id").cloned().unwrap_or_else(|| client_id.clone());
-        let scope = params.get("scope").cloned().unwrap_or_default();
-        write_oauth_response(&mut stream, "Sign-in complete. You can return to Sparky.", "200 OK").await?;
-        break (code, returned_client_id, scope);
-    };
-
-    anyhow::ensure!(!issued_client_id.trim().is_empty() && issued_client_id != OAUTH_DYNAMIC_CLIENT_ID,
-        "OpenAI did not return the registered ChatGPT client id");
-    #[derive(Deserialize)]
-    struct TokenResponse {
-        id_token: String,
-        access_token: String,
-        refresh_token: Option<String>,
-        expires_in: u64,
-        scope: Option<String>,
+        let Some(code) = params.get("code").filter(|value| !value.is_empty()) else {
+            let _ = write_oauth_response(&mut stream, "No authorization code returned", "400 Bad Request").await;
+            anyhow::bail!("ChatGPT did not return an authorization code. Start sign-in again.");
+        };
+        return Ok((code.to_owned(), stream));
     }
-    let response = Client::new().post(OAUTH_TOKEN_URL)
-        .form(&[
-            ("grant_type", "authorization_code"),
-            ("code", code.as_str()),
-            ("redirect_uri", redirect_uri.as_str()),
-            ("client_id", issued_client_id.as_str()),
-            ("code_verifier", verifier.as_str()),
-            ("resource", OAUTH_RESOURCE),
-        ])
-        .send().await?.error_for_status()
-        .map_err(|error| anyhow::anyhow!("ChatGPT token exchange failed: {error}"))?;
-    let tokens: TokenResponse = response.json().await?;
-    let subject = validate_id_token(&tokens.id_token, &issued_client_id, &nonce).await?;
-    let granted_scope = tokens
-        .scope
-        .filter(|scope| !scope.trim().is_empty())
-        .unwrap_or(callback_scope);
-    anyhow::ensure!(
-        granted_scope.split_whitespace().any(|granted| ["openid", "profile", "email"].contains(&granted)),
-        "OpenAI sign-in did not grant an identity scope"
-    );
-    let credentials = CodexCredentials {
-        access: tokens.access_token,
-        refresh: tokens.refresh_token.unwrap_or_default(),
-        expires: chrono::Utc::now().timestamp_millis()
-            .saturating_add((tokens.expires_in.min(i64::MAX as u64) as i64).saturating_mul(1000)),
-        subject,
-        client_id: issued_client_id,
-        scope: granted_scope,
-        resource: OAUTH_RESOURCE.to_owned(),
-    };
-    save_credentials(&credentials)?;
-    Ok(())
+}
+
+async fn oauth_login() -> anyhow::Result<()> {
+    // The registered OAuth redirect is localhost:1455; accept IPv4 and IPv6.
+    let (ipv4, ipv6) = bind_oauth_callback_listeners(OAUTH_CALLBACK_PORT).await?;
+    let mut random = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut random);
+    let state = URL_SAFE_NO_PAD.encode(&random[..16]);
+    rand::thread_rng().fill_bytes(&mut random);
+    let verifier = URL_SAFE_NO_PAD.encode(random);
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    open_oauth_browser(&build_oauth_authorize_url(&state, &challenge));
+
+    let (code, mut callback) = wait_for_oauth_callback(
+        ipv4.as_ref(),
+        ipv6.as_ref(),
+        &state,
+        OAUTH_CALLBACK_TIMEOUT,
+    ).await?;
+    drop((ipv4, ipv6));
+
+    // Confirm success only after the token exchange and credential write have
+    // succeeded. Previously the browser was told "authorized" prematurely.
+    let result = async {
+        let credentials = exchange_or_refresh(
+            &[
+                ("grant_type", "authorization_code"),
+                ("client_id", OAUTH_CLIENT_ID),
+                ("code", code.as_str()),
+                ("code_verifier", verifier.as_str()),
+                ("redirect_uri", OAUTH_REDIRECT_URI),
+            ],
+            "OpenAI Codex token exchange",
+        ).await?;
+        save_credentials(&credentials)
+    }.await;
+    match result {
+        Ok(()) => {
+            let _ = write_oauth_response(
+                &mut callback,
+                "ChatGPT login complete. You can return to Sparky.",
+                "200 OK",
+            ).await;
+            Ok(())
+        }
+        Err(error) => {
+            let _ = write_oauth_response(
+                &mut callback,
+                "ChatGPT login could not finish. Return to Sparky and retry.",
+                "502 Bad Gateway",
+            ).await;
+            Err(error)
+        }
+    }
 }
 
 async fn write_oauth_response(
@@ -364,15 +541,9 @@ async fn write_oauth_response(
     status: &str,
 ) -> anyhow::Result<()> {
     let body = body.as_bytes();
-    stream
-        .write_all(
-            format!(
-                "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                body.len()
-            )
-            .as_bytes(),
-        )
-        .await?;
+    stream.write_all(
+        format!("HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).as_bytes()
+    ).await?;
     stream.write_all(body).await?;
     Ok(())
 }
@@ -424,27 +595,22 @@ fn open_oauth_browser(url: &str) {
     }
 }
 
+
 pub async fn login_codex() -> anyhow::Result<CodexAuthStatus> {
     oauth_login().await?;
     let status = codex_auth_status();
-    anyhow::ensure!(
-        status.authenticated,
-        "ChatGPT login finished without a usable session"
-    );
+    anyhow::ensure!(status.authenticated, "OpenAI Codex login finished without a usable session");
     Ok(status)
 }
 
 pub fn codex_auth_status() -> CodexAuthStatus {
-    let credentials = codex_auth_path()
-        .ok()
+    let credentials = codex_auth_path().ok()
         .and_then(|path| read_managed_credentials(&path).ok());
     CodexAuthStatus {
         authenticated: credentials.is_some(),
-        subject: credentials.as_ref().map(|value| value.subject.clone()),
+        subject: credentials.as_ref().map(|value| value.account_id.clone()),
         expires: credentials.as_ref().map(|value| value.expires),
-        plan_usage_authorized: credentials.as_ref().is_some_and(|value| {
-            has_chatgpt_plan_scope(&value.scope) && !value.refresh.trim().is_empty()
-        }),
+        plan_usage_authorized: credentials.is_some(),
     }
 }
 
@@ -458,70 +624,282 @@ pub async fn logout_codex() -> anyhow::Result<CodexAuthStatus> {
     Ok(codex_auth_status())
 }
 
+fn needs_refresh(credentials: &CodexCredentials) -> bool {
+    chrono::Utc::now().timestamp_millis() >= credentials.expires.saturating_sub(5 * 60 * 1000)
+}
+
 pub async fn valid_codex_credentials() -> anyhow::Result<CodexCredentials> {
     let path = codex_auth_path()?;
-    let mut credentials = read_managed_credentials(&path).map_err(|error| {
-        anyhow::anyhow!("Sign in with ChatGPT from Sparky Models settings first ({error})")
+    let credentials = read_managed_credentials(&path).map_err(|error| {
+        anyhow::anyhow!("Connect OpenAI Codex from Sparky Models settings first ({error})")
     })?;
-    anyhow::ensure!(
-        has_chatgpt_plan_scope(&credentials.scope),
-        "This ChatGPT account has signed in, but did not authorize ChatGPT plan usage. Enable plan usage from Models settings."
-    );
-    anyhow::ensure!(
-        !credentials.refresh.trim().is_empty(),
-        "The ChatGPT plan grant is missing offline access. Reauthorize ChatGPT plan usage from Models settings."
-    );
-    let now = chrono::Utc::now().timestamp_millis();
-    let refresh_at = credentials.expires.saturating_sub(5 * 60 * 1000);
-    if now >= refresh_at || credentials.expires <= now + 30_000 {
-        refresh_managed_auth().await.map_err(|error| {
-            anyhow::anyhow!(
-                "Your ChatGPT session could not be refreshed. Sign in again from Models settings ({error})"
-            )
-        })?;
-        credentials = read_managed_credentials(&path)?;
-        anyhow::ensure!(
-            has_chatgpt_plan_scope(&credentials.scope),
-            "The refreshed ChatGPT session no longer permits plan usage. Reauthorize ChatGPT plan usage from Models settings."
-        );
+    if !needs_refresh(&credentials) {
+        return Ok(credentials);
     }
-    Ok(credentials)
+    // Refresh tokens rotate; simultaneous threads must not refresh the same token.
+    let _lock = REFRESH_LOCK.lock().await;
+    let latest = read_managed_credentials(&path)?;
+    if !needs_refresh(&latest) {
+        return Ok(latest);
+    }
+    refresh_managed_auth(&latest).await.map_err(|error| {
+        anyhow::anyhow!("OpenAI Codex session refresh failed. Reconnect from Models settings ({error})")
+    })
+}
+
+pub async fn refresh_codex_after_unauthorized(observed_access: &str) -> anyhow::Result<CodexCredentials> {
+    let _lock = REFRESH_LOCK.lock().await;
+    let credentials = read_managed_credentials(&codex_auth_path()?)?;
+    // A sibling thread may already have rotated the token.
+    if credentials.access != observed_access {
+        return Ok(credentials);
+    }
+    refresh_managed_auth(&credentials).await
+}
+
+pub async fn codex_usage() -> anyhow::Result<serde_json::Value> {
+    let credentials = valid_codex_credentials().await?;
+    let response = oauth_http_client()?
+        .get("https://chatgpt.com/backend-api/wham/usage")
+        .bearer_auth(&credentials.access)
+        .header("chatgpt-account-id", &credentials.account_id)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send().await?
+        .error_for_status()
+        .map_err(|error| anyhow::anyhow!("ChatGPT Codex subscription usage request failed: {error}"))?;
+    let usage: serde_json::Value = response.json().await?;
+    anyhow::ensure!(usage.is_object(), "ChatGPT returned an invalid subscription usage response");
+    Ok(usage)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn requires_explicit_chatgpt_plan_usage_scopes() {
-        assert!(has_chatgpt_plan_scope(
-            "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"
-        ));
-        assert!(!has_chatgpt_plan_scope("openid profile email"));
-        assert!(!has_chatgpt_plan_scope("openid offline_access resource.invoke"));
+    async fn token_test_server(replies: Vec<(&'static str, &'static str, Duration)>)
+        -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let url = format!("http://{}/token", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            for (status, body, delay) in replies {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0u8; 4096];
+                assert!(stream.read(&mut request).await.unwrap() > 0);
+                tokio::time::sleep(delay).await;
+                let reply = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(reply.as_bytes()).await.unwrap();
+            }
+        });
+        (url, task)
+    }
+
+    fn mock_access_token(account_id: &str) -> String {
+        let claims = json!({"https://api.openai.com/auth": {"chatgpt_account_id": account_id}});
+        format!("e30.{}.signature", URL_SAFE_NO_PAD.encode(claims.to_string()))
     }
 
     #[test]
-    fn builds_official_plan_usage_authorization_request() {
-        let url = build_oauth_authorize_url(
-            "http://127.0.0.1:1455/auth/callback",
-            "state",
-            "nonce",
-            "challenge",
-            OAUTH_DYNAMIC_CLIENT_ID,
-            true,
-        );
-        let parsed = url::Url::parse(&url).unwrap();
-        let params: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
+    fn builds_pi_legacy_codex_authorization_request() {
+        let url = url::Url::parse(&build_oauth_authorize_url("state123", "challenge123")).unwrap();
+        let query: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+        assert_eq!(url.path(), "/oauth/authorize");
+        assert_eq!(query.get("client_id").map(String::as_str), Some(OAUTH_CLIENT_ID));
+        assert_eq!(query.get("redirect_uri").map(String::as_str), Some(OAUTH_REDIRECT_URI));
+        assert_eq!(query.get("scope").map(String::as_str), Some("openid profile email offline_access"));
+        assert_eq!(query.get("codex_cli_simplified_flow").map(String::as_str), Some("true"));
+        assert_eq!(query.get("id_token_add_organizations").map(String::as_str), Some("true"));
+        assert_eq!(query.get("code_challenge_method").map(String::as_str), Some("S256"));
+        assert_eq!(query.get("state").map(String::as_str), Some("state123"));
+        assert!(query.get("resource").is_none());
+        assert!(query.get("nonce").is_none());
+    }
 
-        assert_eq!(parsed.path(), "/api/accounts/authorize");
-        assert_eq!(params.get("client_id").map(String::as_str), Some(OAUTH_DYNAMIC_CLIENT_ID));
-        assert_eq!(params.get("redirect_uri").map(String::as_str), Some("http://127.0.0.1:1455/auth/callback"));
-        assert_eq!(params.get("scope").map(String::as_str), Some(OAUTH_SCOPE));
-        assert_eq!(params.get("resource").map(String::as_str), Some(OAUTH_RESOURCE));
-        assert_eq!(params.get("code_challenge_method").map(String::as_str), Some("S256"));
-        assert_eq!(params.get("state").map(String::as_str), Some("state"));
-        assert_eq!(params.get("nonce").map(String::as_str), Some("nonce"));
-        assert_eq!(params.get("agent_name_hint").map(String::as_str), Some(OAUTH_AGENT_NAME));
+    #[test]
+    fn extracts_account_id_and_rejects_missing_or_invalid_claims() {
+        assert_eq!(account_id_from_access_token(&mock_access_token("acct_42")).unwrap(), "acct_42");
+        assert!(account_id_from_access_token("not-a-jwt").is_err());
+        assert!(account_id_from_access_token(&mock_access_token("")).is_err());
+    }
+
+    #[test]
+    fn rejects_incomplete_token_exchange() {
+        assert!(credentials_from_token(TokenResponse {
+            access_token: mock_access_token("acct_1"),
+            refresh_token: String::new(),
+            expires_in: 3600,
+        }).is_err());
+        let credential = credentials_from_token(TokenResponse {
+            access_token: mock_access_token("acct_1"),
+            refresh_token: "refresh".into(),
+            expires_in: 3600,
+        }).unwrap();
+        assert_eq!(credential.account_id, "acct_1");
+        assert!(credential.expires > chrono::Utc::now().timestamp_millis());
+    }
+
+    #[tokio::test]
+    async fn callback_delivers_code_over_ipv4_and_handles_split_request_line() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            let (code, mut stream) = wait_for_oauth_callback(
+                Some(&listener), None, "state-123", Duration::from_secs(3),
+            ).await.unwrap();
+            write_oauth_response(&mut stream, "signed in", "200 OK").await.unwrap();
+            code
+        });
+        let mut browser = TcpStream::connect(address).await.unwrap();
+        browser.write_all(b"GET /auth/call").await.unwrap();
+        browser.write_all(b"back?code=oauth-code&state=state-123 HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await.unwrap();
+        let mut response = String::new();
+        browser.read_to_string(&mut response).await.unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert_eq!(task.await.unwrap(), "oauth-code");
+    }
+
+    #[tokio::test]
+    async fn callback_delivers_code_over_ipv6_when_available() {
+        let Ok(listener) = TcpListener::bind(("::1", 0)).await else {
+            // Some CI hosts disable IPv6 entirely; IPv4 remains supported.
+            return;
+        };
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            let (code, mut stream) = wait_for_oauth_callback(
+                None, Some(&listener), "ipv6-state", Duration::from_secs(3),
+            ).await.unwrap();
+            write_oauth_response(&mut stream, "signed in", "200 OK").await.unwrap();
+            code
+        });
+        let mut browser = TcpStream::connect(address).await.unwrap();
+        browser.write_all(b"GET /auth/callback?code=ipv6-code&state=ipv6-state HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await.unwrap();
+        let mut response = String::new();
+        browser.read_to_string(&mut response).await.unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert_eq!(task.await.unwrap(), "ipv6-code");
+    }
+
+    #[tokio::test]
+    async fn callback_rejects_wrong_state_and_ends_login_instead_of_hanging() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            wait_for_oauth_callback(
+                Some(&listener), None, "expected", Duration::from_secs(3),
+            ).await.unwrap_err().to_string()
+        });
+        let mut browser = TcpStream::connect(address).await.unwrap();
+        browser.write_all(b"GET /auth/callback?code=code&state=other HTTP/1.1\r\n\r\n")
+            .await.unwrap();
+        let mut response = String::new();
+        browser.read_to_string(&mut response).await.unwrap();
+        assert!(response.starts_with("HTTP/1.1 400 Bad Request"));
+        assert!(task.await.unwrap().contains("state did not match"));
+    }
+
+    #[tokio::test]
+    async fn callback_reports_account_denial_without_waiting_for_timeout() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            wait_for_oauth_callback(
+                Some(&listener), None, "expected", Duration::from_secs(3),
+            ).await.unwrap_err().to_string()
+        });
+        let mut browser = TcpStream::connect(address).await.unwrap();
+        browser.write_all(b"GET /auth/callback?error=access_denied&state=expected HTTP/1.1\r\n\r\n")
+            .await.unwrap();
+        let mut response = String::new();
+        browser.read_to_string(&mut response).await.unwrap();
+        assert!(response.starts_with("HTTP/1.1 400 Bad Request"));
+        assert!(task.await.unwrap().contains("access_denied"));
+    }
+
+    #[tokio::test]
+    async fn device_start_returns_verification_code_and_url() {
+        let (url, server) = token_test_server(vec![(
+            "200 OK",
+            r#"{"device_auth_id":"dev123","user_code":"ABCD-EFGH","interval":"5"}"#,
+            Duration::ZERO,
+        )]).await;
+        let device = request_codex_device_login(&oauth_http_client().unwrap(), &url).await.unwrap();
+        let json = serde_json::to_value(device).unwrap();
+        assert_eq!(json["deviceAuthId"], "dev123");
+        assert_eq!(json["userCode"], "ABCD-EFGH");
+        assert_eq!(json["intervalSeconds"], 5);
+        assert_eq!(json["verificationUri"], DEVICE_VERIFICATION_URI);
+        assert_eq!(json["expiresInSeconds"], 900);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn device_pending_does_not_require_a_browser_callback() {
+        let (url, server) = token_test_server(vec![(
+            "403 Forbidden",
+            r#"{"error":"deviceauth_authorization_pending"}"#,
+            Duration::ZERO,
+        )]).await;
+        let progress = request_codex_device_approval(
+            &oauth_http_client().unwrap(), &url, "dev123", "ABCD-EFGH",
+        ).await.unwrap();
+        assert!(progress.is_none());
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn device_approval_provides_code_and_pkce_verifier() {
+        let (url, server) = token_test_server(vec![(
+            "200 OK",
+            r#"{"authorization_code":"auth-code","code_verifier":"pkce-verifier"}"#,
+            Duration::ZERO,
+        )]).await;
+        let progress = request_codex_device_approval(
+            &oauth_http_client().unwrap(), &url, "dev123", "ABCD-EFGH",
+        ).await.unwrap();
+        assert_eq!(progress, Some(("auth-code".to_owned(), "pkce-verifier".to_owned())));
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn invalid_device_start_response_does_not_claim_authentication() {
+        let (url, server) = token_test_server(vec![(
+            "200 OK",
+            r#"{"device_auth_id":"dev123"}"#,
+            Duration::ZERO,
+        )]).await;
+        let error = request_codex_device_login(&oauth_http_client().unwrap(), &url)
+            .await.unwrap_err();
+        assert!(error.to_string().contains("no user code"));
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn retries_transient_token_exchange_failure() {
+        let (url, server) = token_test_server(vec![
+            ("503 Service Unavailable", r#"{"error":"temporarily_unavailable"}"#, Duration::ZERO),
+            ("200 OK", r#"{"access_token":"ok"}"#, Duration::from_millis(100)),
+        ]).await;
+        let response = send_oauth_token_request(
+            &oauth_http_client().unwrap(), &url, &[("grant_type", "authorization_code")], "Codex login"
+        ).await.unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_invalid_grant() {
+        let (url, server) = token_test_server(vec![(
+            "400 Bad Request", r#"{"error":"invalid_grant"}"#, Duration::ZERO
+        )]).await;
+        let error = send_oauth_token_request(
+            &oauth_http_client().unwrap(), &url, &[("grant_type", "authorization_code")], "Codex login"
+        ).await.unwrap_err();
+        assert!(error.to_string().contains("expired, invalid, or already used"));
+        server.await.unwrap();
     }
 }

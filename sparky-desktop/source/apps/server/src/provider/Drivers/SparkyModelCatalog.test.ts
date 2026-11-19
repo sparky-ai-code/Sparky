@@ -23,14 +23,11 @@ describe("discoverSparkyModels", () => {
     NodeFS.writeFileSync(
       NodePath.join(authDirectory, "auth.json"),
       JSON.stringify({
-        auth_mode: "siwc",
+        auth_mode: "codex_legacy",
         tokens: {
           access_token: "access",
           refresh_token: "refresh",
           account_id: "account",
-          client_id: "oaiapp_test",
-          scope: "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct",
-          resource: "https://api.openai.com/v1",
           expires: Date.now() + 3_600_000,
         },
       }),
@@ -137,14 +134,11 @@ describe("discoverSparkyModels", () => {
     NodeFS.writeFileSync(
       NodePath.join(authDirectory, "auth.json"),
       JSON.stringify({
-        auth_mode: "siwc",
+        auth_mode: "codex_legacy",
         tokens: {
           access_token: "access",
           refresh_token: "refresh",
           account_id: "account",
-          client_id: "oaiapp_test",
-          scope: "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct",
-          resource: "https://api.openai.com/v1",
           expires: Date.now() + 3_600_000,
         },
       }),
@@ -177,14 +171,11 @@ describe("discoverSparkyModels", () => {
     NodeFS.writeFileSync(
       NodePath.join(authDirectory, "auth.json"),
       JSON.stringify({
-        auth_mode: "siwc",
+        auth_mode: "codex_legacy",
         tokens: {
           access_token: "private-access-token",
           refresh_token: "private-refresh-token",
           account_id: "account-123",
-          client_id: "oaiapp_test",
-          scope: "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct",
-          resource: "https://api.openai.com/v1",
           expires: Date.now() + 3_600_000,
         },
       }),
@@ -225,6 +216,7 @@ describe("discoverSparkyModels", () => {
         "gpt-6.2-sol",
         "gpt-6.2-astra",
         "gpt-6.1-sol",
+        "gpt-6.1-terra",
         "gpt-6-astra",
         "gpt-6-sol",
         "gpt-6-luna",
@@ -233,6 +225,9 @@ describe("discoverSparkyModels", () => {
         "gpt-5.6-luna",
       ]);
       expect(models[1]).toMatchObject({ name: "GPT-6.2 Astra" });
+      expect(models.find((model) => model.id === "gpt-6.1-terra")).toMatchObject({
+        name: "GPT-6.1 Terra",
+      });
       expect(models[0]).toMatchObject({
         name: "GPT-6.2 Sol",
         reasoningSupported: true,
@@ -251,10 +246,10 @@ describe("discoverSparkyModels", () => {
         ],
       });
       const request = requests[0];
-      expect(request?.url).toBe("https://api.openai.com/v1/models");
+      expect(request?.url).toBe("https://chatgpt.com/backend-api/codex/models");
       expect(request?.headers.get("authorization")).toBe("Bearer private-access-token");
-      expect(request?.headers.get("chatgpt-account-id")).toBeNull();
-      expect(request?.headers.get("originator")).toBeNull();
+      expect(request?.headers.get("chatgpt-account-id")).toBe("account-123");
+      expect(request?.headers.get("originator")).toBe("sparky");
     } finally {
       NodeFS.rmSync(authDirectory, { recursive: true, force: true });
     }
@@ -269,13 +264,11 @@ describe("discoverSparkyModels", () => {
     NodeFS.writeFileSync(
       NodePath.join(authDirectory, "auth.json"),
       JSON.stringify({
-        auth_mode: "siwc",
+        auth_mode: "codex_legacy",
         tokens: {
           access_token: "chatgpt-access-token",
           refresh_token: "refresh",
-          client_id: "oaiapp_test",
-          scope: "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct",
-          resource: "https://api.openai.com/v1",
+          account_id: "chatgpt-account",
           expires: Date.now() + 3_600_000,
         },
       }),
@@ -298,6 +291,7 @@ describe("discoverSparkyModels", () => {
         "gpt-6.2-sol",
         "gpt-6.2-astra",
         "gpt-6.1-sol",
+        "gpt-6.1-terra",
         "gpt-6-astra",
         "gpt-6-sol",
         "gpt-6-luna",
@@ -321,15 +315,12 @@ describe("discoverSparkyModels", () => {
       NodeFS.writeFileSync(
         NodePath.join(directory, "auth.json"),
         JSON.stringify({
-          auth_mode: "siwc",
+          auth_mode: "codex_legacy",
           tokens: {
             access_token: `${accountId}-token`,
             refresh_token: "refresh",
             account_id: accountId,
-            client_id: "oaiapp_test",
-            scope: "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct",
-            resource: "https://api.openai.com/v1",
-            expires: Date.now() + 3_600_000,
+                  expires: Date.now() + 3_600_000,
           },
         }),
         "utf8",
@@ -350,7 +341,7 @@ describe("discoverSparkyModels", () => {
       expect(models.map((model) => model.id)).toContain("gpt-6.1-sol");
       expect(models.some((model) => model.id === "gpt-5.5")).toBe(false);
       expect(requests[0]?.headers.get("authorization")).toBe("Bearer sparky-account-token");
-      expect(requests[0]?.headers.get("chatgpt-account-id")).toBeNull();
+      expect(requests[0]?.headers.get("chatgpt-account-id")).toBe("sparky-account");
     } finally {
       NodeFS.rmSync(home, { recursive: true, force: true });
     }
@@ -365,14 +356,11 @@ describe("discoverSparkyModels", () => {
     NodeFS.writeFileSync(
       NodePath.join(authDirectory, "auth.json"),
       JSON.stringify({
-        auth_mode: "siwc",
+        auth_mode: "codex_legacy",
         tokens: {
           access_token: "access",
           refresh_token: "refresh",
           account_id: "account",
-          client_id: "oaiapp_test",
-          scope: "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct",
-          resource: "https://api.openai.com/v1",
           expires: Date.now() + 3_600_000,
         },
       }),
@@ -408,6 +396,115 @@ describe("discoverSparkyModels", () => {
         ],
         currentValue: "258400",
       });
+    } finally {
+      NodeFS.rmSync(authDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("recognizes Codex login as its own provider next to an OpenAI API key", async () => {
+    const authDirectory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "sparky-codex-connected-"));
+    NodeFS.writeFileSync(
+      NodePath.join(authDirectory, "auth.json"),
+      JSON.stringify({
+        auth_mode: "codex_legacy",
+        tokens: {
+          access_token: "legacy-access",
+          refresh_token: "legacy-refresh",
+          account_id: "acct_123",
+          expires: Date.now() + 3_600_000,
+        },
+      }),
+      "utf8",
+    );
+    try {
+      const requests: Array<{ url: string; headers: Headers }> = [];
+      const fetchImplementation = (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        requests.push({ url, headers: new Headers(init?.headers) });
+        if (url === "https://chatgpt.com/backend-api/codex/models") {
+          return jsonResponse({ models: [{ slug: "gpt-6-sol", visibility: "list" }] });
+        }
+        if (url === "https://api.openai.com/v1/models") {
+          return jsonResponse({ data: [{ id: "gpt-api-key-test" }] });
+        }
+        return jsonResponse({});
+      }) as typeof fetch;
+      const result = await discoverSparkyModels({
+        SPARKY_CODEX_HOME: authDirectory,
+        OPENAI_API_KEY: "separate-api-key",
+      }, fetchImplementation);
+      expect(result.configuredProviderCount).toBe(2);
+      expect(result.errors).toEqual([]);
+      expect(result.models.some((model) =>
+        model.slug === "openai-codex/gpt-6-sol" && model.subProvider === "OpenAI Codex",
+      )).toBe(true);
+      expect(result.models.some((model) =>
+        model.slug === "openai/gpt-api-key-test" && model.subProvider === "OpenAI",
+      )).toBe(true);
+      const codexRequest = requests.find(({ url }) =>
+        url === "https://chatgpt.com/backend-api/codex/models",
+      );
+      expect(codexRequest?.headers.get("authorization")).toBe("Bearer legacy-access");
+      expect(codexRequest?.headers.get("chatgpt-account-id")).toBe("acct_123");
+      expect(codexRequest?.headers.get("originator")).toBe("sparky");
+    } finally {
+      NodeFS.rmSync(authDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("does not count previous siwc credentials as an authenticated Codex provider", async () => {
+    const authDirectory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "sparky-codex-old-"));
+    NodeFS.writeFileSync(
+      NodePath.join(authDirectory, "auth.json"),
+      JSON.stringify({
+        auth_mode: "siwc",
+        tokens: {
+          access_token: "old-access",
+          refresh_token: "old-refresh",
+          account_id: "acct_123",
+          expires: Date.now() + 3_600_000,
+        },
+      }),
+      "utf8",
+    );
+    try {
+      const fetchImplementation = (async () => {
+        throw new Error("No network requests expected for unsupported credentials");
+      }) as unknown as typeof fetch;
+      const result = await discoverSparkyModels({ SPARKY_CODEX_HOME: authDirectory }, fetchImplementation);
+      expect(result.configuredProviderCount).toBe(0);
+      expect(result.models).toEqual([]);
+    } finally {
+      NodeFS.rmSync(authDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps authenticated Codex models available when catalog request fails", async () => {
+    const authDirectory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "sparky-codex-fallback-"));
+    NodeFS.writeFileSync(
+      NodePath.join(authDirectory, "auth.json"),
+      JSON.stringify({
+        auth_mode: "codex_legacy",
+        tokens: {
+          access_token: "legacy-access",
+          refresh_token: "legacy-refresh",
+          account_id: "acct_123",
+          expires: Date.now() + 3_600_000,
+        },
+      }),
+      "utf8",
+    );
+    try {
+      const fetchImplementation = (async (input: string | URL | Request) =>
+        String(input) === "https://chatgpt.com/backend-api/codex/models"
+          ? jsonResponse({ message: "unavailable" }, 503)
+          : jsonResponse({})) as typeof fetch;
+      const result = await discoverSparkyModels(
+        { SPARKY_CODEX_HOME: authDirectory }, fetchImplementation,
+      );
+      expect(result.configuredProviderCount).toBe(1);
+      expect(result.models.some((model) => model.slug === "openai-codex/gpt-6-sol")).toBe(true);
+      expect(result.errors).toEqual([]);
     } finally {
       NodeFS.rmSync(authDirectory, { recursive: true, force: true });
     }

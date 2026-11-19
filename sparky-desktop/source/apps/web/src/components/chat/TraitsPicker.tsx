@@ -101,6 +101,31 @@ function getDescriptorStringValue(
   return typeof value === "string" ? value : null;
 }
 
+export function getPrimarySelectDescriptor(
+  descriptors: ReadonlyArray<ProviderOptionDescriptor>,
+): Extract<ProviderOptionDescriptor, { type: "select" }> | null {
+  const selectDescriptors = descriptors.filter(
+    (descriptor): descriptor is Extract<ProviderOptionDescriptor, { type: "select" }> =>
+      descriptor.type === "select",
+  );
+  return (
+    selectDescriptors.find((descriptor) =>
+      /reason|effort/iu.test(`${descriptor.id} ${descriptor.label}`),
+    ) ??
+    selectDescriptors.find((descriptor) => descriptor.id !== "contextWindow") ??
+    selectDescriptors[0] ??
+    null
+  );
+}
+
+export function formatContextWindowOptionLabel(label: string): string {
+  const tokenCount = Number(label.replaceAll(",", ""));
+  if (!/^\d[\d,]*(?:\.\d+)?$/u.test(label) || !Number.isFinite(tokenCount)) {
+    return label;
+  }
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(tokenCount / 1_000)}K`;
+}
+
 function getSelectedTraits(
   provider: ProviderDriverKind,
   models: ReadonlyArray<ServerProviderModel>,
@@ -122,7 +147,7 @@ function getSelectedTraits(
     (descriptor): descriptor is Extract<ProviderOptionDescriptor, { type: "boolean" }> =>
       descriptor.type === "boolean",
   );
-  const primarySelectDescriptor = selectDescriptors[0] ?? null;
+  const primarySelectDescriptor = getPrimarySelectDescriptor(selectDescriptors);
   const contextWindowDescriptor =
     selectDescriptors.find((descriptor) => descriptor.id === "contextWindow") ?? null;
   const agentDescriptor = selectDescriptors.find((descriptor) => descriptor.id === "agent") ?? null;
@@ -372,8 +397,13 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
         const selectedLabel =
           selectedValue === "ultrathink"
             ? "Ultrathink"
-            : (descriptor.options.find((option) => option.id === selectedValue)?.label ??
-              selectedValue);
+            : descriptor.id === "contextWindow"
+              ? formatContextWindowOptionLabel(
+                  descriptor.options.find((option) => option.id === selectedValue)?.label ??
+                    selectedValue,
+                )
+              : (descriptor.options.find((option) => option.id === selectedValue)?.label ??
+                selectedValue);
 
         if (nested) {
           return (
@@ -405,7 +435,9 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
                     >
                       <span className="flex w-full min-w-0 items-center justify-between gap-3">
                         <span className="min-w-0 truncate">
-                          {option.label}
+                          {descriptor.id === "contextWindow"
+                            ? formatContextWindowOptionLabel(option.label)
+                            : option.label}
                           {option.isDefault ? (
                             <>
                               {" "}
@@ -452,7 +484,9 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
                   >
                     <span className="flex w-full min-w-0 items-center justify-between gap-3">
                       <span className="min-w-0 truncate">
-                        {option.label}
+                        {descriptor.id === "contextWindow"
+                          ? formatContextWindowOptionLabel(option.label)
+                          : option.label}
                         {option.isDefault ? (
                           <>
                             {" "}

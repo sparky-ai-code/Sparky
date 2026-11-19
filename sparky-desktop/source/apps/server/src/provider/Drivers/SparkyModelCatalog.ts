@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off globalTimers:off
+// @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalDate:off
 import type { ServerProviderModel } from "@sparky/contracts";
 import { createModelCapabilities } from "@sparky/shared/model";
 import * as NodeChildProcess from "node:child_process";
@@ -58,6 +58,7 @@ function codexAuthDirectory(environment: NodeJS.ProcessEnv): string | undefined 
 function readCodexOAuthCredentials(environment: NodeJS.ProcessEnv):
   | {
       readonly accessToken: string;
+      readonly accountId: string;
       readonly expiresAt: number;
     }
   | undefined {
@@ -67,27 +68,22 @@ function readCodexOAuthCredentials(environment: NodeJS.ProcessEnv):
     const credentials: unknown = JSON.parse(
       NodeFS.readFileSync(NodePath.join(authDirectory, "auth.json"), "utf8"),
     );
+    // Match the Rust legacy Codex credential writer. The old "siwc" flow
+    // issued a different grant and must never appear as a connected provider.
     if (
       isRecord(credentials) &&
-      credentials.auth_mode === "siwc" &&
+      credentials.auth_mode === "codex_legacy" &&
       isRecord(credentials.tokens) &&
       nonEmptyString(credentials.tokens.access_token) &&
       nonEmptyString(credentials.tokens.refresh_token) &&
-      nonEmptyString(credentials.tokens.scope) &&
-      nonEmptyString(credentials.tokens.client_id) &&
+      nonEmptyString(credentials.tokens.account_id) &&
       typeof credentials.tokens.expires === "number" &&
-      Number.isSafeInteger(credentials.tokens.expires)
+      Number.isSafeInteger(credentials.tokens.expires) &&
+      credentials.tokens.expires > 0
     ) {
-      const scopes = new Set(nonEmptyString(credentials.tokens.scope)!.split(/\s+/u));
-      if (
-        !["offline_access", "resource.invoke", "chatgpt.tokens.use.direct"].every((scope) =>
-          scopes.has(scope),
-        )
-      ) {
-        return undefined;
-      }
       return {
         accessToken: nonEmptyString(credentials.tokens.access_token)!,
+        accountId: nonEmptyString(credentials.tokens.account_id)!,
         expiresAt: credentials.tokens.expires,
       };
     }
@@ -135,12 +131,13 @@ export type SparkyModelDiscovery = {
 type ModelsDevCatalog = Readonly<Record<string, Readonly<Record<string, Record<string, unknown>>>>>;
 
 const REQUEST_TIMEOUT_MS = 12_000;
-const CODEX_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
+const CODEX_MODELS_ENDPOINT = "https://chatgpt.com/backend-api/codex/models";
 
 const CHATGPT_CODEX_MODELS = [
   { id: "gpt-6.2-sol", name: "GPT-6.2 Sol" },
   { id: "gpt-6.2-astra", name: "GPT-6.2 Astra" },
   { id: "gpt-6.1-sol", name: "GPT-6.1 Sol" },
+  { id: "gpt-6.1-terra", name: "GPT-6.1 Terra" },
   { id: "gpt-6-astra", name: "GPT-6 Astra" },
   { id: "gpt-6-sol", name: "GPT-6 Sol" },
   { id: "gpt-6-luna", name: "GPT-6 Luna" },
@@ -148,7 +145,7 @@ const CHATGPT_CODEX_MODELS = [
   { id: "gpt-5.6-terra", name: "GPT-5.6 Terra" },
   { id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
 ] as const satisfies ReadonlyArray<RemoteModel>;
-const CHATGPT_CODEX_MODEL_ORDER = new Map(
+const CHATGPT_CODEX_MODEL_ORDER: ReadonlyMap<string, number> = new Map(
   CHATGPT_CODEX_MODELS.map((model, index) => [`openai-codex/${model.id}`, index] as const),
 );
 
@@ -833,7 +830,11 @@ export async function loadCodexModels(
 
   try {
     const payload = await fetchJson(fetchImplementation, CODEX_MODELS_ENDPOINT, {
-      headers: { Authorization: `Bearer ${credentials.accessToken}` },
+      headers: {
+        Authorization: `Bearer ${credentials.accessToken}`,
+        "chatgpt-account-id": credentials.accountId,
+        originator: "sparky",
+      },
     });
     if (!Array.isArray(payload.models)) return CHATGPT_CODEX_MODELS;
     const metadataByModelId = new Map(
@@ -846,8 +847,10 @@ export async function loadCodexModels(
     );
     return CHATGPT_CODEX_MODELS.map((model) => {
       const metadata = metadataByModelId.get(model.id);
+      // Keep the supported Codex model's public name stable while adding
+      // capability metadata from the account-specific catalog.
       return metadata
-        ? (remoteModelFromRecord({ ...metadata, id: model.id, name: model.name }) ?? model)
+        ? { ...(remoteModelFromRecord({ ...metadata, id: model.id }) ?? model), name: model.name }
         : model;
     });
   } catch {
@@ -857,9 +860,6 @@ export async function loadCodexModels(
 export type CodexModelLoader = (
   environment: NodeJS.ProcessEnv,
 ) => Promise<ReadonlyArray<RemoteModel>>;
-
-const loadCodexModelsForDiscovery: CodexModelLoader = (environment) =>
-  loadCodexModels("authenticated", globalThis.fetch, environment);
 
 const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
   {
@@ -942,7 +942,7 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
 export async function discoverSparkyModels(
   environment: NodeJS.ProcessEnv,
   fetchImplementation: FetchImplementation = globalThis.fetch,
-  codexModelLoader: CodexModelLoader = loadCodexModelsForDiscovery,
+  codexModelLoader?: CodexModelLoader,
 ): Promise<SparkyModelDiscovery> {
   const configured = PROVIDERS.flatMap((provider) => {
     if (provider.prefix === "ollama-cloud" && environment.OLLAMA_CLOUD_CONFIGURED !== "true") {
@@ -964,7 +964,7 @@ export async function discoverSparkyModels(
     configured.map(async ({ provider, apiKey }) => {
       try {
         const loadedRemoteModels =
-          provider.prefix === "openai-codex"
+          provider.prefix === "openai-codex" && codexModelLoader
             ? await codexModelLoader(environment)
             : await provider.load(apiKey, fetchImplementation, environment, modelsDev);
         const remoteModels =

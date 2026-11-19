@@ -11,7 +11,7 @@ import * as String from "effect/String";
 import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-const ReleaseChannel = Schema.Literals(["stable", "nightly"]);
+const ReleaseChannel = Schema.Literals(["stable", "nightly", "beta"]);
 type ReleaseChannel = typeof ReleaseChannel.Type;
 
 export class InvalidReleaseTagError extends Schema.TaggedErrorClass<InvalidReleaseTagError>()(
@@ -154,7 +154,7 @@ const parseStableTag = (tag: string): StableVersion | undefined => {
   // Nightly tags also start with `v` and carry a `nightly.*` prerelease
   // identifier. They must not be considered stable candidates when resolving
   // the previous stable tag.
-  if (prereleaseIdentifiers[0] === "nightly") return undefined;
+  if (prereleaseIdentifiers[0] === "nightly" || prereleaseIdentifiers[0] === "beta") return undefined;
 
   return {
     major: Number(major),
@@ -162,6 +162,16 @@ const parseStableTag = (tag: string): StableVersion | undefined => {
     patch: Number(patch),
     prerelease: prereleaseIdentifiers,
   };
+};
+
+const parseBetaTag = (tag: string): StableVersion | undefined => {
+  const parsed = parseStableTag(tag);
+  if (parsed) return undefined;
+  const match = /^v(\d+)\.(\d+)\.(\d+)-beta\.(\d+)$/.exec(tag);
+  if (!match) return undefined;
+  const [, major, minor, patch, betaNumber] = match;
+  if (!major || !minor || !patch || !betaNumber) return undefined;
+  return { major: Number(major), minor: Number(minor), patch: Number(patch), prerelease: ["beta", betaNumber] };
 };
 
 const compareNightlyVersions = (left: NightlyVersion, right: NightlyVersion): number => {
@@ -210,6 +220,17 @@ export const resolvePreviousReleaseTag = (
         .filter((entry) => compareStableVersions(entry.parsed, current) < 0)
         .toSorted((left, right) => compareStableVersions(right.parsed, left.parsed));
 
+      return candidates[0]?.tag;
+    }
+
+    if (channel === "beta") {
+      const current = parseBetaTag(currentTag);
+      if (!current) return yield* new InvalidReleaseTagError({ channel, currentTag });
+      const candidates = tags
+        .map((tag) => ({ tag, parsed: parseBetaTag(tag) }))
+        .filter((entry): entry is { tag: string; parsed: StableVersion } => entry.parsed !== undefined)
+        .filter((entry) => compareStableVersions(entry.parsed, current) < 0)
+        .toSorted((left, right) => compareStableVersions(right.parsed, left.parsed));
       return candidates[0]?.tag;
     }
 

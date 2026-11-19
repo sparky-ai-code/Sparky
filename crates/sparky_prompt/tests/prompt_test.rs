@@ -34,10 +34,17 @@ async fn loads_supported_context_and_skips_gitignored_files() {
         .iter()
         .any(|path| path.starts_with("ignored/")));
 
-    let skills = builder.load_skills().await;
-    assert_eq!(skills.len(), 1);
-    assert_eq!(skills[0].name, "visible");
-    assert_eq!(skills[0].content, "visible skill");
+    // A developer's globally installed skills must not change what this test
+    // expects from its workspace inventory.
+    let workspace_skills: Vec<_> = builder
+        .load_skills()
+        .await
+        .into_iter()
+        .filter(|skill| !std::path::Path::new(&skill.path).is_absolute())
+        .collect();
+    assert_eq!(workspace_skills.len(), 1);
+    assert_eq!(workspace_skills[0].name, "visible");
+    assert_eq!(workspace_skills[0].content, "visible skill");
 }
 
 #[tokio::test]
@@ -118,4 +125,26 @@ async fn custom_prompt_still_receives_workspace_instructions_and_skill_catalog()
     assert!(prompt.contains("path=\".agents/skills/example/SKILL.md\""));
     assert!(!prompt.contains("skill body"));
     assert!(!prompt.contains("## Sparky tool system"));
+}
+
+#[tokio::test]
+async fn built_in_authoring_skill_works_without_a_workspace_skill_installation() {
+    let dir = tempfile::tempdir().unwrap();
+    let prompt = PromptBuilder::new(dir.path().to_string_lossy())
+        .build()
+        .await;
+    assert!(prompt.contains("<built_in_skill name=\"document-presentation-authoring\">"));
+    assert!(prompt.contains("sparky-artifacts/documents/"));
+    assert!(prompt.contains("sparky-artifacts/presentations/"));
+    assert!(prompt.contains("script-disabled, network-restricted iframe"));
+    let plan = PromptBuilder::new(dir.path().to_string_lossy())
+        .with_plan_mode(true)
+        .build()
+        .await;
+    assert!(!plan.contains("<built_in_skill name=\"document-presentation-authoring\">"));
+    let unscoped = PromptBuilder::new(dir.path().to_string_lossy())
+        .with_workspace_context(false)
+        .build()
+        .await;
+    assert!(!unscoped.contains("<built_in_skill name=\"document-presentation-authoring\">"));
 }

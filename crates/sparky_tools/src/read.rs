@@ -41,7 +41,7 @@ impl Tool for ReadTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to file to read"
+                    "description": "Path to file to read, relative to the current working directory or absolute"
                 },
                 "start_line": {
                     "type": "integer",

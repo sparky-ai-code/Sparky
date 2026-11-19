@@ -104,7 +104,22 @@ async function hydrateClientSettings(): Promise<void> {
         return;
       }
       if (persistedSettings) {
-        replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings });
+        const hydratedSettings = { ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings };
+        // 6 was the previous default; carry existing installs forward to the
+        // new default while preserving any other explicitly chosen count.
+        if (persistedSettings.sidebarThreadPreviewCount === 6) {
+          hydratedSettings.sidebarThreadPreviewCount =
+            DEFAULT_CLIENT_SETTINGS.sidebarThreadPreviewCount;
+          void ensureLocalApi()
+            .persistence.setClientSettings(hydratedSettings)
+            .catch((error) => {
+              console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} migrate failed`, {
+                operation: "migrate-preview-count",
+                ...safeErrorLogAttributes(error),
+              });
+            });
+        }
+        replaceClientSettingsSnapshot(hydratedSettings);
       }
     } catch (error) {
       console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} hydrate failed`, {

@@ -26,9 +26,7 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { FileDiff } from "@pierre/diffs/react";
 import {
   deriveTimelineEntries,
-  workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
-  workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
 } from "../../session-logic";
 import { type TurnDiffSummary } from "../../types";
@@ -52,21 +50,21 @@ import {
   FileIcon,
   FilePenLineIcon,
   FilePlus2Icon,
+  FolderGit2Icon,
   FolderIcon,
   FolderSearchIcon,
   GlobeIcon,
   GitPullRequestIcon,
   HammerIcon,
   KeyboardIcon,
-  LoaderCircleIcon,
   ListChecksIcon,
   Maximize2Icon,
   MessageCircleIcon,
   MessagesSquareIcon,
-  MinusIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
   PauseCircleIcon,
+  PlugZapIcon,
   PlayCircleIcon,
   SearchIcon,
   SquarePenIcon,
@@ -81,6 +79,7 @@ import { Button } from "../ui/button";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
+import { HtmlRenderCard } from "./HtmlRenderCard";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
 import {
@@ -120,6 +119,7 @@ import { faviconUrlsForOrigin } from "~/lib/favicon";
 import { type TimestampFormat } from "@sparky/contracts/settings";
 import { getPluginById, PLUGINS, type PluginId } from "../plugins/pluginCatalog";
 import { PluginLogo } from "../plugins/PluginLogo";
+import { McpIcon } from "../settings/McpIcon";
 import type { StreamingTextAnimation } from "@sparky/contracts/settings";
 import { formatChatTimestampTooltip, formatShortTimestamp } from "../../timestampFormat";
 
@@ -352,7 +352,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     () =>
       workspaceContextEnabled
         ? rawRows
-        : rawRows.filter((row) => row.kind !== "work" && row.kind !== "work-toggle"),
+        : rawRows.filter(
+            (row) => row.kind !== "work" && row.kind !== "work-live" && row.kind !== "work-toggle",
+          ),
     [rawRows, workspaceContextEnabled],
   );
   const rows = useStableRows(rowsForDisplay);
@@ -579,7 +581,7 @@ function getItemType(item: MessagesTimelineRow) {
   return item.kind === "message" ? `message:${item.message.role}` : item.kind;
 }
 
-interface TimelineMinimapItem {
+export interface TimelineMinimapItem {
   readonly id: string;
   readonly rowIndex: number;
   readonly userText: string | null;
@@ -594,44 +596,41 @@ interface TimelinePositionState {
   readonly sizeAtIndex?: (index: number) => number | undefined;
 }
 
-function deriveTimelineMinimapItems(
+export function deriveTimelineMinimapItems(
   rows: ReadonlyArray<MessagesTimelineRow>,
 ): TimelineMinimapItem[] {
   const items: TimelineMinimapItem[] = [];
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index];
-    if (row?.kind !== "message" || row.message.role !== "user") {
-      continue;
+  let currentItem: TimelineMinimapItem | null = null;
+  let assistantText: string | null = null;
+
+  const pushCurrentItem = () => {
+    if (currentItem) {
+      items.push({ ...currentItem, assistantText: compactMinimapPreview(assistantText) });
     }
+  };
 
-    items.push({
-      id: row.id,
-      rowIndex: index,
-      userText: compactMinimapPreview(row.message.text),
-      assistantText: compactMinimapPreview(resolveFinalAssistantTextForTurn(rows, index)),
-    });
-  }
-  return items;
-}
-
-function resolveFinalAssistantTextForTurn(
-  rows: ReadonlyArray<MessagesTimelineRow>,
-  userRowIndex: number,
-) {
-  let finalAssistantText: string | null = null;
-  for (let index = userRowIndex + 1; index < rows.length; index += 1) {
+  for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
     if (row?.kind !== "message") {
       continue;
     }
+
     if (row.message.role === "user") {
-      break;
-    }
-    if (row.message.role === "assistant") {
-      finalAssistantText = row.message.text ?? null;
+      pushCurrentItem();
+      currentItem = {
+        id: row.id,
+        rowIndex: index,
+        userText: compactMinimapPreview(row.message.text),
+        assistantText: null,
+      };
+      assistantText = null;
+    } else if (row.message.role === "assistant" && currentItem) {
+      assistantText = row.message.text ?? null;
     }
   }
-  return finalAssistantText;
+
+  pushCurrentItem();
+  return items;
 }
 
 function compactMinimapPreview(text: string | null | undefined) {
@@ -875,6 +874,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         // they sit closer to the work that follows them.
         (row.kind === "message" && row.message.role === "assistant" && !row.showAssistantMeta) ||
           row.kind === "work" ||
+          row.kind === "work-live" ||
           row.kind === "work-toggle"
           ? "pb-2"
           : "pb-4",
@@ -886,6 +886,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       data-message-role={row.kind === "message" ? row.message.role : undefined}
     >
       {row.kind === "work" ? <WorkGroupSection groupedEntries={row.groupedEntries} /> : null}
+      {row.kind === "work-live" ? <LiveWorkTimelineRow row={row} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
@@ -927,6 +928,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
 
   return (
     <div className="group flex flex-col items-end gap-1">
+      {row.message.isSteered ? (
+        <div className="flex w-full max-w-[80%] items-center justify-end gap-1 pe-1 text-[11px] font-medium text-muted-foreground">
+          <span aria-hidden="true">↳</span>
+          <span>Steered</span>
+        </div>
+      ) : null}
       <div className="relative max-w-[80%] rounded-2xl border border-border bg-secondary p-3">
         {regularImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
@@ -1092,6 +1099,13 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             )}
           </div>
         ) : null}
+        {row.visualReplyEntries?.map((entry) => (
+          <HtmlRenderCard
+            key={entry.id}
+            toolData={entry.toolData}
+            appearance={ctx.resolvedTheme}
+          />
+        ))}
       </div>
     </>
   );
@@ -1291,6 +1305,58 @@ const WorkGroupSection = memo(function WorkGroupSection({
   );
 });
 
+const LiveWorkTimelineRow = memo(function LiveWorkTimelineRow({
+  row,
+}: {
+  row: Extract<MessagesTimelineRow, { kind: "work-live" }>;
+}) {
+  const { workspaceRoot, onToggleWorkGroup } = use(TimelineRowCtx);
+  const previousEntries = row.groupedEntries.slice(0, -1);
+
+  return (
+    <section className="-mx-1 space-y-0.5 px-1 py-0.5" aria-label="Active tool calls">
+      <div className="flex min-w-0 items-center gap-1">
+        <div className="min-w-0 flex-1">
+          <SimpleWorkEntryRow workEntry={row.entry} workspaceRoot={workspaceRoot} />
+        </div>
+        {previousEntries.length > 0 ? (
+          <button
+            type="button"
+            className="flex shrink-0 cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-[10px] text-muted-foreground/65 transition-colors hover:bg-accent/30 hover:text-foreground/80"
+            aria-expanded={row.expanded}
+            aria-label={`${row.expanded ? "Hide" : "Show"} ${previousEntries.length} earlier active tool calls`}
+            onClick={(event) => {
+              const anchorElement =
+                event.currentTarget.closest<HTMLElement>("[data-timeline-row-id]") ??
+                event.currentTarget;
+              onToggleWorkGroup(row.groupId, anchorElement);
+            }}
+          >
+            <ChevronDownIcon
+              className={cn(
+                "size-3 transition-transform duration-200",
+                row.expanded && "rotate-180",
+              )}
+            />
+            +{previousEntries.length}
+          </button>
+        ) : null}
+      </div>
+      {row.expanded && previousEntries.length > 0 ? (
+        <div className="space-y-px">
+          {previousEntries.map((workEntry) => (
+            <SimpleWorkEntryRow
+              key={workEntry.id}
+              workEntry={workEntry}
+              workspaceRoot={workspaceRoot}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+});
+
 function WorkGroupToggleTimelineRow({
   row,
 }: {
@@ -1324,15 +1390,22 @@ function WorkGroupToggleTimelineRow({
           )}
         />
       </span>
-      {row.expanded ? (
-        <span className="font-medium text-foreground/82">
-          Show fewer {row.onlyToolEntries ? "tool calls" : "log entries"}
-        </span>
-      ) : (
-        <span className="font-medium text-foreground/82">
-          +{row.hiddenCount} previous {labelNoun}
-        </span>
-      )}
+      <span className="flex min-w-0 items-center gap-1.5 font-medium text-foreground/82">
+        {row.expanded ? (
+          `Show fewer ${row.onlyToolEntries ? "tool calls" : "log entries"}`
+        ) : (
+          <>
+            <span className="truncate">
+              {row.summary ?? `+${row.hiddenCount} previous ${labelNoun}`}
+            </span>
+            {row.summary ? (
+              <span className="shrink-0 text-[10px] font-normal text-muted-foreground/60">
+                +{row.hiddenCount}
+              </span>
+            ) : null}
+          </>
+        )}
+      </span>
     </button>
   );
 }
@@ -1896,6 +1969,7 @@ type WorkEntryIconName =
   | "file-pen-line"
   | "file-plus-2"
   | "folder"
+  | "folder-git"
   | "folder-search"
   | "search"
   | "globe"
@@ -1909,6 +1983,8 @@ type WorkEntryIconName =
   | "calendar-clock"
   | "message-circle"
   | "messages-square"
+  | "mcp"
+  | "plug-zap"
   | "mouse-pointer-click"
   | "pause-circle"
   | "play-circle"
@@ -1937,6 +2013,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <FilePlus2Icon className={className} aria-hidden />;
     case "folder":
       return <FolderIcon className={className} aria-hidden />;
+    case "folder-git":
+      return <FolderGit2Icon className={className} aria-hidden />;
     case "folder-search":
       return <FolderSearchIcon className={className} aria-hidden />;
     case "search":
@@ -1983,6 +2061,10 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <MessageCircleIcon className={className} aria-hidden />;
     case "messages-square":
       return <MessagesSquareIcon className={className} aria-hidden />;
+    case "mcp":
+      return <McpIcon className={className} />;
+    case "plug-zap":
+      return <PlugZapIcon className={className} aria-hidden />;
     case "mouse-pointer-click":
       return <MousePointerClickIcon className={className} aria-hidden />;
     case "pause-circle":
@@ -2332,6 +2414,26 @@ export function resolveWorkEntryToolIconName(
   toolName: string | undefined,
 ): WorkEntryIconName | undefined {
   switch (toolName?.trim().toLowerCase()) {
+    case "sparky_threads_list":
+      return "messages-square";
+    case "sparky_project_branches":
+      return "folder-git";
+    case "sparky_thread_models":
+      return "brain";
+    case "sparky_thread_read":
+      return "eye";
+    case "sparky_thread_create":
+      return "file-plus-2";
+    case "sparky_thread_message":
+      return "message-circle";
+    case "sparky_thread_steer":
+      return "zap";
+    case "sparky_mcp_list_tools":
+      return "list-checks";
+    case "sparky_mcp_setup_server":
+      return "plug-zap";
+    case "sparky_mcp_call_tool":
+      return "plug-zap";
     case "ls":
     case "list_files":
       return "folder";
@@ -2341,10 +2443,14 @@ export function resolveWorkEntryToolIconName(
       return "search";
     case "find":
       return "folder-search";
+    case "create_worktree":
+      return "folder-git";
     case "getpullrequestcomments":
       return "messages-square";
     case "review_pull_request":
       return "git-pull-request";
+    case "html_render":
+      return "eye";
     case "write":
       return "file-plus-2";
     case "edit":
@@ -2409,7 +2515,7 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
 
   switch (workEntry.itemType) {
     case "mcp_tool_call":
-      return "wrench";
+      return "mcp";
     case "dynamic_tool_call":
     case "collab_agent_tool_call":
       return "hammer";
@@ -2427,6 +2533,25 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  switch (workEntry.toolName?.trim().toLowerCase()) {
+    case "sparky_threads_list":
+      return "List threads";
+    case "sparky_project_branches":
+      return "List project branches";
+    case "sparky_thread_models":
+      return "List thread models";
+    case "sparky_thread_read":
+      return "Read thread";
+    case "sparky_thread_create":
+      return "Create thread";
+    case "sparky_thread_message":
+      return "Message thread";
+    case "sparky_thread_steer":
+      return "Steer thread";
+  }
+  if (workEntry.toolName === "sparky_mcp_setup_server") return "Set up MCP server";
+  if (workEntry.toolName === "sparky_mcp_list_tools") return "Discover MCP tools";
+  if (workEntry.toolName === "sparky_mcp_call_tool") return "Run MCP tool";
   const pluginTitle = pluginToolPresentationTitle(workEntry);
   if (pluginTitle) return pluginTitle;
   if (workEntry.itemType === "web_search") {
@@ -2468,96 +2593,22 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
       ? null
       : rawPreview;
   const displayText = preview ? `${heading} - ${preview}` : heading;
-  const lifecycleLabel =
-    workEntry.toolLifecycleStatus === "inProgress"
-      ? "Running"
-      : workEntry.toolLifecycleStatus === "failed"
-        ? "Failed"
-        : workEntry.toolLifecycleStatus === "stopped"
-          ? "Stopped"
-          : workEntry.toolLifecycleStatus === "declined"
-            ? "Declined"
-            : null;
   const showDiffStats =
     workEntry.diffStats !== undefined &&
     (workEntry.diffStats.additions > 0 || workEntry.diffStats.deletions > 0);
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const canExpand = expandedBody !== null;
-  const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
-  const showDestructiveRowStyle =
-    showFailedIndicator &&
-    (workEntry.sourceActivityKind === "runtime.error" || !workLogEntryIsToolLike(workEntry));
   const iconWrapperClass = cn(
-    "flex size-5 shrink-0 items-center justify-center",
+    "flex size-6 shrink-0 items-center justify-center",
     showWarningIndicator
       ? "text-destructive"
-      : showDestructiveRowStyle
-        ? "text-destructive"
-        : workEntry.tone === "tool" || showFailedIndicator
-          ? "text-muted-foreground/65"
-          : iconConfig.className,
+      : workEntry.tone === "tool"
+        ? "text-muted-foreground/65"
+        : iconConfig.className,
   );
   const headingClass = showWarningIndicator
     ? "font-medium text-warning"
-    : showDestructiveRowStyle
-      ? "font-medium text-destructive"
-      : "font-medium text-foreground/82";
-  const turnSettled = !activity.activeTurnInProgress;
-  const showRunningIndicator = workEntry.toolLifecycleStatus === "inProgress";
-  const showNeutralIndicator =
-    !showRunningIndicator && !turnSettled && workEntryIndicatesToolNeutralStatus(workEntry);
-  const showSuccessIndicator =
-    workEntryIndicatesToolSuccess(workEntry) ||
-    (turnSettled && workEntryIndicatesToolNeutralStatus(workEntry));
-  const statusIndicator = isWebSearch ? null : (
-    <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/55">
-      {showRunningIndicator ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
-            <LoaderCircleIcon
-              className="block size-3 shrink-0 animate-spin opacity-70"
-              aria-hidden
-            />
-          </TooltipTrigger>
-          <TooltipPopup>Running</TooltipPopup>
-        </Tooltip>
-      ) : showFailedIndicator ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span
-                className="flex size-4 items-center justify-center"
-                aria-label="Tool call failed"
-              />
-            }
-          >
-            <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
-          </TooltipTrigger>
-          <TooltipPopup>Failed</TooltipPopup>
-        </Tooltip>
-      ) : showSuccessIndicator ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
-            <span className="inline-flex size-4 items-center justify-center">
-              <CheckIcon
-                className="block size-3 shrink-0 stroke-current"
-                stroke="currentColor"
-                aria-hidden
-              />
-            </span>
-          </TooltipTrigger>
-          <TooltipPopup>Completed</TooltipPopup>
-        </Tooltip>
-      ) : showNeutralIndicator ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
-            <MinusIcon className="block size-3 shrink-0 opacity-70" aria-hidden />
-          </TooltipTrigger>
-          <TooltipPopup>Empty</TooltipPopup>
-        </Tooltip>
-      ) : null}
-    </span>
-  );
+    : "font-medium text-foreground/82";
   const rowToggleProps = canExpand
     ? {
         role: "button" as const,
@@ -2588,19 +2639,26 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           {webSearchSources.length > 0 || webSearchIsLoading ? (
             <WebSearchSourceLogos sources={webSearchSources} loading={webSearchIsLoading} />
           ) : pluginId ? (
-            <PluginLogo pluginId={pluginId} className="size-3.5 opacity-80" />
+            <PluginLogo pluginId={pluginId} className="size-4 opacity-80" />
           ) : (
             <WorkEntryIconSvg
               name={entryIconName}
-              className="block size-3.5 shrink-0 stroke-[1.8] opacity-80"
+              className="block size-4 shrink-0 stroke-[1.8] opacity-80"
             />
           )}
         </span>
-        {statusIndicator}
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <div className="min-w-0 flex-1 overflow-hidden">
-            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-[12px] leading-5">
-              <span className={cn("min-w-0 shrink truncate", headingClass)}>{heading}</span>
+            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-5">
+              <span
+                className={cn(
+                  "min-w-0 shrink truncate",
+                  headingClass,
+                  workEntry.toolLifecycleStatus === "inProgress" && "tool-activity-live",
+                )}
+              >
+                {heading}
+              </span>
               {preview && (
                 <span className="min-w-0 flex-1 truncate text-muted-foreground/55">{preview}</span>
               )}
@@ -2611,22 +2669,6 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
                   layout="inline"
                   className="shrink-0 text-[10px] leading-4"
                 />
-              ) : null}
-              {lifecycleLabel ? (
-                <span
-                  className={cn(
-                    "shrink-0 text-[10px] leading-4",
-                    workEntry.toolLifecycleStatus === "inProgress"
-                      ? "text-muted-foreground/65"
-                      : workEntry.toolLifecycleStatus === "failed" ||
-                          workEntry.toolLifecycleStatus === "declined"
-                        ? "text-destructive/80"
-                        : "text-muted-foreground/55",
-                  )}
-                  aria-live={workEntry.toolLifecycleStatus === "inProgress" ? "polite" : undefined}
-                >
-                  {lifecycleLabel}
-                </span>
               ) : null}
             </p>
           </div>

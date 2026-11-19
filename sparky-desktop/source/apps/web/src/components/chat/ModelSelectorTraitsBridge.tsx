@@ -19,6 +19,7 @@ import { ZapIcon } from "lucide-react";
 
 import { useComposerDraftStore, type DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
+import { getPrimarySelectDescriptor } from "./TraitsPicker";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -81,10 +82,7 @@ export const ModelSelectorTraitsBridge = memo(function ModelSelectorTraitsBridge
 
   const caps = getProviderModelCapabilities(models, model, provider);
   const descriptors = getProviderOptionDescriptors({ caps, selections: modelOptions });
-  const primarySelectDescriptor = descriptors.find(
-    (descriptor): descriptor is Extract<ProviderOptionDescriptor, { type: "select" }> =>
-      descriptor.type === "select",
-  );
+  const primarySelectDescriptor = getPrimarySelectDescriptor(descriptors);
   const fastModeDescriptor = descriptors.find(
     (descriptor): descriptor is Extract<ProviderOptionDescriptor, { type: "boolean" }> =>
       descriptor.type === "boolean" && descriptor.id === "fastMode",

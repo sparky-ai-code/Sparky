@@ -11,6 +11,7 @@ import { cn } from "~/lib/utils";
 import { stopBrowserRecording, useActiveBrowserRecordingTabId } from "./browserRecording";
 import { resolveBrowserSurfacePanelRect, useBrowserSurfaceStore } from "./browserSurfaceStore";
 import { browserViewportSettingKey } from "./browserViewportLayout";
+import { browserProfilePartition } from "./browserProfileSelection";
 import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
 import { BrowserViewportResizeHandles } from "./BrowserViewportResizeHandles";
 import { acquireDesktopTab, type AcquiredDesktopTab } from "./desktopTabLifetime";
@@ -39,8 +40,9 @@ export function HostedBrowserWebview(props: {
   readonly initialUrl: string | null;
   readonly viewport: PreviewViewportSetting;
   readonly zoomFactor: number;
+  readonly persistentBrowserProfileEnabled: boolean;
 }) {
-  const { threadRef, tabId, initialUrl, viewport, zoomFactor } = props;
+  const { threadRef, tabId, initialUrl, viewport, zoomFactor, persistentBrowserProfileEnabled } = props;
   const config = usePreviewWebviewConfig(threadRef.environmentId);
   const [initialSrc] = useState(() => initialUrl ?? "about:blank");
   const tabLeaseRef = useRef<AcquiredDesktopTab | null>(null);
@@ -203,7 +205,7 @@ export function HostedBrowserWebview(props: {
         <webview
           ref={setWebviewRef}
           src={initialSrc}
-          partition={config.partition}
+          partition={browserProfilePartition(config, persistentBrowserProfileEnabled)}
           webpreferences={config.webPreferences}
           {...(config.preloadUrl ? { preload: config.preloadUrl } : {})}
           data-preview-tab={tabId}

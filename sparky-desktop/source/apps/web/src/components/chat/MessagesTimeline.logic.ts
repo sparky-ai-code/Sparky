@@ -149,6 +149,15 @@ export type MessagesTimelineRow =
       groupedEntries: WorkLogEntry[];
     }
   | {
+      kind: "work-live";
+      id: string;
+      createdAt: string;
+      entry: WorkLogEntry;
+      groupedEntries: WorkLogEntry[];
+      groupId: string;
+      expanded: boolean;
+    }
+  | {
       kind: "work-toggle";
       id: string;
       createdAt: string;
@@ -156,6 +165,7 @@ export type MessagesTimelineRow =
       hiddenCount: number;
       expanded: boolean;
       onlyToolEntries: boolean;
+      summary: string | null;
     }
   | {
       kind: "turn-fold";
@@ -175,6 +185,7 @@ export type MessagesTimelineRow =
       showAssistantCopyButton: boolean;
       assistantCopyStreaming: boolean;
       assistantTurnDiffSummary?: TurnDiffSummary | undefined;
+      visualReplyEntries?: WorkLogEntry[] | undefined;
       revertTurnCount?: number | undefined;
     }
   | {
@@ -210,7 +221,7 @@ export function computeMessageDurationStart(
 }
 
 export function normalizeCompactToolLabel(value: string): string {
-  return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
+  return value.replace(/_/g, " ").replace(/\s+(?:complete|completed)\s*$/i, "").trim();
 }
 
 export function resolveAssistantMessageCopyState({
@@ -443,6 +454,48 @@ function deriveTurnFolds(input: {
   return foldsByAnchorEntryId;
 }
 
+function summarizeToolGroup(entries: ReadonlyArray<WorkLogEntry>): string | null {
+  const counts = new Map<string, number>();
+  const changedFiles = new Set<string>();
+  for (const entry of entries) {
+    let action: string;
+    if (entry.requestKind === "file-change" || entry.itemType === "file_change") {
+      action = "Changed";
+      for (const file of entry.changedFiles ?? []) changedFiles.add(file);
+    } else if (entry.requestKind === "file-read" || entry.itemType === "image_view") {
+      action = "Read";
+    } else if (
+      entry.requestKind === "command" ||
+      entry.itemType === "command_execution" ||
+      entry.command
+    ) {
+      action = "Ran";
+    } else if (entry.itemType === "web_search") {
+      action = "Searched the web";
+    } else {
+      action = "Used";
+    }
+    counts.set(action, (counts.get(action) ?? 0) + 1);
+  }
+  if (changedFiles.size > 0) {
+    counts.set("Changed", changedFiles.size);
+  }
+  const labels = [...counts].map(([action, count]) => {
+    if (action === "Changed" || action === "Read") {
+      return `${action} ${count} ${count === 1 ? "file" : "files"}`;
+    }
+    if (action === "Ran") return `${action} ${count} ${count === 1 ? "command" : "commands"}`;
+    if (action === "Searched the web") {
+      return `${action} ${count} ${count === 1 ? "time" : "times"}`;
+    }
+    return `${action} ${count} ${count === 1 ? "tool" : "tools"}`;
+  });
+  if (labels.length === 0) return null;
+  if (labels.length === 1) return labels[0] ?? null;
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]?.toLowerCase()}`;
+  return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)?.toLowerCase()}`;
+}
+
 export function deriveMessagesTimelineRows(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   latestTurn?: TimelineLatestTurn | null;
@@ -459,6 +512,48 @@ export function deriveMessagesTimelineRows(input: {
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
   );
   const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(input.timelineEntries);
+  const visualRepliesByAssistantMessageId = new Map<string, WorkLogEntry[]>();
+  for (let index = 0; index < input.timelineEntries.length; index += 1) {
+    const entry = input.timelineEntries[index];
+    if (
+      !entry ||
+      entry.kind !== "work" ||
+      entry.entry.toolName?.trim().toLowerCase() !== "html_render"
+    ) {
+      continue;
+    }
+
+    let targetAssistant: Extract<TimelineEntry, { kind: "message" }> | undefined;
+    if (entry.entry.turnId) {
+      targetAssistant = input.timelineEntries.find(
+        (candidate): candidate is Extract<TimelineEntry, { kind: "message" }> =>
+          candidate.kind === "message" &&
+          candidate.message.role === "assistant" &&
+          candidate.message.turnId === entry.entry.turnId &&
+          terminalAssistantMessageIds.has(candidate.message.id),
+      );
+    } else {
+      for (let nextIndex = index + 1; nextIndex < input.timelineEntries.length; nextIndex += 1) {
+        const candidate = input.timelineEntries[nextIndex];
+        if (!candidate) continue;
+        if (candidate.kind === "message" && candidate.message.role === "user") break;
+        if (
+          candidate.kind === "message" &&
+          candidate.message.role === "assistant" &&
+          terminalAssistantMessageIds.has(candidate.message.id)
+        ) {
+          targetAssistant = candidate;
+          break;
+        }
+      }
+    }
+
+    if (targetAssistant) {
+      const replies = visualRepliesByAssistantMessageId.get(targetAssistant.message.id) ?? [];
+      replies.push(entry.entry);
+      visualRepliesByAssistantMessageId.set(targetAssistant.message.id, replies);
+    }
+  }
   const unsettledTurnId = deriveUnsettledTurnId(
     input.latestTurn ?? null,
     input.runningTurnId ?? null,
@@ -533,7 +628,59 @@ export function deriveMessagesTimelineRows(input: {
           !workEntryIndicatesToolNeutralStatus(entry) || entry.toolLifecycleStatus === "inProgress",
       );
       if (visibleGroupedEntries.length > 0) {
-        if (visibleGroupedEntries.length <= MAX_VISIBLE_WORK_LOG_ENTRIES) {
+        const activeEntries = visibleGroupedEntries.filter(
+          (entry) =>
+            entry.toolLifecycleStatus === "inProgress" &&
+            effectiveUnsettledTurnId !== null &&
+            entry.turnId === effectiveUnsettledTurnId,
+        );
+        if (activeEntries.length > 0) {
+          const groupId = `work-group:${timelineEntry.id}`;
+          const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
+          const historicalEntries = visibleGroupedEntries.filter(
+            (entry) => !activeEntries.includes(entry),
+          );
+          const hiddenEntries = historicalEntries.slice(0, -MAX_VISIBLE_WORK_LOG_ENTRIES);
+          const latestHistoricalEntries = historicalEntries.slice(-MAX_VISIBLE_WORK_LOG_ENTRIES);
+          const renderedHistoricalEntries = expanded ? historicalEntries : latestHistoricalEntries;
+
+          for (const workEntry of renderedHistoricalEntries) {
+            nextRows.push({
+              kind: "work",
+              id: workEntry.id,
+              createdAt: workEntry.createdAt,
+              groupedEntries: [workEntry],
+            });
+          }
+
+          const latestActiveEntry = activeEntries.at(-1);
+          if (latestActiveEntry) {
+            nextRows.push({
+              kind: "work-live",
+              id: `work-live:${timelineEntry.id}`,
+              createdAt: latestActiveEntry.createdAt,
+              entry: latestActiveEntry,
+              groupedEntries: activeEntries,
+              groupId,
+              expanded,
+            });
+          }
+
+          if (hiddenEntries.length > 0) {
+            nextRows.push({
+              kind: "work-toggle",
+              id: `work-toggle:${timelineEntry.id}`,
+              createdAt: timelineEntry.createdAt,
+              groupId,
+              hiddenCount: hiddenEntries.length,
+              expanded,
+              onlyToolEntries: visibleGroupedEntries.every((entry) =>
+                workLogEntryIsToolLike(entry),
+              ),
+              summary: summarizeToolGroup(hiddenEntries),
+            });
+          }
+        } else if (visibleGroupedEntries.length <= MAX_VISIBLE_WORK_LOG_ENTRIES) {
           nextRows.push({
             kind: "work",
             id: timelineEntry.id,
@@ -564,6 +711,7 @@ export function deriveMessagesTimelineRows(input: {
             hiddenCount: hiddenEntries.length,
             expanded,
             onlyToolEntries: visibleGroupedEntries.every((entry) => workLogEntryIsToolLike(entry)),
+            summary: summarizeToolGroup(hiddenEntries),
           });
         }
       }
@@ -610,6 +758,11 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.message.role === "assistant"
           ? input.turnDiffSummaryByAssistantMessageId.get(timelineEntry.message.id)
           : undefined,
+      visualReplyEntries:
+        timelineEntry.message.role === "assistant" &&
+        terminalAssistantMessageIds.has(timelineEntry.message.id)
+          ? visualRepliesByAssistantMessageId.get(timelineEntry.message.id)
+          : undefined,
       revertTurnCount:
         timelineEntry.message.role === "user"
           ? input.revertTurnCountByUserMessageId.get(timelineEntry.message.id)
@@ -618,10 +771,15 @@ export function deriveMessagesTimelineRows(input: {
   }
 
   if (input.isWorking && !completedAssistantTail && !hasVisibleStreamingAssistant) {
+    const latestUserMessageAt = input.timelineEntries.findLast(
+      (entry) => entry.kind === "message" && entry.message.role === "user",
+    );
     nextRows.push({
       kind: "working",
       id: "working-indicator-row",
-      createdAt: input.activeTurnStartedAt,
+      createdAt:
+        input.activeTurnStartedAt ??
+        (latestUserMessageAt?.kind === "message" ? latestUserMessageAt.createdAt : null),
     });
   }
 
@@ -667,6 +825,17 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     case "work":
       return Equal.equals(a.groupedEntries, (b as typeof a).groupedEntries);
 
+    case "work-live": {
+      const bw = b as typeof a;
+      return (
+        a.createdAt === bw.createdAt &&
+        Equal.equals(a.entry, bw.entry) &&
+        Equal.equals(a.groupedEntries, bw.groupedEntries) &&
+        a.groupId === bw.groupId &&
+        a.expanded === bw.expanded
+      );
+    }
+
     case "work-toggle": {
       const bw = b as typeof a;
       return (
@@ -674,7 +843,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.groupId === bw.groupId &&
         a.hiddenCount === bw.hiddenCount &&
         a.expanded === bw.expanded &&
-        a.onlyToolEntries === bw.onlyToolEntries
+        a.onlyToolEntries === bw.onlyToolEntries &&
+        a.summary === bw.summary
       );
     }
 
@@ -687,6 +857,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.showAssistantCopyButton === bm.showAssistantCopyButton &&
         a.assistantCopyStreaming === bm.assistantCopyStreaming &&
         a.assistantTurnDiffSummary === bm.assistantTurnDiffSummary &&
+        Equal.equals(a.visualReplyEntries ?? [], bm.visualReplyEntries ?? []) &&
         a.revertTurnCount === bm.revertTurnCount
       );
     }

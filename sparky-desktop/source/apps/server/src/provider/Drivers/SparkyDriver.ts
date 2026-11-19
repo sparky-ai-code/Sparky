@@ -57,11 +57,12 @@ function makeSnapshot(input: {
   const { discovery } = input;
   const displayName = input.displayName.trim() === "T3 Code" ? "OpenAI" : input.displayName;
   const hasModels = discovery.models.length > 0;
+  const hasCodexModels = discovery.models.some((model) => model.slug.startsWith("openai-codex/"));
   const hasDiscoveryErrors = discovery.errors.length > 0;
   const message = !input.binaryInstalled
     ? `Sparky runtime was not found at ${input.binaryPath}.`
     : discovery.configuredProviderCount === 0
-      ? "Add an OpenAI, Anthropic, Google, Fireworks, Ollama Cloud, Cerebras, or Groq API key in Models."
+      ? "Connect a model in Models settings."
       : hasDiscoveryErrors
         ? `Model refresh failed for ${discovery.errors.join("; ")}. Check the API key and your connection.`
         : !hasModels
@@ -88,8 +89,8 @@ function makeSnapshot(input: {
           : "warning",
     auth: {
       status: hasModels ? "authenticated" : "unauthenticated",
-      type: "apiKey",
-      label: hasModels ? "Provider API keys connected" : "Add or verify an API key in Models",
+      type: hasCodexModels ? "oauth" : "apiKey",
+      label: hasModels ? "Models connected" : "Connect a model in Models settings",
     },
     checkedAt: new Date().toISOString(),
     availability: "available",
@@ -269,6 +270,10 @@ export const SparkyDriver: ProviderDriver<
       const serverSettings = yield* ServerSettingsService;
       const serverConfig = yield* ServerConfig;
       const eventLoggers = yield* ProviderEventLoggers;
+      const processPrewarming = yield* serverSettings.getSettings.pipe(
+        Effect.map((settings) => settings.sparkyProcessPrewarming),
+        Effect.orElseSucceed(() => true),
+      );
       const processEnvironment = { ...mergeProviderInstanceEnvironment(environment) };
       const hasConfiguredOllamaCloudKey = environment?.some(
         (variable) => variable.name === "OLLAMA_API_KEY" && variable.value.trim().length > 0,
@@ -315,6 +320,7 @@ export const SparkyDriver: ProviderDriver<
         binaryPath,
         attachmentsDir: serverConfig.attachmentsDir,
         environment: processEnvironment,
+        processPrewarming,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
         getCustomInstructions: () =>
           serverSettings.getSettings.pipe(

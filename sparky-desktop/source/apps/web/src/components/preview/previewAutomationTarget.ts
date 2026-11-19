@@ -30,8 +30,9 @@ export function resolvePreviewAutomationOpenTab(
   reuseExistingTab: boolean,
 ): string | null {
   if (!reuseExistingTab) return null;
-  if (requestedTabId !== undefined) {
-    return state.sessions[requestedTabId]?.tabId ?? null;
-  }
-  return state.snapshot?.tabId ?? null;
+  // The broker supplies a tabId after this provider session has claimed one.
+  // Without that claim, do not silently borrow the UI's currently selected tab:
+  // opening should create one dedicated tab that can then be reused by the broker.
+  if (requestedTabId === undefined) return null;
+  return state.sessions[requestedTabId]?.tabId ?? null;
 }

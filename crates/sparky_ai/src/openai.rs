@@ -63,6 +63,11 @@ impl OpenAiProvider {
         Ok(())
     }
 
+    fn supports_request_gzip(&self) -> bool {
+        self.provider_name == "cerebras"
+            && self.base_url.trim_end_matches('/') == "https://api.cerebras.ai/v1"
+    }
+
     /// `prompt_cache_key` is an OpenAI-specific request field. Keep it off
     /// custom/OpenAI-compatible endpoints because some of them reject unknown
     /// fields even though they otherwise implement Chat Completions.
@@ -128,11 +133,16 @@ impl LlmProvider for OpenAiProvider {
         }
         self.apply_prompt_cache_key(&mut body, messages);
 
+        let encoded = crate::request_body::encode_json(&body, self.supports_request_gzip())?;
         let resp = send_with_retry(self.provider_name, || async {
             let mut req = self
                 .client
                 .post(format!("{}/chat/completions", self.base_url))
-                .json(&body);
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(encoded.bytes.clone());
+            if encoded.compressed {
+                req = req.header(reqwest::header::CONTENT_ENCODING, "gzip");
+            }
             if !self.api_key.is_empty() {
                 req = req.bearer_auth(&self.api_key);
             }
@@ -211,11 +221,16 @@ impl LlmProvider for OpenAiProvider {
         }
         self.apply_prompt_cache_key(&mut body, messages);
 
+        let encoded = crate::request_body::encode_json(&body, self.supports_request_gzip())?;
         let resp = send_with_retry(self.provider_name, || async {
             let mut req = self
                 .client
                 .post(format!("{}/chat/completions", self.base_url))
-                .json(&body);
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(encoded.bytes.clone());
+            if encoded.compressed {
+                req = req.header(reqwest::header::CONTENT_ENCODING, "gzip");
+            }
             if !self.api_key.is_empty() {
                 req = req.bearer_auth(&self.api_key);
             }
@@ -251,6 +266,28 @@ mod tests {
         let mut first_user = Message::user("first turn");
         first_user.timestamp = Some(1_725_000_000_123);
         vec![Message::system("system"), first_user]
+    }
+
+    #[test]
+    fn request_gzip_is_limited_to_the_confirmed_cerebras_endpoint() {
+        let cerebras = OpenAiProvider::new_named(
+            "",
+            Some("https://api.cerebras.ai/v1".into()),
+            "CEREBRAS_API_KEY",
+            "cerebras",
+            "Cerebras",
+        );
+        assert!(cerebras.supports_request_gzip());
+
+        let custom = OpenAiProvider::new_named(
+            "",
+            Some("https://compatible.example/v1".into()),
+            "CEREBRAS_API_KEY",
+            "cerebras",
+            "Cerebras",
+        );
+        assert!(!custom.supports_request_gzip());
+        assert!(!OpenAiProvider::new("", None).supports_request_gzip());
     }
 
     #[test]

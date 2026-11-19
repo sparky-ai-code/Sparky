@@ -93,6 +93,9 @@ function redactProviderEnvironmentVariable(
   };
 }
 
+const mcpServerSecretName = (serverId: string) =>
+  `mcp-server-${Buffer.from(serverId, "utf8").toString("base64url")}`;
+
 export function redactServerSettingsForClient(settings: ServerSettings): ServerSettings {
   const providerInstances = Object.fromEntries(
     Object.entries(settings.providerInstances).map(([instanceId, instance]) => [
@@ -105,7 +108,16 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
         : instance,
     ]),
   );
-  return { ...settings, providerInstances };
+  return {
+    ...settings,
+    mcpServers: settings.mcpServers.map((server) => ({
+      ...server,
+      authorizationToken: "",
+      authorizationTokenRedacted:
+        server.authorizationTokenRedacted || server.authorizationToken.length > 0,
+    })),
+    providerInstances,
+  };
 }
 
 export class ServerSettingsService extends Context.Service<
@@ -370,8 +382,30 @@ const make = Effect.gen(function* () {
           environment,
         } satisfies ProviderInstanceConfig;
       }
+      const mcpServers: ServerSettings["mcpServers"][number][] = [];
+      for (const server of settings.mcpServers) {
+        if (!server.authorizationTokenRedacted) {
+          mcpServers.push(server);
+          continue;
+        }
+        const secret = yield* secretStore.get(mcpServerSecretName(server.id)).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ServerSettingsError({
+                settingsPath,
+                operation: "read-secret",
+                cause,
+              }),
+          ),
+        );
+        mcpServers.push({
+          ...server,
+          authorizationToken: Option.isSome(secret) ? textDecoder.decode(secret.value) : "",
+        });
+      }
       return {
         ...settings,
+        mcpServers,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
       };
     });
@@ -475,6 +509,45 @@ const make = Effect.gen(function* () {
         ...next,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
       };
+    });
+
+  const persistMcpServerSecrets = (
+    current: ServerSettings,
+    next: ServerSettings,
+  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+    Effect.gen(function* () {
+      const mcpServers: ServerSettings["mcpServers"][number][] = [];
+      const retainedIds = new Set<string>();
+      for (const server of next.mcpServers) {
+        const secretName = mcpServerSecretName(server.id);
+        retainedIds.add(server.id);
+        if (server.authorizationTokenRedacted) {
+          mcpServers.push({ ...server, authorizationToken: "", authorizationTokenRedacted: true });
+        } else if (server.authorizationToken.length > 0) {
+          yield* secretStore.set(secretName, textEncoder.encode(server.authorizationToken)).pipe(
+            Effect.mapError(
+              (cause) => new ServerSettingsError({ settingsPath, operation: "write-secret", cause }),
+            ),
+          );
+          mcpServers.push({ ...server, authorizationToken: "", authorizationTokenRedacted: true });
+        } else {
+          yield* secretStore.remove(secretName).pipe(
+            Effect.mapError(
+              (cause) => new ServerSettingsError({ settingsPath, operation: "remove-secret", cause }),
+            ),
+          );
+          mcpServers.push({ ...server, authorizationTokenRedacted: false });
+        }
+      }
+      for (const server of current.mcpServers) {
+        if (retainedIds.has(server.id)) continue;
+        yield* secretStore.remove(mcpServerSecretName(server.id)).pipe(
+          Effect.mapError(
+            (cause) => new ServerSettingsError({ settingsPath, operation: "remove-stale-secret", cause }),
+          ),
+        );
+      }
+      return { ...next, mcpServers };
     });
 
   const writeSettingsAtomically = Effect.fnUntraced(
@@ -581,10 +654,11 @@ const make = Effect.gen(function* () {
       writeSemaphore.withPermits(1)(
         Effect.gen(function* () {
           const current = yield* getSettingsFromCache;
-          const nextPersisted = yield* persistProviderEnvironmentSecrets(
+          const nextWithProviderSecrets = yield* persistProviderEnvironmentSecrets(
             current,
             applyServerSettingsPatch(current, patch),
           );
+          const nextPersisted = yield* persistMcpServerSecrets(current, nextWithProviderSecrets);
           const next = yield* normalizeServerSettings(nextPersisted);
           yield* writeSettingsAtomically(next);
           yield* Cache.set(settingsCache, cacheKey, next);

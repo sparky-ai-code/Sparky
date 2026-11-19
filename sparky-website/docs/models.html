@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#090909"><title>AI providers & models — Sparky Docs</title><link rel="icon" href="../assets/sparky-favicon.png?v=5" type="image/png" sizes="256x256"><link rel="preload" href="../assets/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="docs.css"><script type="module" src="docs.js"></script></head>
+<body><!-- THESIS: A readable working manual that gets a developer to their first useful task.
+OWN-WORLD: Sparky black and white, DM Sans, thin rules, plain text navigation; no old documentation imagery.
+STORY: Connect a provider, open a project, give a task, inspect the result, then find a focused guide.
+FIRST VIEWPORT: Fixed 76px header; left guide rail, central 44px title and setup entry, right section index. Mobile folds the rail into a native disclosure.
+FORM: Guided manual with a persistent index, grounded structure 5; seed 6baccacf. Signature interaction: guide filtering and scroll-aware section navigation.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md -->
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="docs-header"><a class="brand" href="../index.html" aria-label="Sparky home"><img src="../assets/sparky-symbol.png" alt="" width="34" height="34"><span>Sparky</span></a><nav class="header-nav" aria-label="Main navigation"><a href="../index.html#product">Product</a><a href="overview.html" aria-current="page">Docs</a><a href="../changelog.html">Changelog</a></nav><a class="download-link" href="../index.html#download">Get Sparky <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5"/></svg></a></header>
+<div class="docs-layout"><details class="docs-sidebar" open><summary>Documentation <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg></summary><div class="sidebar-inner"><span class="sidebar-title">Documentation</span><label class="guide-search"><span class="sr-only">Find a guide</span><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><input id="guide-search" type="search" placeholder="Find a guide…" autocomplete="off"></label><nav aria-label="Documentation guides"><section class="nav-group"><h2>Get started</h2><ul><li><a href="overview.html">Overview</a></li><li><a href="getting-started.html">Quickstart</a></li><li><a href="models.html" aria-current="page">AI providers & models</a></li></ul></section>
+<section class="nav-group"><h2>Work with your project</h2><ul><li><a href="read-edit.html">Read & edit files</a></li><li><a href="terminal.html">Terminal commands</a></li><li><a href="search.html">Search your code</a></li><li><a href="git.html">Git operations</a></li><li><a href="pull-requests.html">Pull requests</a></li><li><a href="preview.html">Preview websites</a></li><li><a href="web-search.html">Search the web</a></li></ul></section>
+<section class="nav-group"><h2>Conversations</h2><ul><li><a href="prompts.html">Writing prompts</a></li><li><a href="sessions.html">Sessions</a></li><li><a href="stateless-chats.html">Project-free chats</a></li><li><a href="memory.html">Memory</a></li><li><a href="overview.html#focus-mode">Focus Mode</a></li></ul></section>
+<section class="nav-group"><h2>Help</h2><ul><li><a href="troubleshooting.html">Troubleshooting</a></li></ul></section></nav><p class="search-empty" hidden>No guides found. Try a different word.</p><p id="search-status" class="sr-only" role="status"></p></div></details>
+<main class="docs-content" id="main">
+      <div class="docs-page-header">
+
+        <h1>AI providers &amp; models</h1>
+        <p>Connect a provider and choose a model for your project. Sparky discovers the models available to your account; access can differ between an API key and a connected subscription.</p>
+      </div>
+
+<h2 id="providers">Providers and live catalogs</h2>
+<p>Sparky supports OpenAI, Anthropic, Google Gemini, Fireworks, Ollama Cloud, Cerebras, and Groq. Provider model lists change over time and vary by account. The current catalog for your connections is shown in the desktop app under <strong>Settings, Models</strong>; this guide intentionally does not publish a fixed model list.</p>
+<p>Provider catalogs: <a href="https://developers.openai.com/api/docs/models" target="_blank" rel="noopener">OpenAI</a>, <a href="https://platform.claude.com/docs/en/models/overview" target="_blank" rel="noopener">Anthropic</a>, <a href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noopener">Google</a>, <a href="https://fireworks.ai/models" target="_blank" rel="noopener">Fireworks</a>, <a href="https://ollama.com/search" target="_blank" rel="noopener">Ollama Cloud</a>, <a href="https://inference-docs.cerebras.ai/" target="_blank" rel="noopener">Cerebras</a>, and <a href="https://console.groq.com/docs/models" target="_blank" rel="noopener">Groq</a>.</p>
+<p>Click a provider below to get an API key, then add it in <strong>Settings, Models</strong>. For OpenAI, Sparky uses the official OpenAI SDK with your API key. You can also sign in with ChatGPT to use eligible subscription models without an API key.</p>
+<div class="table-scroll" role="region" aria-label="Reference table" tabindex="0"><table class="docs-table" style="margin-bottom:2rem;">
+<tr><th>Provider</th><th>Get your API key</th></tr>
+<tr><td><strong>Anthropic</strong> (Claude)</td><td><a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a></td></tr>
+<tr><td><strong>OpenAI</strong> (GPT)</td><td><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a></td></tr>
+<tr><td><strong>Google</strong> (Gemini)</td><td><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com</a></td></tr>
+<tr><td><strong>Fireworks</strong></td><td><a href="https://fireworks.ai/account/api-keys" target="_blank" rel="noopener">fireworks.ai</a></td></tr>
+<tr><td><strong>Ollama Cloud</strong></td><td><a href="https://ollama.com/settings/keys" target="_blank" rel="noopener">ollama.com</a></td></tr>
+<tr><td><strong>Cerebras</strong></td><td><a href="https://cloud.cerebras.ai/" target="_blank" rel="noopener">cloud.cerebras.ai</a></td></tr>
+<tr><td><strong>Groq</strong></td><td><a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com</a></td></tr>
+</table></div>
+
+<p>After you connect a provider in <strong>Settings, Models</strong>, choose it there to view the live model catalog available to your account. Model names and availability can change without a Sparky release.</p>
+
+<h2 id="codex-oauth">ChatGPT account sign-in</h2>
+<p>In <strong>Settings, Models</strong>, select <strong>Login with ChatGPT</strong>. Sparky opens a verification page and displays a device code; enter the code to authorize the account, then keep Sparky open while it finishes connecting. Your available ChatGPT models will then appear in Sparky, and you can disconnect from the same settings page.</p>
+<p>If device-code sign-in is unavailable, enable it under ChatGPT <strong>Settings, Security and login</strong> (work accounts may require an administrator to allow it), or choose <strong>Try browser login</strong> if Sparky offers that fallback. For API-key setup, see <a href="getting-started.html#step-2">Quickstart</a>.</p>
+
+<h2 id="switching">Switching models</h2>
+<p>Switch anytime in <strong>Settings, Models</strong> in the desktop app. Select the provider and model you want from the dropdown.</p>
+
+<div class="docs-next"><h3>Next steps</h3><ul>
+<li><a href="getting-started.html">Quickstart</a> — set up your key</li>
+<li><a href="prompts.html">Writing Prompts</a> — write effective prompts</li>
+<li><a href="sessions.html">Sessions</a> — manage conversations</li>
+</ul></div>
+    <footer class="docs-bottom"><a href="../index.html">Sparky</a><a href="../changelog.html">Product updates <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5"/></svg></a></footer></main>
+<aside class="docs-toc"><p>On this page</p><nav aria-label="On this page"><a href="#providers">Providers</a>
+<a href="#codex-oauth">ChatGPT account sign-in</a>
+<a href="#switching">Switching models</a></nav></aside></div>
+</body></html>

@@ -1,7 +1,10 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use clap::Parser;
 use futures::StreamExt;
-use sparky_agent::{AgentLoop, AgentLoopOptions, InteractionMode};
+use sparky_agent::{
+    AccessMode, AgentLoop, AgentLoopOptions, InteractionMode, ToolApprovalDecision,
+    ToolApprovalRequest,
+};
 use sparky_ai::{
     codex_auth_status, login_codex, logout_codex, AnthropicProvider, AssistantMessageEvent,
     CodexProvider, CompletionOptions, ContentPart, GeminiProvider, LlmProvider, Message,
@@ -12,11 +15,13 @@ use sparky_extensions::{EventBus, JsExtensionRunner, SparkyEvent};
 use sparky_memory::MemoryStore;
 use sparky_session::SessionManager;
 use sparky_tools::{is_hidden_control_tool, register_http_mcp_tools_with_header, ToolRegistry};
+use serde::Deserialize;
+use std::collections::HashMap;
 use std::env;
 use std::io::{self, Write};
 use std::path::Path;
 use std::sync::Arc;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
@@ -26,8 +31,24 @@ struct Cli {
     #[arg(long, help = "Sign in with a ChatGPT Codex subscription")]
     codex_login: bool,
 
+    #[arg(long, hide = true, help = "Start a ChatGPT login without a browser callback")]
+    codex_device_start: bool,
+
+    #[arg(long, hide = true, value_name = "ID", help = "Poll a ChatGPT device login")]
+    codex_device_poll: Option<String>,
+
+    #[arg(long, hide = true, value_name = "CODE", help = "Device login verification code")]
+    codex_device_user_code: Option<String>,
+
     #[arg(long, help = "Print ChatGPT Codex authentication status as JSON")]
     codex_auth_status: bool,
+
+    #[arg(
+        long,
+        hide = true,
+        help = "Read the current ChatGPT subscription rate limits"
+    )]
+    codex_usage: bool,
 
     #[arg(long, hide = true, help = "Refresh the saved ChatGPT plan-usage session")]
     codex_auth_refresh: bool,
@@ -64,6 +85,14 @@ struct Cli {
         help = "Interaction policy: build may modify the workspace, plan is read-only"
     )]
     interaction_mode: String,
+
+    #[arg(
+        long,
+        value_parser = ["full-access", "approval-required", "auto-accept-edits"],
+        default_value = "full-access",
+        help = "Tool access policy (separate from build/plan interaction mode)"
+    )]
+    runtime_mode: String,
 
     #[arg(
         long,
@@ -108,6 +137,22 @@ struct Cli {
 
     #[arg(long, help = "Write newline-delimited JSON token events to stdout")]
     json_stream: bool,
+
+    #[arg(
+        long,
+        hide = true,
+        requires = "json_stream",
+        help = "Keep a JSON-stream provider process alive for multiple turns"
+    )]
+    persistent_json_stream: bool,
+
+    #[arg(
+        long,
+        hide = true,
+        requires = "persistent_json_stream",
+        help = "Wait for the first turn's runtime settings before initializing a persistent process"
+    )]
+    prewarm_persistent_json_stream: bool,
 
     #[arg(
         long,
@@ -378,6 +423,186 @@ async fn run_prompt(
     result
 }
 
+#[derive(Deserialize)]
+struct PersistentTurnRequest {
+    prompt: String,
+    #[serde(default, rename = "imagePaths")]
+    image_paths: Vec<String>,
+    #[serde(default, rename = "imageMimeTypes")]
+    image_mime_types: Vec<String>,
+    #[serde(default, rename = "interactionMode")]
+    interaction_mode: Option<String>,
+    #[serde(default, rename = "runtimeMode")]
+    runtime_mode: Option<String>,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default, rename = "baseUrl")]
+    base_url: Option<String>,
+    #[serde(default)]
+    cwd: Option<String>,
+    #[serde(default, rename = "reasoningEffort")]
+    reasoning_effort: Option<String>,
+    #[serde(default, rename = "contextWindow")]
+    context_window: Option<String>,
+    #[serde(default, rename = "workspaceContext")]
+    workspace_context: Option<String>,
+    #[serde(default, rename = "customInstructions")]
+    custom_instructions: Option<String>,
+    #[serde(default, rename = "sessionId")]
+    session_id: Option<String>,
+    #[serde(default, rename = "mcpUrl")]
+    mcp_url: Option<String>,
+    #[serde(default, rename = "mcpBearerToken")]
+    mcp_bearer_token: Option<String>,
+}
+
+async fn run_persistent_json_stream(
+    cli: &Cli,
+    agent_loop: &mut AgentLoop,
+    session: &mut SessionManager,
+    memory_store: &Arc<tokio::sync::Mutex<MemoryStore>>,
+    initial_request: Option<PersistentTurnRequest>,
+) -> anyhow::Result<()> {
+    // Read stdin independently of run_prompt: the agent may be blocked waiting
+    // for an approval while a turn is still running. A sequential line reader
+    // here would deadlock the approval UI.
+    let pending_approvals = Arc::new(tokio::sync::Mutex::new(HashMap::<
+        String,
+        tokio::sync::oneshot::Sender<ToolApprovalDecision>,
+    >::new()));
+    let (turn_sender, mut turns) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let approvals_for_reader = pending_approvals.clone();
+    tokio::spawn(async move {
+        let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
+                if value.get("type").and_then(|v| v.as_str()) == Some("approval.respond") {
+                    if let Some(request_id) = value.get("requestId").and_then(|v| v.as_str()) {
+                        let decision = match value.get("decision").and_then(|v| v.as_str()) {
+                            Some("accept") => ToolApprovalDecision::Accept,
+                            Some("acceptForSession") => ToolApprovalDecision::AcceptForSession,
+                            _ => ToolApprovalDecision::Deny,
+                        };
+                        if let Some(reply) = approvals_for_reader.lock().await.remove(request_id) {
+                            let _ = reply.send(decision);
+                        }
+                    }
+                    continue;
+                }
+            }
+            if turn_sender.send(line).is_err() {
+                break;
+            }
+        }
+        // If the host disconnects, every outstanding request is denied.
+        approvals_for_reader.lock().await.clear();
+    });
+
+    let (approval_sender, mut approval_requests) =
+        tokio::sync::mpsc::unbounded_channel::<ToolApprovalRequest>();
+    agent_loop.set_approval_sender(approval_sender);
+    let approvals_for_writer = pending_approvals.clone();
+    tokio::spawn(async move {
+        while let Some(request) = approval_requests.recv().await {
+            approvals_for_writer.lock().await.insert(request.request_id.clone(), request.reply);
+            write_json_line(serde_json::json!({
+                "type": "approval.requested",
+                "requestId": request.request_id,
+                "toolCallId": request.tool_call_id,
+                "toolName": request.tool_name,
+                "arguments": request.arguments,
+            }));
+        }
+    });
+
+    let mut pending_request = initial_request;
+    loop {
+        let request = if let Some(request) = pending_request.take() {
+            request
+        } else {
+            let Some(line) = turns.recv().await else {
+                break;
+            };
+            if line.trim().is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<PersistentTurnRequest>(&line) {
+                Ok(request) => request,
+                Err(error) => {
+                    write_json_line(serde_json::json!({
+                        "type": "error",
+                        "message": format!("Invalid persistent turn request: {error}"),
+                    }));
+                    continue;
+                }
+            }
+        };
+        if request.prompt.trim().is_empty() {
+            write_json_line(serde_json::json!({
+                "type": "error",
+                "message": "Prompt was empty",
+            }));
+            continue;
+        }
+        let interaction_mode = match request.interaction_mode.as_deref() {
+            Some("plan") => InteractionMode::Plan,
+            _ => InteractionMode::Build,
+        };
+        let access_mode = match request.runtime_mode.as_deref() {
+            Some("approval-required") => AccessMode::ApprovalRequired,
+            Some("auto-accept-edits") => AccessMode::AutoAcceptEdits,
+            Some("full-access") | None => AccessMode::FullAccess,
+            _ => {
+                write_json_line(serde_json::json!({
+                    "type": "error",
+                    "message": "Invalid runtime access mode; refusing to start the turn.",
+                }));
+                continue;
+            }
+        };
+        agent_loop.set_access_mode(access_mode);
+        let memory_context = if cli.no_workspace_context {
+            None
+        } else {
+            let context = memory_store.lock().await.render_context(&request.prompt);
+            (!context.is_empty()).then_some(context)
+        };
+        agent_loop.set_turn_context(interaction_mode, memory_context);
+        let result = if request.prompt.trim().eq_ignore_ascii_case("/compact") {
+            agent_loop.compact_session(session).await.map(|compacted| {
+                if compacted {
+                    "Context compacted.".to_string()
+                } else {
+                    "Context was already compact.".to_string()
+                }
+            })
+        } else {
+            match load_image_parts(&request.image_paths, &request.image_mime_types).await {
+                Ok(images) => {
+                    run_prompt(agent_loop, session, &request.prompt, images, true, false).await
+                }
+                Err(error) => Err(error),
+            }
+        };
+        session.save().await?;
+        match result {
+            Ok(response) => write_result(cli, &response, session.session_id()),
+            Err(error) => {
+                tracing::error!("Persistent Sparky turn failed: {error:#}");
+                write_json_line(serde_json::json!({
+                    "type": "error",
+                    "message": "Sparky could not complete this turn. Check the server logs for details.",
+                    "sessionId": session.session_id(),
+                }));
+            }
+        }
+    }
+    session.save().await?;
+    Ok(())
+}
+
 async fn load_image_parts(
     paths: &[String],
     mime_types: &[String],
@@ -433,10 +658,29 @@ fn output_snippet(output: &str, max_bytes: usize) -> &str {
 async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
 
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
 
     if cli.codex_login {
         println!("{}", serde_json::to_string(&login_codex().await?)?);
+        return Ok(());
+    }
+    if cli.codex_device_start {
+        println!("{}", serde_json::to_string(&sparky_ai::codex_auth::start_codex_device_login().await?)?);
+        return Ok(());
+    }
+    if let Some(device_auth_id) = cli.codex_device_poll.as_deref() {
+        let user_code = cli.codex_device_user_code.as_deref()
+            .ok_or_else(|| anyhow::anyhow!("Missing device login user code"))?;
+        println!("{}", serde_json::to_string(
+            &sparky_ai::codex_auth::poll_codex_device_login(device_auth_id, user_code).await?
+        )?);
+        return Ok(());
+    }
+    if cli.codex_usage {
+        println!(
+            "{}",
+            serde_json::to_string(&sparky_ai::codex_auth::codex_usage().await?)?
+        );
         return Ok(());
     }
     if cli.codex_auth_refresh {
@@ -452,6 +696,37 @@ async fn main() -> anyhow::Result<()> {
         println!("{}", serde_json::to_string(&logout_codex().await?)?);
         return Ok(());
     }
+
+    let initial_prewarm_request = if cli.prewarm_persistent_json_stream {
+        let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+        let line = lines.next_line().await?.ok_or_else(|| {
+            anyhow::anyhow!("Prewarmed Sparky process closed before receiving its first turn")
+        })?;
+        let request: PersistentTurnRequest = serde_json::from_str(&line)
+            .map_err(|error| anyhow::anyhow!("Invalid prewarmed turn request: {error}"))?;
+        cli.provider = request.provider.clone().unwrap_or_else(|| cli.provider.clone());
+        cli.model = request.model.clone().unwrap_or_else(|| cli.model.clone());
+        cli.base_url = request.base_url.clone();
+        cli.cwd = request.cwd.clone().unwrap_or_else(|| cli.cwd.clone());
+        let _ = dotenvy::from_path(Path::new(&cli.cwd).join(".env"));
+        cli.effort = request.reasoning_effort.clone();
+        cli.context_window = request.context_window.clone();
+        cli.interaction_mode = request
+            .interaction_mode
+            .clone()
+            .unwrap_or_else(|| "build".to_string());
+        cli.append_system_prompt = request.custom_instructions.clone();
+        cli.session = request.session_id.clone();
+        cli.no_workspace_context = request.workspace_context.as_deref() == Some("none");
+        cli.mcp_url = request.mcp_url.clone();
+        if let Some(token) = request.mcp_bearer_token.as_deref() {
+            env::set_var("T3_MCP_BEARER_TOKEN", token);
+            cli.mcp_bearer_token_env_var = Some("T3_MCP_BEARER_TOKEN".to_string());
+        }
+        Some(request)
+    } else {
+        None
+    };
 
     if !cli.json && !cli.json_stream {
         tracing_subscriber::fmt()
@@ -639,6 +914,16 @@ async fn main() -> anyhow::Result<()> {
                 "toolName": tool_name,
                 "arguments": arguments,
             })),
+            SparkyEvent::ToolExecutionBackground {
+                tool_call_id,
+                tool_name,
+                job_id,
+            } if !is_hidden_control_tool(tool_name) => write_json_line(serde_json::json!({
+                "type": "tool.backgrounded",
+                "toolCallId": tool_call_id,
+                "toolName": tool_name,
+                "jobId": job_id,
+            })),
             SparkyEvent::ToolExecutionEnd {
                 tool_call_id,
                 tool_name,
@@ -759,7 +1044,24 @@ async fn main() -> anyhow::Result<()> {
         interaction_mode,
     };
 
-    let agent_loop = AgentLoop::new(provider, tool_registry, event_bus, loop_options);
+    let mut agent_loop = AgentLoop::new(provider, tool_registry, event_bus, loop_options);
+    agent_loop.set_access_mode(match cli.runtime_mode.as_str() {
+        "approval-required" => AccessMode::ApprovalRequired,
+        "auto-accept-edits" => AccessMode::AutoAcceptEdits,
+        _ => AccessMode::FullAccess,
+    });
+
+    if cli.persistent_json_stream {
+        run_persistent_json_stream(
+            &cli,
+            &mut agent_loop,
+            &mut session,
+            &memory_store,
+            initial_prewarm_request,
+        )
+        .await?;
+        return Ok(());
+    }
 
     let image_parts = load_image_parts(&cli.image_paths, &cli.image_mime_types).await?;
     if !cli.json && !cli.json_stream {

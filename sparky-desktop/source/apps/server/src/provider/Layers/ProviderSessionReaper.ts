@@ -13,7 +13,7 @@ import {
 } from "../Services/ProviderSessionReaper.ts";
 import { ProviderService } from "../Services/ProviderService.ts";
 
-const DEFAULT_INACTIVITY_THRESHOLD_MS = 30 * 60 * 1000;
+const DEFAULT_INACTIVITY_THRESHOLD_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 export interface ProviderSessionReaperLiveOptions {
@@ -32,6 +32,25 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
       options?.inactivityThresholdMs ?? DEFAULT_INACTIVITY_THRESHOLD_MS,
     );
     const sweepIntervalMs = Math.max(1, options?.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS);
+
+    const stopAllSessions = Effect.gen(function* () {
+      const bindings = yield* directory.listBindings();
+      for (const binding of bindings) {
+        if (binding.status === "stopped") {
+          continue;
+        }
+
+        yield* providerService.stopSession({ threadId: binding.threadId }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("provider.session.shutdown-stop-failed", {
+              threadId: binding.threadId,
+              provider: binding.provider,
+              cause,
+            }),
+          ),
+        );
+      }
+    });
 
     const sweep = Effect.gen(function* () {
       const bindings = yield* directory.listBindings();
@@ -105,6 +124,12 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
 
     const start: ProviderSessionReaperShape["start"] = () =>
       Effect.gen(function* () {
+        // A server restart cannot resume an in-flight turn safely. Reconcile
+        // persisted provider sessions before accepting new work, and stop live
+        // sessions again during graceful shutdown.
+        yield* stopAllSessions;
+        yield* Effect.addFinalizer(() => stopAllSessions);
+
         yield* Effect.forkScoped(
           sweep.pipe(
             Effect.catch((error: unknown) =>

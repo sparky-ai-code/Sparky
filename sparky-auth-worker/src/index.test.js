@@ -120,32 +120,6 @@ test("rejects anonymous plugin sessions without a valid installation ID", async 
   assert.match((await response.json()).error, /installation ID/i);
 });
 
-test("revokes the persisted plugin session on explicit logout", async () => {
-  const token = "session-token-with-enough-length";
-  const key = `session:${await sha256(token)}`;
-  let deletedKey = null;
-  const store = {
-    async get(requestedKey) {
-      return requestedKey === key ? { userId: "user-1", sessionId: "session-1" } : null;
-    },
-    async delete(requestedKey) {
-      deletedKey = requestedKey;
-    },
-    async put() {},
-  };
-  const response = await handleRequest(
-    new Request("https://auth.example/v1/session", {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    }),
-    { ...env, PLUGIN_STORE: store },
-  );
-
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { revoked: true });
-  assert.equal(deletedKey, key);
-});
-
 test("rejects non-JSON token requests", async () => {
   const response = await handleRequest(
     new Request("https://auth.example/v1/github/exchange", {

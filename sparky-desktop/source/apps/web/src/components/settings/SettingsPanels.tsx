@@ -37,7 +37,12 @@ import { TraitsPicker } from "../chat/TraitsPicker";
 import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
 import { useTheme } from "../../hooks/useTheme";
-import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import {
+  useClientSettings,
+  usePrimarySettings,
+  useUpdateClientSettings,
+  useUpdatePrimarySettings,
+} from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import {
@@ -319,7 +324,7 @@ function AboutVersionSection() {
       {hasDesktopBridge ? (
         <SettingsRow
           title="Update track"
-          description="Stable follows full releases. Nightly follows the nightly desktop channel and can switch back to stable immediately."
+          description="Stable follows full releases. Beta follows automated nightly builds."
           control={
             <Select
               value={selectedUpdateChannel}
@@ -333,7 +338,7 @@ function AboutVersionSection() {
                 disabled={isChangingUpdateChannel}
               >
                 <SelectValue>
-                  {selectedUpdateChannel === "nightly" ? "Nightly" : "Stable"}
+                  {selectedUpdateChannel === "nightly" ? "Beta" : "Stable"}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
@@ -341,7 +346,7 @@ function AboutVersionSection() {
                   Stable
                 </SelectItem>
                 <SelectItem hideIndicator value="nightly">
-                  Nightly
+                  Beta
                 </SelectItem>
               </SelectPopup>
             </Select>
@@ -400,6 +405,10 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Visible threads"]
         : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
+      ...(settings.persistentBrowserProfileEnabled !==
+      DEFAULT_UNIFIED_SETTINGS.persistentBrowserProfileEnabled
+        ? ["Persistent browser profile"]
+        : []),
       ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
         ? ["Diff whitespace changes"]
         : []),
@@ -429,6 +438,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarThreadPreviewCount,
       settings.timestampFormat,
       settings.wordWrap,
+      settings.persistentBrowserProfileEnabled,
       theme,
     ],
   );
@@ -447,6 +457,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     updateSettings({
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
+      persistentBrowserProfileEnabled: DEFAULT_UNIFIED_SETTINGS.persistentBrowserProfileEnabled,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
@@ -468,6 +479,13 @@ export function GeneralSettingsPanel() {
   const { theme, setTheme } = useTheme();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
+  const persistentBrowserProfileEnabled = useClientSettings(
+    (clientSettings) => clientSettings.persistentBrowserProfileEnabled,
+  );
+  const sidebarThreadsGroupedByProject = useClientSettings(
+    (clientSettings) => clientSettings.sidebarThreadsGroupedByProject,
+  );
+  const updateClientSettings = useUpdateClientSettings();
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const diagnosticsDescription = formatDiagnosticsDescription({
@@ -555,6 +573,36 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
+
+        <SettingsRow
+          title="Group threads by project"
+          description="Organize the thread list under project folders instead of listing threads together by recent activity."
+          control={
+            <Switch
+              checked={sidebarThreadsGroupedByProject}
+              onCheckedChange={(checked) =>
+                updateClientSettings({ sidebarThreadsGroupedByProject: Boolean(checked) })
+              }
+              aria-label="Group threads by project"
+            />
+          }
+        />
+
+        {typeof window !== "undefined" && window.desktopBridge?.preview ? (
+          <SettingsRow
+            title="Persistent browser profile"
+            description="Keep website sign-ins across Sparky restarts and share them across browser tabs. Turn off for temporary sessions."
+            control={
+              <Switch
+                checked={persistentBrowserProfileEnabled}
+                onCheckedChange={(checked) =>
+                  updateClientSettings({ persistentBrowserProfileEnabled: Boolean(checked) })
+                }
+                aria-label="Persistent browser profile"
+              />
+            }
+          />
+        ) : null}
 
         <SettingsRow
           title="Focus Mode"
@@ -691,6 +739,32 @@ export function GeneralSettingsPanel() {
                 updateSettings({ enableAssistantStreaming: Boolean(checked) })
               }
               aria-label="Stream assistant messages"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Prewarm Sparky process"
+          description="Keep one idle Sparky process ready so new threads can start faster."
+          resetAction={
+            settings.sparkyProcessPrewarming !== DEFAULT_UNIFIED_SETTINGS.sparkyProcessPrewarming ? (
+              <SettingResetButton
+                label="Sparky process prewarming"
+                onClick={() =>
+                  updateSettings({
+                    sparkyProcessPrewarming: DEFAULT_UNIFIED_SETTINGS.sparkyProcessPrewarming,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sparkyProcessPrewarming}
+              onCheckedChange={(checked) =>
+                updateSettings({ sparkyProcessPrewarming: Boolean(checked) })
+              }
+              aria-label="Prewarm Sparky process"
             />
           }
         />

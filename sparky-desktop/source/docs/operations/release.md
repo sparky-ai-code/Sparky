@@ -1,6 +1,6 @@
 # Release Checklist
 
-This document covers the unified release workflow for stable and nightly desktop releases.
+This document covers the unified release workflow for stable, nightly, and developer-beta desktop releases.
 
 ## What the workflow does
 
@@ -20,6 +20,7 @@ This document covers the unified release workflow for stable and nightly desktop
   - Stable tags with a suffix after `X.Y.Z` (for example `1.2.3-alpha.1`) are published as GitHub prereleases.
   - Only plain stable `X.Y.Z` releases are marked as the repository's latest release.
   - Nightly runs are always GitHub prereleases and never marked latest.
+  - Developer betas are manually dispatched with `channel=beta` and `version=X.Y.Z-beta.N`; they are prereleases, never latest, and publish updater metadata on the dedicated `beta` channel.
   - Automatically generated release notes are pinned to the previous tag in the same channel, so stable compares to the previous stable tag and nightly compares to the previous nightly tag.
 - Includes Electron auto-update metadata (for example `latest*.yml`, `nightly*.yml`, and `*.blockmap`) in release assets.
 - Publishes the CLI package (`apps/server`, npm package `t3`) with OIDC trusted publishing from the same workflow file:

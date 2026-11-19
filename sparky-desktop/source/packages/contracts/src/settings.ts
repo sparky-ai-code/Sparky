@@ -37,7 +37,7 @@ export const SidebarProjectGroupingMode = Schema.Literals([
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
 export const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
-export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
+export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 24;
 export const SidebarThreadPreviewCount = Schema.Int.check(
   Schema.isBetween({
     minimum: MIN_SIDEBAR_THREAD_PREVIEW_COUNT,
@@ -45,7 +45,7 @@ export const SidebarThreadPreviewCount = Schema.Int.check(
   }),
 );
 export type SidebarThreadPreviewCount = typeof SidebarThreadPreviewCount.Type;
-export const DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT: SidebarThreadPreviewCount = 6;
+export const DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT: SidebarThreadPreviewCount = 18;
 
 export const PullRequestReviewFocus = Schema.Literals(["security", "all", "critical", "simple"]);
 export type PullRequestReviewFocus = typeof PullRequestReviewFocus.Type;
@@ -63,6 +63,9 @@ export const ClientSettingsSchema = Schema.Struct({
   profileImage: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   focusMode: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  persistentBrowserProfileEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
@@ -109,6 +112,9 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   sidebarThreadPreviewCount: SidebarThreadPreviewCount.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT)),
+  ),
+  sidebarThreadsGroupedByProject: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
   ),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
@@ -432,7 +438,26 @@ export const CheckpointSettings = Schema.Struct({
 });
 export type CheckpointSettings = typeof CheckpointSettings.Type;
 
+export const McpServerConnectionStatus = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  status: Schema.Literals(["online", "offline"]),
+  checkedAt: Schema.Number,
+  toolCount: Schema.Number,
+});
+export type McpServerConnectionStatus = typeof McpServerConnectionStatus.Type;
+
+export const McpServerConfig = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString,
+  url: Schema.String.check(Schema.isPattern(/^https?:\/\//u)),
+  authorizationToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  authorizationTokenRedacted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+});
+export type McpServerConfig = typeof McpServerConfig.Type;
+
 export const ServerSettings = Schema.Struct({
+  mcpServers: Schema.Array(McpServerConfig).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   customInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   sparkyPersonality: SparkyPersonality.pipe(
     Schema.withDecodingDefault(Effect.succeed("coding" as const)),
@@ -441,6 +466,7 @@ export const ServerSettings = Schema.Struct({
   // Buffered delivery makes the final segment appear to be missing until the
   // user interrupts or the provider emits turn.completed.
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  sparkyProcessPrewarming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   checkpoints: CheckpointSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   enableProviderUpdateChecks: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
@@ -594,10 +620,12 @@ const CheckpointSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  mcpServers: Schema.optionalKey(Schema.Array(McpServerConfig)),
   // Server settings
   customInstructions: Schema.optionalKey(TrimmedString),
   sparkyPersonality: Schema.optionalKey(SparkyPersonality),
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
+  sparkyProcessPrewarming: Schema.optionalKey(Schema.Boolean),
   checkpoints: Schema.optionalKey(CheckpointSettingsPatch),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   automaticGitFetchInterval: Schema.optionalKey(Schema.DurationFromMillis),
@@ -668,6 +696,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
+  sidebarThreadsGroupedByProject: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   streamingTextAnimation: Schema.optionalKey(StreamingTextAnimation),
   pullRequestReviewModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),

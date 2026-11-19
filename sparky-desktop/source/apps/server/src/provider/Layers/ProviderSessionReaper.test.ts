@@ -135,6 +135,7 @@ describe("ProviderSessionReaper", () => {
 
   async function createHarness(input: {
     readonly readModel: ReturnType<typeof makeReadModel>;
+    readonly inactivityThresholdMs?: number;
     readonly stopSessionImplementation?: (input: {
       readonly threadId: ThreadId;
     }) => ReturnType<ProviderServiceShape["stopSession"]>;
@@ -182,7 +183,9 @@ describe("ProviderSessionReaper", () => {
       Layer.provide(runtimeRepositoryLayer),
     );
     const layer = makeProviderSessionReaperLive({
-      inactivityThresholdMs: 1_000,
+      ...(input.inactivityThresholdMs !== undefined
+        ? { inactivityThresholdMs: input.inactivityThresholdMs }
+        : {}),
       sweepIntervalMs: 60_000,
     }).pipe(
       Layer.provideMerge(providerSessionDirectoryLayer),
@@ -223,6 +226,7 @@ describe("ProviderSessionReaper", () => {
     const threadId = ThreadId.make("thread-reaper-stale");
     const now = "2026-01-01T00:00:00.000Z";
     const harness = await createHarness({
+      inactivityThresholdMs: 1_000,
       readModel: makeReadModel([
         {
           id: threadId,
@@ -268,7 +272,7 @@ describe("ProviderSessionReaper", () => {
     expect(harness.stoppedThreadIds.has(threadId)).toBe(true);
   });
 
-  it("skips stale sessions when the thread still has an active turn", async () => {
+  it("stops sessions with active turns during startup recovery", async () => {
     const threadId = ThreadId.make("thread-reaper-active-turn");
     const turnId = TurnId.make("turn-reaper-active");
     const now = "2026-01-01T00:00:00.000Z";
@@ -311,16 +315,15 @@ describe("ProviderSessionReaper", () => {
     const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
     scope = await Effect.runPromise(Scope.make("sequential"));
     await Effect.runPromise(reaper.start().pipe(Scope.provide(scope)));
-    await Effect.runPromise(drainFibers);
 
-    expect(harness.stopSession).not.toHaveBeenCalled();
-    const remaining = await runtime!.runPromise(repository.getByThreadId({ threadId }));
-    expect(Option.isSome(remaining)).toBe(true);
+    expect(harness.stopSession).toHaveBeenCalledWith({ threadId });
+    expect(harness.stoppedThreadIds.has(threadId)).toBe(true);
   });
 
-  it("does not reap sessions that are still within the inactivity threshold", async () => {
+  it("keeps sessions warm for at least one hour with the default threshold", async () => {
     const threadId = ThreadId.make("thread-reaper-fresh");
     const now = DateTime.formatIso(await Effect.runPromise(DateTime.now));
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1_000).toISOString();
     const harness = await createHarness({
       readModel: makeReadModel([
         {
@@ -349,7 +352,7 @@ describe("ProviderSessionReaper", () => {
         adapterKey: "claudeAgent",
         runtimeMode: "full-access",
         status: "running",
-        lastSeenAt: now,
+        lastSeenAt: oneHourAgo,
         resumeCursor: {
           opaque: "resume-fresh",
         },
@@ -421,6 +424,7 @@ describe("ProviderSessionReaper", () => {
     const reapedThreadId = ThreadId.make("thread-reaper-stop-success");
     const now = "2026-01-01T00:00:00.000Z";
     const harness = await createHarness({
+      inactivityThresholdMs: 1_000,
       readModel: makeReadModel([
         {
           id: failedThreadId,
@@ -509,6 +513,7 @@ describe("ProviderSessionReaper", () => {
     const reapedThreadId = ThreadId.make("thread-reaper-stop-after-defect");
     const now = "2026-01-01T00:00:00.000Z";
     const harness = await createHarness({
+      inactivityThresholdMs: 1_000,
       readModel: makeReadModel([
         {
           id: defectThreadId,

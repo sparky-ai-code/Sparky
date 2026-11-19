@@ -37,7 +37,7 @@ const CONNECTION_PROBE_TIMEOUT = "15 seconds";
 // desktop backend). Keep the foreground probe as an immediate check, but also
 // probe an otherwise idle session so RPC calls cannot wait forever on a
 // half-open transport.
-const CONNECTION_HEARTBEAT_INTERVAL = "30 seconds";
+const CONNECTION_HEARTBEAT_INTERVAL_MS = 30_000;
 const BACKOFF_RESET_AFTER_MS = 30_000;
 
 interface SupervisorIntent {
@@ -407,15 +407,26 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       );
     });
 
+    // Signals such as repeated connect/wakeup requests must not indefinitely
+    // reset the idle liveness check. Keep an absolute deadline for each probe.
+    let nextHeartbeatAt = (yield* Clock.currentTimeMillis) + CONNECTION_HEARTBEAT_INTERVAL_MS;
     for (;;) {
+      const remainingMs = nextHeartbeatAt - (yield* Clock.currentTimeMillis);
+      if (remainingMs <= 0) {
+        // A flood of already-queued signals must not win every zero-delay race.
+        yield* probeConnectedLease();
+        nextHeartbeatAt = (yield* Clock.currentTimeMillis) + CONNECTION_HEARTBEAT_INTERVAL_MS;
+        continue;
+      }
       const next = yield* Effect.raceFirst(
         Queue.take(signals).pipe(Effect.map((signal) => ({ _tag: "Signal" as const, signal }))),
-        Effect.sleep(CONNECTION_HEARTBEAT_INTERVAL).pipe(
+        Effect.sleep(remainingMs).pipe(
           Effect.andThen(probeConnectedLease()),
           Effect.as({ _tag: "Heartbeat" as const }),
         ),
       );
       if (next._tag === "Heartbeat") {
+        nextHeartbeatAt = (yield* Clock.currentTimeMillis) + CONNECTION_HEARTBEAT_INTERVAL_MS;
         continue;
       }
 
@@ -449,6 +460,8 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
               );
               if (probeEvent._tag === "ProbeCompleted") {
                 yield* probeEvent.exit;
+                // The foreground probe also established liveness.
+                nextHeartbeatAt = (yield* Clock.currentTimeMillis) + CONNECTION_HEARTBEAT_INTERVAL_MS;
                 break;
               }
               switch (probeEvent.signal._tag) {

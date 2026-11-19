@@ -11,7 +11,7 @@ import {
   getProviderOptionDescriptors,
   isClaudeUltrathinkPrompt,
 } from "@sparky/shared/model";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 
 import {
   DraftId,
@@ -149,19 +149,23 @@ function ReactiveTraitsControl({
   Component: TraitsControlComponent;
   input: TraitsRenderInput;
 }) {
-  const [modelOptions, setModelOptions] = useState(input.modelOptions);
+  const [optimisticModelOptions, setOptimisticModelOptions] = useState<{
+    source: TraitsRenderInput["modelOptions"];
+    value: ReadonlyArray<ProviderOptionSelection> | undefined;
+  } | null>(null);
+  const modelOptions =
+    optimisticModelOptions !== null && optimisticModelOptions.source === input.modelOptions
+      ? optimisticModelOptions.value
+      : input.modelOptions;
   const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
-
-  useEffect(() => {
-    setModelOptions(input.modelOptions);
-  }, [input.modelOptions]);
 
   const updateModelOptions = useCallback(
     (nextOptions: ReadonlyArray<ProviderOptionSelection> | undefined) => {
-      // Keep the open model selector responsive immediately. The compatibility
-      // bridge is a snapshot, so waiting for its parent to rerender leaves the
-      // previous effort visibly selected until the picker is closed/reopened.
-      setModelOptions(nextOptions);
+      // Keep the open model selector responsive immediately. Treat the local
+      // value as optimistic only for the source snapshot it was derived from;
+      // if the composer draft changes, render that newer authoritative value
+      // immediately instead of waiting for an effect to synchronize state.
+      setOptimisticModelOptions({ source: input.modelOptions, value: nextOptions });
 
       const threadTarget = input.threadRef ?? input.draftId;
       if (!threadTarget) return;

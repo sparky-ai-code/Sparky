@@ -55,7 +55,7 @@ it("normalizes empty successful notification responses to accepted", () => {
   expect(resultResponse.status).toBe(200);
 });
 
-it.effect("reviews a PR with the separate review agent before posting validated findings", () => {
+it.effect("reviews a PR with the shared validated pipeline before posting findings", () => {
   const headSha = "a".repeat(40);
   const encodeJson = Schema.encodeUnknownSync(Schema.UnknownFromJsonString);
   const pullRequestMetadata = encodeJson({
@@ -105,18 +105,19 @@ it.effect("reviews a PR with the separate review agent before posting validated 
       Effect.sync(() => {
         reviewCalls.push(input);
         return {
-          response: JSON.stringify({
-            summary: "One issue found.",
-            findings: [
-              {
-                path: "src/example.ts",
-                line: 1,
-                severity: "high",
-                title: "Guard the value",
-                body: "The upstream value can be empty.",
-              },
-            ],
-          }),
+          summary: "One issue found.",
+          report: "Bugs (1): Guard the value at src/example.ts:1. The upstream value can be empty.",
+          reviewedSegments: 1,
+          skippedFindings: 0,
+          findings: [
+            {
+              path: "src/example.ts",
+              line: 1,
+              severity: "high" as const,
+              title: "Guard the value",
+              body: "The upstream value can be empty.",
+            },
+          ],
         };
       }),
   });
@@ -133,7 +134,7 @@ it.effect("reviews a PR with the separate review agent before posting validated 
       const result = yield* server
         .callTool({
           name: "review_pull_request",
-          arguments: { repository: "owner/repo", number: 7 },
+          arguments: { repository: "owner/repo", number: 7, focus: "security", effort: "quick" },
         })
         .pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, {
@@ -147,9 +148,15 @@ it.effect("reviews a PR with the separate review agent before posting validated 
       expect(result.structuredContent).toMatchObject({ submittedComments: 1, skippedComments: 0 });
       expect(reviewCalls).toHaveLength(1);
       expect(reviewCalls[0]?.cwd).toBe("C:/workspace");
-      expect(reviewCalls[0]?.prompt).toContain("diff --git a/src/example.ts b/src/example.ts");
-      expect(reviewCalls[0]?.prompt).toContain("const value = 1;");
-      expect(reviewCalls[0]?.systemPrompt).toContain("independent, one-shot code review agent");
+      expect(reviewCalls[0]?.context.diff).toContain(
+        "diff --git a/src/example.ts b/src/example.ts",
+      );
+      expect(reviewCalls[0]?.context.diff).toContain("const value = 1;");
+      expect(reviewCalls[0]?.focus).toBe("security");
+      expect(reviewCalls[0]?.effort).toBe("quick");
+      expect(result.structuredContent).toMatchObject({
+        summary: expect.stringContaining("Bugs (1)"),
+      });
       const postCall = calls.find((call) => call.args[0] === "api");
       expect(postCall?.command).toBe("gh");
       expect(postCall?.cwd).toBe("C:/workspace");

@@ -17,6 +17,8 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import { ExternalMcpToolkitHandlersLive } from "./toolkits/externalMcpHandlers.ts";
+import { ExternalMcpToolkit } from "./toolkits/externalMcpTools.ts";
 import { PluginToolkitHandlersLive } from "./toolkits/plugins/handlers.ts";
 import { PluginToolkit } from "./toolkits/plugins/tools.ts";
 import { reviewPullRequest } from "./toolkits/pullRequestReview/handlers.ts";
@@ -30,6 +32,8 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { HtmlRenderToolkit, HtmlRenderToolkitHandlersLive } from "./toolkits/htmlRender.ts";
+import { registerThreadTools } from "./toolkits/threads/handlers.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -292,8 +296,21 @@ export const PullRequestReviewToolkitRegistrationLive = Layer.effectDiscard(
   registerPullRequestReview(),
 );
 
+const ExternalMcpToolkitRegistrationLive = McpServer.toolkit(ExternalMcpToolkit).pipe(
+  Layer.provide(ExternalMcpToolkitHandlersLive),
+);
+
+const HtmlRenderToolkitRegistrationLive = McpServer.toolkit(HtmlRenderToolkit).pipe(
+  Layer.provide(HtmlRenderToolkitHandlersLive),
+);
+
+export const ThreadToolkitRegistrationLive = Layer.effectDiscard(registerThreadTools());
+
 const ToolkitRegistrationLive = Layer.mergeAll(
+  ThreadToolkitRegistrationLive,
   PreviewToolkitRegistrationLive,
+  HtmlRenderToolkitRegistrationLive,
+  ExternalMcpToolkitRegistrationLive,
   PluginToolkitRegistrationLive,
   PullRequestReviewToolkitRegistrationLive,
 );

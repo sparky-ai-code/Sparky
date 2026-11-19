@@ -339,6 +339,10 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
+    checkMcpServers: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:check-mcp-servers",
+      tag: WS_METHODS.serverCheckMcpServers,
+    }),
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,

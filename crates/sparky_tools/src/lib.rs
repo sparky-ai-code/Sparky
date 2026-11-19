@@ -13,7 +13,7 @@ pub mod tool;
 pub mod web_search;
 pub mod write;
 
-pub use bash::BashTool;
+pub use bash::{BashMonitorTool, BashTool, CommandMonitor};
 pub use edit::EditTool;
 pub use find::FindTool;
 pub use grep::GrepTool;

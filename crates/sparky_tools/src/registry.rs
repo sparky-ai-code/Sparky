@@ -1,4 +1,4 @@
-use crate::bash::BashTool;
+use crate::bash::{BashMonitorTool, BashTool};
 use crate::edit::EditTool;
 use crate::find::FindTool;
 use crate::grep::GrepTool;
@@ -11,7 +11,7 @@ use crate::web_search::WebSearchTool;
 use crate::write::WriteTool;
 use sparky_ai::ToolParamSchema;
 use sparky_config::ToolOutputLimits;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub fn is_hidden_control_tool(name: &str) -> bool {
@@ -22,6 +22,7 @@ pub fn is_hidden_control_tool(name: &str) -> bool {
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
     plan_tools: HashMap<String, Arc<dyn Tool>>,
+    trusted_builtin_tools: HashSet<String>,
 }
 
 impl ToolRegistry {
@@ -65,7 +66,9 @@ impl ToolRegistry {
         reg.register_builtin(Arc::new(ReadTool::new(limits.read_bytes)));
         reg.register_builtin(Arc::new(WriteTool));
         reg.register_builtin(Arc::new(EditTool));
-        reg.register_builtin(Arc::new(BashTool::new(limits.bash_bytes)));
+        let bash = BashTool::new(limits.bash_bytes);
+        reg.register_builtin(Arc::new(BashMonitorTool::new(bash.monitor())));
+        reg.register_builtin(Arc::new(bash));
         reg.register_builtin(Arc::new(LsTool));
         reg.register_builtin(Arc::new(GrepTool));
         reg.register_builtin(Arc::new(WebSearchTool));
@@ -77,12 +80,21 @@ impl ToolRegistry {
     }
 
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
-        self.tools.insert(tool.name().to_string(), tool);
+        let name = tool.name().to_string();
+        // External MCP/extension tools can collide with a builtin name.
+        // They must not inherit the builtin's read-only trust classification.
+        self.trusted_builtin_tools.remove(&name);
+        self.tools.insert(name, tool);
+    }
+
+    pub fn is_trusted_builtin(&self, name: &str) -> bool {
+        self.trusted_builtin_tools.contains(name)
     }
 
     fn register_builtin(&mut self, tool: Arc<dyn Tool>) {
         let name = tool.name().to_string();
         self.tools.insert(name.clone(), tool.clone());
+        self.trusted_builtin_tools.insert(name.clone());
         if Self::PLAN_TOOL_NAMES.contains(&name.as_str()) {
             self.plan_tools.insert(name, tool);
         }
@@ -154,6 +166,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn externally_registered_name_collisions_lose_native_trust() {
+        let mut registry = ToolRegistry::new();
+        assert!(registry.is_trusted_builtin("read"));
+        assert!(registry.is_trusted_builtin("write"));
+
+        let colliding_tool = registry.get("read").unwrap();
+        registry.register(colliding_tool);
+
+        assert!(!registry.is_trusted_builtin("read"));
+        assert!(registry.is_trusted_builtin("write"));
+        assert!(!registry.is_trusted_builtin("unknown_mcp_tool"));
+    }
+
+    #[test]
     fn project_free_registry_excludes_workspace_tools() {
         let registry = ToolRegistry::with_project_free(ToolOutputLimits::default());
 
@@ -210,6 +236,7 @@ mod tests {
 
         assert!(registry.get("update_plan").is_some());
         assert!(registry.get_for_mode("update_plan", false).is_none());
+        assert!(registry.get_for_mode("bash_monitor", false).is_some());
     }
 
     #[tokio::test]

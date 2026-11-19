@@ -96,6 +96,30 @@ describe("Sparky reconnect classification", () => {
 });
 
 describe("makeSparkyStreamDecoder", () => {
+  it("streams actionable permission requests to the chat without terminating the turn", () => {
+    const requests: unknown[] = [];
+    const decoder = makeSparkyStreamDecoder({
+      onApprovalRequested: (event) => requests.push(event),
+    });
+    decoder.push('{"type":"approval.requested","requestId":"req-1","toolCallId":"call-1",');
+    decoder.push('"toolName":"bash","arguments":{"command":"echo hello"}}\n');
+    expect(requests).toEqual([{
+      requestId: "req-1",
+      toolCallId: "call-1",
+      toolName: "bash",
+      arguments: { command: "echo hello" },
+    }]);
+    decoder.push('{"type":"result","response":"Denied"}\n');
+    expect(decoder.finish()).toEqual({ response: "Denied" });
+  });
+
+  it("rejects malformed permission request frames instead of silently ignoring them", () => {
+    const decoder = makeSparkyStreamDecoder();
+    decoder.push('{"type":"approval.requested","toolName":"bash"}\n');
+    decoder.push('{"type":"result","response":"Done"}\n');
+    expect(() => decoder.finish()).toThrow();
+  });
+
   it("allows the result callback to finish the decoder synchronously", () => {
     let finished: unknown;
     let decoder: ReturnType<typeof makeSparkyStreamDecoder>;
@@ -207,6 +231,36 @@ describe("makeSparkyStreamDecoder", () => {
     expect(decoder.finish()).toEqual({ response: "Done" });
   });
 
+  it("keeps backgrounded command tools active for inactivity checks without blocking turn completion", () => {
+    const initialTurn = makeSparkyStreamDecoder();
+    initialTurn.push(
+      '{"type":"tool.started","toolCallId":"bash-1","toolName":"bash","arguments":{}}\n' +
+        '{"type":"tool.backgrounded","toolCallId":"bash-1","toolName":"bash","jobId":"cmd-1"}\n' +
+        '{"type":"result","response":"Continuing work"}\n',
+    );
+    expect(initialTurn.hasOpenTools()).toBe(true);
+    expect(initialTurn.finish()).toEqual({ response: "Continuing work" });
+
+    const completed: unknown[] = [];
+    const laterTurn = makeSparkyStreamDecoder({
+      onToolCompleted: (event) => completed.push(event),
+    });
+    laterTurn.push(
+      '{"type":"tool.completed","toolCallId":"bash-1","toolName":"bash",' +
+        '"output":"command output","isError":false}\n' +
+        '{"type":"result","response":"Command finished"}\n',
+    );
+    expect(completed).toEqual([
+      {
+        toolCallId: "bash-1",
+        toolName: "bash",
+        output: "command output",
+        isError: false,
+      },
+    ]);
+    expect(laterTurn.finish()).toEqual({ response: "Command finished" });
+  });
+
   it("forwards real token usage events to the desktop context meter", () => {
     const usage: unknown[] = [];
     const decoder = makeSparkyStreamDecoder({ onUsage: (value) => usage.push(value) });
@@ -295,6 +349,18 @@ describe("makeSparkyStreamDecoder", () => {
 });
 
 describe("sparkyToolPresentation", () => {
+  it("presents bash monitor calls like normal terminal calls", () => {
+    expect(sparkyToolPresentation("bash_monitor", { command_id: "cmd-123" })).toEqual({
+      itemType: "command_execution",
+      title: "Terminal",
+      data: {
+        kind: "execute",
+        toolName: "bash_monitor",
+        rawInput: { command_id: "cmd-123" },
+      },
+    });
+  });
+
   it("gives browser MCP tools readable titles and an MCP lifecycle type", () => {
     expect(sparkyToolPresentation("preview_evaluate", { expression: "document.title" })).toEqual({
       itemType: "mcp_tool_call",
@@ -496,6 +562,18 @@ describe("Sparky session continuity", () => {
     expect(args).toContain("--prompt-stdin");
     expect(args).not.toContain(prompt);
     expect(args.at(args.indexOf("--effort") + 1)).toBe("xhigh");
+  });
+
+  it("passes the access policy independently of build/plan mode", () => {
+    const args = makeSparkyProcessArgs({
+      cwd: "C:\\workspace",
+      prompt: "Update the files",
+      model: "openai/gpt-4o",
+      interactionMode: "default",
+      runtimeMode: "approval-required",
+    });
+    expect(args.at(args.indexOf("--interaction-mode") + 1)).toBe("build");
+    expect(args.at(args.indexOf("--runtime-mode") + 1)).toBe("approval-required");
   });
 
   it("forwards provider-selected context windows and Plan mode", () => {

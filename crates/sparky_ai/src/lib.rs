@@ -5,6 +5,7 @@ pub mod formatting;
 pub mod gemini;
 pub mod openai;
 pub mod provider;
+mod request_body;
 pub mod retry;
 mod stream_parser;
 pub mod types;

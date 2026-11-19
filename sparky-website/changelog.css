@@ -1,0 +1,32 @@
+.site-header [aria-current="page"]{text-decoration:underline;text-underline-offset:8px}
+.changelog{max-width:1080px}
+.cl-intro{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:start;padding:90px 0 72px;border-bottom:1px solid var(--line)}
+.cl-intro h1{font-size:clamp(44px,5vw,68px)}
+.cl-intro p{color:var(--muted);font-size:17px;line-height:1.65}
+.cl-intro .text-link{margin-top:18px}
+.cl-entry{display:grid;grid-template-columns:180px minmax(0,1fr);gap:48px;padding:44px 0 52px;border-bottom:1px solid var(--line);scroll-margin-top:30px}
+.cl-meta{display:flex;flex-direction:column;align-items:flex-start;gap:13px;padding-top:5px;font-size:13px;font-variant-numeric:tabular-nums}
+.cl-version{font-size:22px;font-weight:500;letter-spacing:-.025em}
+.cl-version:hover{text-decoration:underline}
+.cl-date{color:var(--muted)}
+.cl-body{min-width:0;max-width:72ch;color:var(--muted);font-size:16px;line-height:1.75;overflow-wrap:anywhere}
+.cl-body h2{margin:0 0 24px;color:var(--ink);font-size:clamp(25px,2.7vw,34px);line-height:1.25;letter-spacing:-.025em;text-wrap:pretty}
+.cl-body h3{color:var(--ink);font-size:18px;font-weight:500;margin:28px 0 10px}
+.cl-body p{margin:12px 0}
+.cl-body ul{margin:20px 0 0;padding-left:20px}
+.cl-body li{padding-left:6px;margin:10px 0}
+.cl-body li::marker{color:var(--muted)}
+.cl-notice{color:var(--muted);line-height:1.7;padding-block:20px}
+.cl-notice a{text-decoration:underline}
+.cl-end{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:38px 0;color:var(--muted);font-size:15px}
+.cl-end .text-link{margin:0}
+@media(max-width:760px){
+  .cl-intro{grid-template-columns:1fr;gap:24px;padding:52px 0 36px}
+  .cl-intro p{font-size:16px}
+  .cl-entry{grid-template-columns:1fr;gap:22px;padding:32px 0 38px}
+  .cl-meta{flex-direction:row;flex-wrap:wrap;align-items:center;gap:12px 16px;padding:0}
+  .cl-version{font-size:19px}
+  .cl-body{font-size:15px}
+  .cl-body h2{margin-bottom:20px}
+  .cl-end{align-items:flex-start;flex-direction:column;gap:14px;padding-block:30px}
+}

@@ -215,6 +215,11 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       {
         onExpectedFailure: (cause) => setStreamError(Cause.squash(cause)),
         retryExpectedFailureAfter: "250 millis",
+        // Recover the sidebar even if only its own stream fails or completes;
+        // neither event necessarily closes the shared RPC WebSocket.
+        onTransportFailure: (cause) => setStreamError(Cause.squash(cause)),
+        retryTransportFailureAfter: "1 second",
+        retryUnexpectedCompletionAfter: "1 second",
         resubscribe: foregroundResubscriptions,
       },
     ).pipe(Stream.runForEach(applyItem)),

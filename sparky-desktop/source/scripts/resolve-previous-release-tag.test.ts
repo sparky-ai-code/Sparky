@@ -54,6 +54,20 @@ it.effect("selects the latest earlier stable tag and ignores nightlies", () =>
   }),
 );
 
+it.effect("selects the latest earlier beta tag and ignores stable and nightly tags", () =>
+  Effect.gen(function* () {
+    const previous = yield* resolvePreviousReleaseTag("beta", "v1.2.0-beta.3", [
+      "v1.2.0-beta.1",
+      "v1.2.0-beta.2",
+      "v1.2.0-beta.4",
+      "v1.2.0",
+      "v1.2.0-nightly.20260620.1",
+    ]);
+
+    assert.equal(previous, "v1.2.0-beta.2");
+  }),
+);
+
 it.effect("accepts legacy nightly tags when selecting the previous nightly", () =>
   Effect.gen(function* () {
     const previous = yield* resolvePreviousReleaseTag("nightly", "v1.2.0-nightly.20260620.2", [

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#101310" />
+  <meta name="description" content="Private Sparky operations dashboard." />
+  <title>Sparky Admin</title>
+  <link rel="icon" href="assets/sparky-favicon.png?v=5" type="image/png" sizes="256x256" />
+  <link rel="preload" href="assets/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <main class="admin-shell">
+    <header class="admin-header">
+      <a class="admin-brand" href="index.html" aria-label="Back to Sparky home">
+        <img src="assets/sparky-symbol.png" alt="" width="34" height="34" />
+        <span>Sparky <b>/ Admin</b></span>
+      </a>
+      <div class="header-actions">
+        <span id="connection-status" class="status-pill status-pending">Connecting…</span>
+        <button id="sign-out" class="button button-quiet" type="button" hidden>Sign out</button>
+      </div>
+    </header>
+
+    <section id="auth-state" class="auth-card" aria-live="polite">
+      <div class="eyebrow">Private operations console</div>
+      <h2>Keep an eye on the work.</h2>
+      <p>Sign in with the administrator account to view analytics, release activity, and recent events from the live Convex deployment.</p>
+      <button id="sign-in" class="button" type="button" disabled>Loading sign-in…</button>
+      <p id="auth-message" class="fine-print">Your data stays in Convex. This page only reads the existing dashboard queries.</p>
+    </section>
+
+    <section id="dashboard" hidden>
+      <div class="dashboard-heading">
+        <div>
+          <div class="eyebrow">Live analytics</div>
+          <h1>Operations overview</h1>
+          <p id="last-updated" class="muted">Waiting for the first refresh.</p>
+        </div>
+        <button id="refresh" class="button button-quiet" type="button">Refresh data</button>
+      </div>
+
+      <div id="error-banner" class="error-banner" role="alert" hidden></div>
+      <div id="metric-grid" class="metric-grid" aria-label="Analytics totals"></div>
+
+      <div class="content-grid">
+        <section class="panel panel-wide">
+          <div class="panel-heading"><div><div class="eyebrow">Last 30 days</div><h2>Daily activity</h2></div><span class="panel-note">UTC</span></div>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Visitors</th><th>Sessions</th><th>Page views</th><th>Downloads</th><th>App launches</th><th>Model requests</th></tr></thead><tbody id="daily-rows"></tbody></table></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading"><div><div class="eyebrow">Acquisition</div><h2>Downloads</h2></div></div>
+          <div id="download-breakdown" class="breakdown-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading"><div><div class="eyebrow">Audience</div><h2>Environment</h2></div></div>
+          <div id="environment-breakdown" class="breakdown-list"></div>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="panel-heading"><div><div class="eyebrow">Event stream</div><h2>Recent activity</h2></div><span class="panel-note">Latest 24</span></div>
+          <div class="table-wrap"><table class="events-table"><thead><tr><th>Time</th><th>Event</th><th>Source</th><th>Context</th><th>Outcome</th><th>Usage</th></tr></thead><tbody id="event-rows"></tbody></table></div>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="panel-heading"><div><div class="eyebrow">Release operations</div><h2>Release catalog</h2></div><span class="panel-note">Read-only</span></div>
+          <div class="table-wrap"><table><thead><tr><th>Version</th><th>Channel</th><th>Status</th><th>Created</th><th>Published</th><th>Files</th></tr></thead><tbody id="release-rows"></tbody></table></div>
+        </section>
+      </div>
+    </section>
+
+    <footer class="admin-footer"><span>Protected by Clerk · data served by Convex</span><a href="index.html">Return to Sparky</a></footer>
+  </main>
+  <script type="module" src="admin.js"></script>
+</body>
+</html>

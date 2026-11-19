@@ -1000,7 +1000,7 @@ it.effect("fails requests assigned to the stream that is replaced", () =>
         providerInstanceId: scope.providerInstanceId,
         clientId: "client-1",
         requestId: "preview-0",
-        timeoutMs: 15_000,
+        timeoutMs: 60_000,
       });
     }),
   ),

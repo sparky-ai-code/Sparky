@@ -42,47 +42,60 @@ const previewSessionSyncAtom = Atom.family((threadKey: string) => {
   return Atom.make((get) => {
     let disposed = false;
     let recoveryId = 0;
-    let recoveringUrl: string | null = null;
+    let recoveringSessionsKey: string | null = null;
     let sessionsVersion = 0;
     let eventsVersion = 0;
 
     const reconcileSessions = (result: Atom.Type<typeof sessionsAtom>) => {
       if (!AsyncResult.isSuccess(result)) return;
+      if (recoveringSessionsKey !== null && result.value.sessions.length > 0) return;
       if (result.value.sessions.length > 0) {
-        recoveringUrl = null;
+        recoveringSessionsKey = null;
         recoveryId += 1;
         reconcilePreviewServerSessions(threadRef, result.value.sessions);
         return;
       }
 
-      const localSnapshot = readThreadPreviewState(threadRef).snapshot;
-      const recoverableUrl =
-        localSnapshot && localSnapshot.navStatus._tag !== "Idle"
-          ? localSnapshot.navStatus.url
-          : null;
-      if (!recoverableUrl) {
-        applyPreviewServerSnapshot(threadRef, null);
+      const previousSessions = Object.values(readThreadPreviewState(threadRef).sessions).toSorted(
+        (left, right) => left.updatedAt.localeCompare(right.updatedAt),
+      );
+      if (previousSessions.length === 0) {
+        reconcilePreviewServerSessions(threadRef, []);
         return;
       }
-      if (recoveringUrl === recoverableUrl) return;
+      const sessionUrlsKey = previousSessions
+        .map((session) =>
+          session.navStatus._tag === "Idle"
+            ? `${session.tabId}:`
+            : `${session.tabId}:${session.navStatus.url}`,
+        )
+        .join("|");
+      if (recoveringSessionsKey === sessionUrlsKey) return;
 
-      recoveringUrl = recoverableUrl;
+      recoveringSessionsKey = sessionUrlsKey;
       const currentRecoveryId = ++recoveryId;
-      void runAtomCommand(
-        get.registry,
-        previewEnvironment.open,
-        {
-          environmentId: threadRef.environmentId,
-          input: { threadId: threadRef.threadId, url: recoverableUrl },
-        },
-        { reportDefect: false, reportFailure: false },
-      ).then((openResult) => {
+      void (async () => {
+        for (const session of previousSessions) {
+          if (disposed || currentRecoveryId !== recoveryId) return;
+          const result = await runAtomCommand(
+            get.registry,
+            previewEnvironment.open,
+            {
+              environmentId: threadRef.environmentId,
+              input: {
+                threadId: threadRef.threadId,
+                ...(session.navStatus._tag === "Idle" ? {} : { url: session.navStatus.url }),
+              },
+            },
+            { reportDefect: false, reportFailure: false },
+          );
+          if (disposed || currentRecoveryId !== recoveryId) return;
+          if (result._tag === "Success") applyPreviewServerSnapshot(threadRef, result.value);
+        }
         if (disposed || currentRecoveryId !== recoveryId) return;
-        recoveringUrl = null;
-        if (openResult._tag === "Failure") return;
-        applyPreviewServerSnapshot(threadRef, openResult.value);
+        recoveringSessionsKey = null;
         get.refresh(sessionsAtom);
-      });
+      })();
     };
 
     const applyLatestEvent = (result: Atom.Type<typeof eventsAtom>) => {

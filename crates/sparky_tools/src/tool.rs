@@ -12,6 +12,8 @@ pub enum ToolExecutionMode {
 pub struct ToolExecutionResult {
     pub output: String,
     pub is_error: bool,
+    pub background_job_id: Option<String>,
+    pub completed_background_job_id: Option<String>,
 }
 
 impl ToolExecutionResult {
@@ -19,6 +21,8 @@ impl ToolExecutionResult {
         Self {
             output: output.into(),
             is_error: false,
+            background_job_id: None,
+            completed_background_job_id: None,
         }
     }
 
@@ -26,7 +30,19 @@ impl ToolExecutionResult {
         Self {
             output: error.into(),
             is_error: true,
+            background_job_id: None,
+            completed_background_job_id: None,
         }
+    }
+
+    pub fn background_started(mut self, job_id: impl Into<String>) -> Self {
+        self.background_job_id = Some(job_id.into());
+        self
+    }
+
+    pub fn background_completed(mut self, job_id: impl Into<String>) -> Self {
+        self.completed_background_job_id = Some(job_id.into());
+        self
     }
 }
 

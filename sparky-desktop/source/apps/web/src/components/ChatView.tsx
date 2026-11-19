@@ -1231,8 +1231,11 @@ function ChatViewContent(props: ChatViewProps) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
+  const [steeredMessageIds, setSteeredMessageIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [steeringStartedAt, setSteeringStartedAt] = useState<string | null>(null);
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
   optimisticUserMessagesRef.current = optimisticUserMessages;
+  const optimisticUserMessageThreadIdsRef = useRef(new Map<string, string>());
   const [localDraftErrorsByDraftId, setLocalDraftErrorsByDraftId] = useState<
     Record<string, LocalThreadErrorEntry>
   >({});
@@ -2021,11 +2024,17 @@ function ChatViewContent(props: ChatViewProps) {
     threadError,
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
-  const activeWorkStartedAt = deriveActiveWorkStartedAt(
-    activeLatestTurn,
-    activeThread?.session ?? null,
-    localDispatchStartedAt,
-  );
+  const activeWorkStartedAt =
+    phase === "running" && steeringStartedAt !== null
+      ? steeringStartedAt
+      : deriveActiveWorkStartedAt(
+          activeLatestTurn,
+          activeThread?.session ?? null,
+          localDispatchStartedAt,
+        );
+  useEffect(() => {
+    if (phase !== "running") setSteeringStartedAt(null);
+  }, [phase]);
   const notificationTurnStatesRef = useRef(
     new Map<
       string,
@@ -2177,17 +2186,18 @@ function ChatViewContent(props: ChatViewProps) {
     if (!serverMessages) return [];
     return serverMessages.map((message) => {
       if (!message.attachments || message.attachments.length === 0) {
-        return message;
+        return steeredMessageIds.has(String(message.id)) ? { ...message, isSteered: true } : message;
       }
       return {
         ...message,
+        ...(steeredMessageIds.has(String(message.id)) ? { isSteered: true } : {}),
         attachments: message.attachments.map((attachment) => {
           const previewUrl = serverAttachmentUrlById.get(attachment.id);
           return previewUrl ? { ...attachment, previewUrl } : attachment;
         }),
       };
     });
-  }, [serverAttachmentUrlById, serverMessages]);
+  }, [serverAttachmentUrlById, serverMessages, steeredMessageIds]);
   useEffect(() => {
     if (typeof Image === "undefined" || displayServerMessages.length === 0) {
       return;
@@ -2318,12 +2328,21 @@ function ChatViewContent(props: ChatViewProps) {
       return serverMessagesWithPreviewHandoff;
     }
     const serverIds = new Set(serverMessagesWithPreviewHandoff.map((message) => message.id));
-    const pendingMessages = optimisticUserMessages.filter((message) => !serverIds.has(message.id));
+    const pendingMessages = optimisticUserMessages.filter(
+      (message) =>
+        !serverIds.has(message.id) &&
+        optimisticUserMessageThreadIdsRef.current.get(message.id) === activeThread?.id,
+    );
     if (pendingMessages.length === 0) {
       return serverMessagesWithPreviewHandoff;
     }
     return [...serverMessagesWithPreviewHandoff, ...pendingMessages];
-  }, [attachmentPreviewHandoffByMessageId, displayServerMessages, optimisticUserMessages]);
+  }, [
+    activeThread?.id,
+    attachmentPreviewHandoffByMessageId,
+    displayServerMessages,
+    optimisticUserMessages,
+  ]);
   const timelineEntries = useMemo(
     () =>
       deriveTimelineEntries(timelineMessages, activeThread?.proposedPlans ?? [], workLogEntries),
@@ -3940,6 +3959,7 @@ function ChatViewContent(props: ChatViewProps) {
       );
     }, 0);
     for (const removedMessage of removedMessages) {
+      optimisticUserMessageThreadIdsRef.current.delete(removedMessage.id);
       const previewUrls = collectUserMessageBlobPreviewUrls(removedMessage);
       if (previewUrls.length > 0) {
         handoffAttachmentPreviews(removedMessage.id, previewUrls);
@@ -3953,12 +3973,6 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThread?.id, activeThread?.messages, handoffAttachmentPreviews, optimisticUserMessages]);
 
   useEffect(() => {
-    setOptimisticUserMessages((existing) => {
-      for (const message of existing) {
-        revokeUserMessagePreviewUrls(message);
-      }
-      return [];
-    });
     resetLocalDispatch();
     setExpandedImage(null);
   }, [draftId, resetLocalDispatch, threadId]);
@@ -4389,6 +4403,8 @@ function ChatViewContent(props: ChatViewProps) {
       const createdAt = new Date().toISOString();
       const demoUserMessageId = newMessageId();
       const demoAssistantMessageId = newMessageId();
+      optimisticUserMessageThreadIdsRef.current.set(demoUserMessageId, threadIdForSend);
+      optimisticUserMessageThreadIdsRef.current.set(demoAssistantMessageId, threadIdForSend);
       setOptimisticUserMessages((existing) => [
         ...existing,
         {
@@ -4479,6 +4495,11 @@ function ChatViewContent(props: ChatViewProps) {
     );
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
+    const steeringThisMessage = phase === "running";
+    if (steeringThisMessage) {
+      setSteeredMessageIds((existing) => new Set(existing).add(String(messageIdForSend)));
+      setSteeringStartedAt(messageCreatedAt);
+    }
     const outgoingMessageText = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
@@ -4517,12 +4538,14 @@ function ChatViewContent(props: ChatViewProps) {
       threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
       messageId: messageIdForSend,
     });
+    optimisticUserMessageThreadIdsRef.current.set(messageIdForSend, threadIdForSend);
     setOptimisticUserMessages((existing) => [
       ...existing,
       {
         id: messageIdForSend,
         role: "user",
         text: outgoingMessageText,
+        ...(steeringThisMessage ? { isSteered: true } : {}),
         ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
         turnId: null,
         createdAt: messageCreatedAt,
@@ -4575,32 +4598,32 @@ function ChatViewContent(props: ChatViewProps) {
     );
 
     let failure: AtomCommandResult<unknown, unknown> | null = null;
-    // Auto-title from first message
+    const threadPreparation: Array<Promise<AtomCommandResult<unknown, unknown>>> = [];
+    // These writes are independent; wait for both without serializing network/RPC latency.
     if (isFirstMessage && isServerThread) {
-      const titleResult = await updateThreadMetadata({
-        environmentId,
-        input: {
+      threadPreparation.push(
+        updateThreadMetadata({
+          environmentId,
+          input: {
+            threadId: threadIdForSend,
+            title,
+          },
+        }),
+      );
+    }
+    if (isServerThread) {
+      threadPreparation.push(
+        persistThreadSettingsForNextTurn({
           threadId: threadIdForSend,
-          title,
-        },
-      });
-      if (titleResult._tag === "Failure") {
-        failure = titleResult;
-      }
+          createdAt: messageCreatedAt,
+          ...(ctxSelectedModel ? { modelSelection: ctxSelectedModelSelection } : {}),
+          runtimeMode,
+          interactionMode,
+        }),
+      );
     }
-
-    if (failure === null && isServerThread) {
-      const settingsResult = await persistThreadSettingsForNextTurn({
-        threadId: threadIdForSend,
-        createdAt: messageCreatedAt,
-        ...(ctxSelectedModel ? { modelSelection: ctxSelectedModelSelection } : {}),
-        runtimeMode,
-        interactionMode,
-      });
-      if (settingsResult._tag === "Failure") {
-        failure = settingsResult;
-      }
-    }
+    const preparationResults = await Promise.all(threadPreparation);
+    failure = preparationResults.find((result) => result._tag === "Failure") ?? null;
 
     const turnAttachmentsResult = await settlePromise(() => turnAttachmentsPromise);
     if (failure === null && turnAttachmentsResult._tag === "Failure") {
@@ -4677,6 +4700,7 @@ function ChatViewContent(props: ChatViewProps) {
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
           .length ?? 0) === 0
       ) {
+        optimisticUserMessageThreadIdsRef.current.delete(messageIdForSend);
         setOptimisticUserMessages((existing) => {
           const removed = existing.filter((message) => message.id === messageIdForSend);
           for (const message of removed) {
@@ -5774,11 +5798,15 @@ function ChatViewContent(props: ChatViewProps) {
                           onChangeActivePendingUserInputCustomAnswer
                         }
                         onProviderModelSelect={onProviderModelSelect}
-                        onRefreshModelCatalog={
-                          routeKind === "server"
-                            ? (instanceId) => refreshServerProviders({ instanceId })
-                            : undefined
-                        }
+                        {...(routeKind === "server"
+                          ? {
+                              onRefreshModelCatalog: (instanceId: ProviderInstanceId) =>
+                                refreshServerProviders({
+                                  environmentId,
+                                  input: { instanceId },
+                                }),
+                            }
+                          : {})}
                         getModelDisabledReason={getModelDisabledReason}
                         toggleInteractionMode={toggleInteractionMode}
                         handleRuntimeModeChange={handleRuntimeModeChange}

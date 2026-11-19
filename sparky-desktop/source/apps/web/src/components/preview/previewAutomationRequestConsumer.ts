@@ -14,6 +14,8 @@ import {
 
 type AutomationStreamResult<E> = AsyncResult.AsyncResult<PreviewAutomationStreamEvent, E>;
 
+const MAX_HANDLED_REQUESTS = 1024;
+
 export function serializePreviewAutomationError(
   error: unknown,
   context: PreviewAutomationOperationContext,
@@ -31,9 +33,14 @@ export function createPreviewAutomationRequestConsumerAtom<E>(options: {
   readonly requestHandlerAtom: Atom.Atom<{
     readonly handle: (request: PreviewAutomationRequest) => Promise<unknown>;
   }>;
+  /** Shared by successive consumer mounts for the same desktop automation host. */
+  readonly processedRequestIds?: Set<string>;
   readonly respond: (response: PreviewAutomationResponse) => Promise<unknown>;
   readonly label: string;
 }): Atom.Atom<void> {
+  // Replayable AsyncResult subscriptions may deliver one request repeatedly.
+  // Record it before invoking the handler, including while the first is pending.
+  const processedRequestIds = options.processedRequestIds ?? new Set<string>();
   return Atom.make((get) => {
     get.mount(options.connectionAtom);
     get.mount(options.requestHandlerAtom);
@@ -63,6 +70,13 @@ export function createPreviewAutomationRequestConsumerAtom<E>(options: {
         return;
       }
       const request = event.request;
+      const key = `${event.connectionId}\u0000${request.requestId}`;
+      if (processedRequestIds.has(key)) return;
+      processedRequestIds.add(key);
+      if (processedRequestIds.size > MAX_HANDLED_REQUESTS) {
+        const oldest = processedRequestIds.values().next().value;
+        if (oldest !== undefined) processedRequestIds.delete(oldest);
+      }
       void get
         .once(options.requestHandlerAtom)
         .handle(request)

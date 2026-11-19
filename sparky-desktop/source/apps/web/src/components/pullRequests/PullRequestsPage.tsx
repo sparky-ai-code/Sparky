@@ -43,21 +43,25 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import {
-  getPullRequestAddedLineMap,
-  parsePullRequestReviewOutput,
-  validatePullRequestReviewFindings,
-} from "@sparky/shared/pullRequestReview";
-import {
-  buildPullRequestReviewPrompt,
-  buildPullRequestReviewSystemPrompt,
-  findPullRequestReviewWorkspace,
-  splitPullRequestDiffForReview,
-} from "./pullRequestReview.ts";
+  Dialog,
+  DialogDescription,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../ui/dialog";
+import { findPullRequestReviewWorkspace } from "./pullRequestReview.ts";
 import {
   getPullRequestReviewProgressSnapshot,
   startPullRequestReviewProgress,
   subscribeToPullRequestReviewProgress,
 } from "./pullRequestReviewProgress.ts";
+import {
+  getPullRequestActionSnapshot,
+  startPullRequestAction,
+  subscribeToPullRequestActions,
+  type PullRequestAction,
+} from "./pullRequestActionProgress.ts";
 import {
   isGitHubAuthError,
   isTransientGitHubStatus,
@@ -66,7 +70,6 @@ import {
 
 type PullRequestScope = "all" | "authored";
 type PullRequestView = "summary" | "code";
-type PullRequestActionBusy = "merge" | "squash" | "close" | "review" | null;
 type GitHubBusyState = "checking" | "installing" | "auth" | "disconnect" | null;
 
 type GitHubCliStatus = {
@@ -451,6 +454,11 @@ export function PullRequestsPage() {
     getPullRequestReviewProgressSnapshot,
     getPullRequestReviewProgressSnapshot,
   );
+  const pullRequestActionSnapshot = useSyncExternalStore(
+    subscribeToPullRequestActions,
+    getPullRequestActionSnapshot,
+    getPullRequestActionSnapshot,
+  );
   const projectCwds = useMemo(
     () => [...new Set(projects.map((project) => project.workspaceRoot).filter(Boolean))],
     [projects],
@@ -502,6 +510,7 @@ export function PullRequestsPage() {
   );
   const [pullRequests, setPullRequests] = useState<GitHubPullRequest[]>(initialPullRequests);
   const [selectedNumber, setSelectedNumber] = useState<number | null>(initialSelectedNumber);
+  const currentListContextRef = useRef({ repository: selectedRepository, scope });
   const selectedPullRequestKeyRef = useRef<string | null>(
     selectedRepository && initialSelectedNumber !== null
       ? pullRequestCacheKey(selectedRepository, initialSelectedNumber)
@@ -528,8 +537,7 @@ export function PullRequestsPage() {
   const [comments, setComments] = useState<GitHubPullRequestComment[]>([]);
   const [commentsBusy, setCommentsBusy] = useState(false);
   const [commentsError, setCommentsError] = useState<string | null>(null);
-  const [pullRequestActionBusy, setPullRequestActionBusy] = useState<PullRequestActionBusy>(null);
-  const [pullRequestActionError, setPullRequestActionError] = useState<string | null>(null);
+  const [reviewSummaryOpen, setReviewSummaryOpen] = useState(false);
   const reviewProject = useMemo(
     () => findPullRequestReviewWorkspace(projects, primaryEnvironmentId),
     [primaryEnvironmentId, projects],
@@ -549,6 +557,9 @@ export function PullRequestsPage() {
   useEffect(() => {
     pageCache.selectedRepository = selectedRepository;
   }, [selectedRepository]);
+  useEffect(() => {
+    currentListContextRef.current = { repository: selectedRepository, scope };
+  }, [scope, selectedRepository]);
   useEffect(() => {
     selectedPullRequestKeyRef.current =
       selectedRepository && selectedNumber !== null
@@ -1036,82 +1047,93 @@ export function PullRequestsPage() {
   }, []);
 
   const handlePullRequestAction = useCallback(
-    async (action: "merge" | "squash" | "close") => {
+    (action: PullRequestAction) => {
       const bridge = getGitHubBridge();
+      const repository = selectedRepository;
       const currentPullRequest =
-        selectedPullRequest ?? pullRequests.find((pr) => pr.number === selectedNumber) ?? null;
+        pullRequests.find((pr) => pr.number === selectedNumber) ??
+        (selectedPullRequest?.number === selectedNumber ? selectedPullRequest : null);
       if (
         !bridge ||
-        !selectedRepository ||
+        !repository ||
         !currentPullRequest ||
-        pullRequestActionBusy !== null ||
-        pullRequestReviewSnapshot.activeKey !== null
-      )
-        return;
-      setPullRequestActionBusy(action);
-      setPullRequestActionError(null);
-      try {
-        const result = await bridge.updateGitHubPullRequest({
-          repository: selectedRepository,
-          number: currentPullRequest.number,
-          action,
-        });
+        currentPullRequest.state.toUpperCase() !== "OPEN" ||
+        (action !== "close" && currentPullRequest.isDraft)
+      ) return;
+
+      const number = currentPullRequest.number;
+      const key = pullRequestCacheKey(repository, number);
+      if (getPullRequestReviewProgressSnapshot().activeKeys.has(key)) return;
+
+      // Keyed state prevents duplicate actions on this PR without blocking others.
+      void startPullRequestAction(key, action, async () => {
+        const result = await bridge.updateGitHubPullRequest({ repository, number, action });
         if (result.error) throw new Error(result.error);
+
         const nextState = action === "close" ? "CLOSED" : "MERGED";
-        const updated = { ...currentPullRequest, state: nextState };
-        setSelectedPullRequest(updated);
+        const detail = pullRequestDetailCache.get(key) ?? currentPullRequest;
         setBoundedCache(
           pullRequestDetailCache,
-          pullRequestCacheKey(selectedRepository, updated.number),
-          updated,
+          key,
+          { ...detail, state: nextState },
           MAX_DETAIL_CACHE_ENTRIES,
         );
-        const key = listCacheKey(selectedRepository, scope);
-        const nextList = pullRequests.map((pr) => (pr.number === updated.number ? updated : pr));
-        pullRequestListCache.set(key, nextList);
-        setPullRequests(nextList);
-        void loadPullRequests(true);
-      } catch (cause) {
-        setPullRequestActionError(errorMessage(cause, `Could not ${action} pull request.`));
-      } finally {
-        setPullRequestActionBusy(null);
-      }
+        for (const cachedScope of ["all", "authored"] as const) {
+          const listKey = listCacheKey(repository, cachedScope);
+          const cachedList = pullRequestListCache.get(listKey);
+          if (cachedList) {
+            pullRequestListCache.set(
+              listKey,
+              cachedList.map((pr) => (pr.number === number ? { ...pr, state: nextState } : pr)),
+            );
+          }
+        }
+        if (currentListContextRef.current.repository === repository) {
+          setPullRequests((current) =>
+            current.map((pr) => (pr.number === number ? { ...pr, state: nextState } : pr)),
+          );
+        }
+        if (selectedPullRequestKeyRef.current === key) {
+          setSelectedPullRequest((current) =>
+            current?.number === number ? { ...current, state: nextState } : current,
+          );
+        }
+        // Never let an older action refresh a different repository or list scope.
+        if (
+          currentListContextRef.current.repository === repository &&
+          currentListContextRef.current.scope === scope
+        ) {
+          void loadPullRequests(true);
+        }
+      });
     },
-    [
-      loadPullRequests,
-      pullRequestActionBusy,
-      pullRequestReviewSnapshot.activeKey,
-      pullRequests,
-      scope,
-      selectedNumber,
-      selectedPullRequest,
-      selectedRepository,
-    ],
+    [loadPullRequests, pullRequests, scope, selectedNumber, selectedPullRequest, selectedRepository],
   );
 
   const handlePullRequestReview = useCallback(() => {
     const bridge = getGitHubBridge();
     const postGitHubPullRequestReview = bridge?.postGitHubPullRequestReview?.bind(bridge);
+    const repository = selectedRepository;
     const currentPullRequest =
-      selectedPullRequest ?? pullRequests.find((pr) => pr.number === selectedNumber) ?? null;
+      pullRequests.find((pr) => pr.number === selectedNumber) ??
+      (selectedPullRequest?.number === selectedNumber ? selectedPullRequest : null);
     if (
       !bridge ||
       !postGitHubPullRequestReview ||
-      !selectedRepository ||
+      !repository ||
       !currentPullRequest ||
       !reviewProject ||
-      pullRequestActionBusy !== null ||
-      pullRequestReviewSnapshot.activeKey !== null
-    ) {
-      return;
-    }
+      currentPullRequest.state.toUpperCase() !== "OPEN"
+    ) return;
 
-    const reviewKey = pullRequestCacheKey(selectedRepository, currentPullRequest.number);
-    const reviewTask = startPullRequestReviewProgress(reviewKey, async (report) => {
+    const reviewKey = pullRequestCacheKey(repository, currentPullRequest.number);
+    if (getPullRequestActionSnapshot().busyByKey.has(reviewKey)) return;
+
+    void startPullRequestReviewProgress(reviewKey, async (report) => {
       try {
         report("fetching", "Fetching the current pull-request diff from GitHub…");
         const diffResult = await bridge.getGitHubPullRequestDiff({
-          repository: selectedRepository,
+          repository,
           number: currentPullRequest.number,
         });
         if (diffResult.error) throw new Error(diffResult.error);
@@ -1131,176 +1153,82 @@ export function PullRequestsPage() {
           );
         }
 
-        const reviewChunks = splitPullRequestDiffForReview(diffResult.diff);
-        if (reviewChunks.length === 0) {
-          throw new Error(
-            "GitHub returned no reviewable changed-file hunks for this pull request.",
-          );
-        }
-
-        const findings: ReturnType<typeof parsePullRequestReviewOutput>["findings"][number][] = [];
-        const findingKeys = new Set<string>();
-        const summaries: string[] = [];
-        let generatedFindingCount = 0;
-        let skippedFindingCount = 0;
-        const reviewSystemPrompt = buildPullRequestReviewSystemPrompt({
-          focus: settings.pullRequestReviewFocus,
-          effort: settings.pullRequestReviewEffort,
-        });
-        const generateReviewResponse = async (reviewPrompt: string) => {
-          const generated = await reviewPullRequestCommand({
-            environmentId: reviewProject.environmentId,
-            input: {
-              cwd: reviewProject.workspaceRoot,
-              modelSelection: reviewModelSelection,
-              systemPrompt: reviewSystemPrompt,
-              prompt: reviewPrompt,
+        report("reviewing", "Reviewing the diff and validating bugs with your review settings…");
+        const generated = await reviewPullRequestCommand({
+          environmentId: reviewProject.environmentId,
+          input: {
+            cwd: reviewProject.workspaceRoot,
+            modelSelection: reviewModelSelection,
+            focus: settings.pullRequestReviewFocus,
+            effort: settings.pullRequestReviewEffort,
+            context: {
+              title: currentPullRequest.title,
+              body: currentPullRequest.body,
+              url: currentPullRequest.url,
+              baseBranch: currentPullRequest.baseRefName,
+              headBranch: currentPullRequest.headRefName,
+              diff: diffResult.diff,
             },
-          });
-          if (generated._tag === "Failure") {
-            if (isAtomCommandInterrupted(generated)) throw new Error("The review was interrupted.");
-            throw squashAtomCommandFailure(generated);
-          }
-          return generated.value.response;
-        };
-        for (const [index, diffChunk] of reviewChunks.entries()) {
-          const prompt = buildPullRequestReviewPrompt({
-            title: currentPullRequest.title,
-            body: currentPullRequest.body,
-            url: currentPullRequest.url,
-            baseBranch: currentPullRequest.baseRefName,
-            headBranch: currentPullRequest.headRefName,
-            diff: diffChunk,
-          });
-          report(
-            "reviewing",
-            `Reviewing GitHub change segment ${index + 1} of ${reviewChunks.length}…`,
-          );
-          let response = await generateReviewResponse(prompt);
-
-          report("validating", `Validating findings from change segment ${index + 1}…`);
-          const chunkAddedLines = getPullRequestAddedLineMap(diffChunk);
-          const chunkPaths = [...chunkAddedLines.keys()];
-          const onlyChunkPath = chunkPaths.length === 1 ? chunkPaths[0] : undefined;
-          const soleFileAddedLines = onlyChunkPath
-            ? [...(chunkAddedLines.get(onlyChunkPath) ?? [])]
-            : [];
-          const reviewOptions = {
-            ...(chunkPaths.length === 1 && chunkPaths[0] ? { pathFallback: chunkPaths[0] } : {}),
-            ...(soleFileAddedLines.length === 1 ? { lineFallback: soleFileAddedLines[0] } : {}),
-          };
-          let review: ReturnType<typeof parsePullRequestReviewOutput>;
-          try {
-            review = parsePullRequestReviewOutput(response, reviewOptions);
-          } catch (error) {
-            if (!(error instanceof Error)) throw error;
-            report("reviewing", `Requesting corrected review output for segment ${index + 1}…`);
-            response = await generateReviewResponse(
-              `${prompt}\n\nCorrection: A prior attempt failed review-output validation. Start over and return exactly one JSON object with a string summary and a findings array. Every finding must have the keys path, line, severity, title, and body; use only a positive integer line copied exactly from the allowed 1-based added-line anchors above. Omit any finding that cannot be anchored precisely. Return an empty findings array if there are no actionable defects. Do not use zero-based positions, line ranges, extra wrappers, or Markdown.`,
-            );
-            try {
-              review = parsePullRequestReviewOutput(response, reviewOptions);
-            } catch (retryError) {
-              throw new Error(
-                "The model did not return a readable review in the required format after a retry. No review was posted; try another model.",
-                { cause: retryError },
-              );
-            }
-          }
-          generatedFindingCount += review.findings.length;
-          summaries.push(review.summary);
-          const chunkValidation = validatePullRequestReviewFindings(review.findings, diffChunk);
-          skippedFindingCount += chunkValidation.skippedCount;
-          for (const finding of chunkValidation.findings) {
-            const key = `${finding.path}\0${finding.line}`;
-            if (findingKeys.has(key)) {
-              skippedFindingCount += 1;
-              continue;
-            }
-            findingKeys.add(key);
-            findings.push(finding);
-          }
-        }
-
-        const validated = validatePullRequestReviewFindings(findings, diffResult.diff);
-        if (generatedFindingCount === 0) {
-          throw new Error(
-            `The model returned no actionable findings across ${reviewChunks.length} GitHub change segment(s), so no review was posted. Try another model or broaden the review focus.`,
-          );
-        }
-        if (findings.length === 0 || validated.findings.length === 0) {
-          throw new Error(
-            `The model returned ${generatedFindingCount} finding(s), but none matched an added line in the current diff. No review was posted.`,
-          );
-        }
-        const summary =
-          reviewChunks.length === 1
-            ? (summaries[0] ?? "")
-            : `Reviewed ${reviewChunks.length} GitHub change segments; ${validated.findings.length} actionable finding(s) are listed below.`;
-        report(
-          "posting",
-          `Posting ${validated.findings.length} validated inline comment(s) to GitHub…`,
-        );
-        const posted = await postGitHubPullRequestReview({
-          repository: selectedRepository,
-          number: currentPullRequest.number,
-          expectedHeadSha: diffResult.headSha,
-          summary,
-          findings: [...validated.findings],
+          },
         });
-        if (posted.error) throw new Error(posted.error);
-
-        const skippedCount = skippedFindingCount + validated.skippedCount + posted.skippedComments;
-        const commentLabel =
-          posted.submittedComments === 1
-            ? "1 inline comment"
-            : `${posted.submittedComments} inline comments`;
-        const refreshedDetail = await bridge
-          .getGitHubPullRequest({
-            repository: selectedRepository,
-            number: currentPullRequest.number,
-          })
-          .catch(() => null);
-        if (refreshedDetail?.pullRequest) {
-          setBoundedCache(
-            pullRequestDetailCache,
-            reviewKey,
-            refreshedDetail.pullRequest,
-            MAX_DETAIL_CACHE_ENTRIES,
-          );
-          if (selectedPullRequestKeyRef.current === reviewKey) {
-            setSelectedPullRequest(refreshedDetail.pullRequest);
-          }
+        if (generated._tag === "Failure") {
+          if (isAtomCommandInterrupted(generated)) throw new Error("The review was interrupted.");
+          throw squashAtomCommandFailure(generated);
         }
+        const review = generated.value;
+        // Publish the authoritative bug report before posting. A GitHub failure must not hide it.
         report(
-          "success",
-          `Review posted with ${commentLabel}.${
-            skippedCount > 0
-              ? ` ${skippedCount} finding(s) were omitted because they were duplicates, exceeded GitHub's inline-comment limit, or did not match added lines.`
-              : ""
-          }`,
+          "validating",
+          "Review complete. Preparing validated inline comments…",
+          review.report,
         );
-        void loadPullRequests(true);
+        if (review.findings.length > 0) {
+          report(
+            "posting",
+            `Posting ${review.findings.length} validated bug comment(s) to GitHub…`,
+          );
+          const posted = await postGitHubPullRequestReview({
+            repository,
+            number: currentPullRequest.number,
+            expectedHeadSha: diffResult.headSha,
+            summary: review.summary,
+            findings: [...review.findings],
+          });
+          if (posted.error)
+            throw new Error(`Review complete, but comments were not posted: ${posted.error}`);
+          report(
+            "success",
+            `Review complete: ${review.findings.length} bug(s), ${posted.submittedComments} inline comment(s) posted.`,
+            `${review.report}\n\nGitHub: ${posted.submittedComments} inline comment(s) posted; ${posted.skippedComments} comment(s) omitted.`,
+          );
+          if (
+            currentListContextRef.current.repository === repository &&
+            currentListContextRef.current.scope === scope
+          ) {
+            void loadPullRequests(true);
+          }
+        } else {
+          report(
+            "success",
+            "Review complete with no actionable bugs. No empty review was posted.",
+            review.report,
+          );
+        }
       } catch (cause) {
         const message = errorMessage(cause, "Could not review this pull request.");
         if (isGitHubAuthError(message)) markAuthRequired(message);
         throw new Error(message, { cause });
       }
     });
-    if (!reviewTask) return;
 
-    setPullRequestActionBusy("review");
-    setPullRequestActionError(null);
-    void reviewTask.finally(() => setPullRequestActionBusy(null));
   }, [
     loadPullRequests,
     markAuthRequired,
-    pullRequestActionBusy,
-    pullRequestReviewSnapshot.activeKey,
     pullRequests,
     reviewModelSelection,
     reviewProject,
     reviewPullRequestCommand,
+    scope,
     selectedNumber,
     selectedPullRequest,
     selectedRepository,
@@ -1323,7 +1251,8 @@ export function PullRequestsPage() {
     selectedNumber === null
       ? null
       : (pullRequests.find((pr) => pr.number === selectedNumber) ?? null);
-  const displayedPullRequest = selectedPullRequest ?? selectedSummary;
+  const displayedPullRequest =
+    selectedPullRequest?.number === selectedNumber ? selectedPullRequest : selectedSummary;
   const displayedCommentsCount = displayedPullRequest
     ? displayedPullRequest.commentsCount + displayedPullRequest.reviewsCount
     : 0;
@@ -1331,11 +1260,18 @@ export function PullRequestsPage() {
     selectedRepository && displayedPullRequest
       ? pullRequestCacheKey(selectedRepository, displayedPullRequest.number)
       : null;
-  const reviewProgressForSelectedPullRequest = selectedReviewKey
+  const selectedReviewProgress = selectedReviewKey
     ? (pullRequestReviewSnapshot.progressByKey.get(selectedReviewKey) ?? null)
     : null;
-  const activePullRequestActionBusy =
-    pullRequestActionBusy ?? (pullRequestReviewSnapshot.activeKey !== null ? "review" : null);
+  const selectedActionBusy = selectedReviewKey
+    ? (pullRequestActionSnapshot.busyByKey.get(selectedReviewKey) ?? null)
+    : null;
+  const selectedActionBlocked =
+    selectedActionBusy !== null ||
+    (selectedReviewKey !== null && pullRequestReviewSnapshot.activeKeys.has(selectedReviewKey));
+  const selectedActionError = selectedReviewKey
+    ? pullRequestActionSnapshot.errorByKey.get(selectedReviewKey)
+    : undefined;
 
   if (!isElectron || getGitHubBridge() === null) {
     return (
@@ -1473,14 +1409,14 @@ export function PullRequestsPage() {
               </Button>
             </div>
           </div>
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="flex h-9 shrink-0 items-center border-b border-border px-4 text-xs text-muted-foreground">
-              <span>{visiblePullRequests.length} pull requests</span>
-              {selectedRepository ? (
-                <span className="ml-auto truncate pl-3">{selectedRepository}</span>
-              ) : null}
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+               <span>{visiblePullRequests.length} pull requests</span>
+               {selectedRepository ? (
+                 <span className="ml-auto truncate pl-3">{selectedRepository}</span>
+               ) : null}
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {!selectedRepository ? (
                 <div className="px-4 py-12 text-center text-sm text-muted-foreground">
                   Select a repository to view its pull requests.
@@ -1506,7 +1442,7 @@ export function PullRequestsPage() {
                         key={pr.number}
                         type="button"
                         className={cn(
-                          "flex w-full items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors",
+                          "flex min-w-0 flex-1 items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors",
                           selected
                             ? "bg-muted text-foreground"
                             : "hover:bg-muted/50 hover:text-foreground",
@@ -1519,6 +1455,15 @@ export function PullRequestsPage() {
                             statusDotClassName(pr),
                           )}
                         />
+                        {selectedRepository &&
+                        (pullRequestActionSnapshot.busyByKey.has(
+                          pullRequestCacheKey(selectedRepository, pr.number),
+                        ) ||
+                          pullRequestReviewSnapshot.activeKeys.has(
+                            pullRequestCacheKey(selectedRepository, pr.number),
+                          )) ? (
+                          <LoaderCircleIcon className="mt-1 size-3 shrink-0 animate-spin text-muted-foreground" />
+                        ) : null}
                         <div className="min-w-0 flex-1">
                           <div className="line-clamp-2 text-sm font-medium leading-5">
                             {pr.title}
@@ -1645,7 +1590,7 @@ export function PullRequestsPage() {
                             variant="outline"
                             size="sm"
                             disabled={
-                              activePullRequestActionBusy !== null ||
+                              selectedActionBlocked ||
                               reviewProject === null ||
                               !canPostPullRequestReview
                             }
@@ -1658,21 +1603,35 @@ export function PullRequestsPage() {
                             }
                             onClick={() => void handlePullRequestReview()}
                           >
-                            {pullRequestReviewSnapshot.activeKey === selectedReviewKey ? (
+                            {selectedReviewKey !== null &&
+                            pullRequestReviewSnapshot.activeKeys.has(selectedReviewKey) ? (
                               <LoaderCircleIcon className="size-3.5 animate-spin" />
                             ) : (
                               <GitPullRequestIcon className="size-3.5" />
                             )}
                             Review PR
                           </Button>
+                          {selectedReviewProgress?.reviewSummary ||
+                          selectedReviewProgress?.phase === "error" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setReviewSummaryOpen(true)}
+                            >
+                              <FileTextIcon className="size-3.5" />
+                              {selectedReviewProgress.reviewSummary
+                                ? "Review summary"
+                                : "Review status"}
+                            </Button>
+                          ) : null}
                           <Button
                             size="sm"
                             disabled={
-                              activePullRequestActionBusy !== null || displayedPullRequest.isDraft
+                              selectedActionBlocked || displayedPullRequest.isDraft
                             }
                             onClick={() => void handlePullRequestAction("merge")}
                           >
-                            {pullRequestActionBusy === "merge" ? (
+                            {selectedActionBusy === "merge" ? (
                               <LoaderCircleIcon className="size-3.5 animate-spin" />
                             ) : null}
                             Merge
@@ -1681,11 +1640,11 @@ export function PullRequestsPage() {
                             variant="outline"
                             size="sm"
                             disabled={
-                              activePullRequestActionBusy !== null || displayedPullRequest.isDraft
+                              selectedActionBlocked || displayedPullRequest.isDraft
                             }
                             onClick={() => void handlePullRequestAction("squash")}
                           >
-                            {pullRequestActionBusy === "squash" ? (
+                            {selectedActionBusy === "squash" ? (
                               <LoaderCircleIcon className="size-3.5 animate-spin" />
                             ) : null}
                             Squash merge
@@ -1693,49 +1652,19 @@ export function PullRequestsPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={activePullRequestActionBusy !== null}
+                            disabled={selectedActionBlocked}
                             onClick={() => void handlePullRequestAction("close")}
                           >
-                            {pullRequestActionBusy === "close" ? (
+                            {selectedActionBusy === "close" ? (
                               <LoaderCircleIcon className="size-3.5 animate-spin" />
                             ) : null}
                             Close
                           </Button>
                         </div>
                       ) : null}
-                      {reviewProgressForSelectedPullRequest ? (
-                        <p
-                          role={
-                            reviewProgressForSelectedPullRequest.phase === "error"
-                              ? "alert"
-                              : "status"
-                          }
-                          aria-live={
-                            reviewProgressForSelectedPullRequest.phase === "error"
-                              ? "assertive"
-                              : "polite"
-                          }
-                          className={cn(
-                            "mt-2 flex items-center gap-2 text-xs",
-                            reviewProgressForSelectedPullRequest.phase === "error"
-                              ? "text-destructive"
-                              : reviewProgressForSelectedPullRequest.phase === "success"
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-muted-foreground",
-                          )}
-                        >
-                          {reviewProgressForSelectedPullRequest.phase === "fetching" ||
-                          reviewProgressForSelectedPullRequest.phase === "reviewing" ||
-                          reviewProgressForSelectedPullRequest.phase === "validating" ||
-                          reviewProgressForSelectedPullRequest.phase === "posting" ? (
-                            <LoaderCircleIcon className="size-3.5 animate-spin" />
-                          ) : null}
-                          {reviewProgressForSelectedPullRequest.message}
-                        </p>
-                      ) : null}
-                      {pullRequestActionError ? (
+                      {selectedActionError ? (
                         <p role="alert" className="mt-2 text-xs text-destructive">
-                          {pullRequestActionError}
+                          {selectedActionError}
                         </p>
                       ) : null}
                     </div>
@@ -1898,6 +1827,26 @@ export function PullRequestsPage() {
           )}
         </section>
       </div>
+      <Dialog open={reviewSummaryOpen} onOpenChange={setReviewSummaryOpen}>
+        <DialogPopup className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Sparky PR review</DialogTitle>
+            <DialogDescription>
+              Validated bug report for {displayedPullRequest?.title ?? "this pull request"}.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel>
+            {selectedReviewProgress?.phase === "error" ? (
+              <p role="alert" className="mb-4 text-sm text-destructive">
+                {selectedReviewProgress.message}
+              </p>
+            ) : null}
+            <p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+              {selectedReviewProgress?.reviewSummary}
+            </p>
+          </DialogPanel>
+        </DialogPopup>
+      </Dialog>
     </main>
   );
 }

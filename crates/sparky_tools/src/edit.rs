@@ -65,7 +65,7 @@ impl Tool for EditTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to the existing file, relative to the current working directory"
+                    "description": "Path to the existing file, relative to the current working directory, or an absolute path"
                 },
                 "old_text": {
                     "type": "string",

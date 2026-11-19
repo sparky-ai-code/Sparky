@@ -4,7 +4,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { LegendListRef } from "@legendapp/list/react";
 
-import { MessagesTimeline, resolveWorkEntryToolIconName } from "./MessagesTimeline";
+import {
+  MessagesTimeline,
+  deriveTimelineMinimapItems,
+  resolveWorkEntryToolIconName,
+} from "./MessagesTimeline";
 import {
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
@@ -311,6 +315,45 @@ describe("MessagesTimeline", () => {
     }
   });
 
+  it("renders Sparky thread tools with readable labels and icons", () => {
+    const tools = [
+      ["sparky_threads_list", "List threads", "messages-square"],
+      ["sparky_project_branches", "List project branches", "folder-git"],
+      ["sparky_thread_models", "List thread models", "brain"],
+      ["sparky_thread_read", "Read thread", "eye"],
+      ["sparky_thread_create", "Create thread", "file-plus-corner"],
+      ["sparky_thread_message", "Message thread", "message-circle"],
+      ["sparky_thread_steer", "Steer thread", "zap"],
+    ] as const;
+
+    for (const [name, label, icon] of tools) {
+      const markup = renderToStaticMarkup(
+        <MessagesTimeline
+          {...buildProps()}
+          timelineEntries={[
+            {
+              id: `entry-${name}`,
+              kind: "work",
+              createdAt: MESSAGE_CREATED_AT,
+              entry: {
+                id: `work-${name}`,
+                createdAt: MESSAGE_CREATED_AT,
+                label: name,
+                tone: "tool",
+                toolName: name,
+                itemType: "dynamic_tool_call",
+              },
+            },
+          ]}
+        />,
+      );
+
+      expect(markup).toContain(`lucide-${icon}`);
+      expect(markup).toContain(label);
+      expect(markup).not.toContain(name);
+    }
+  });
+
   it("labels plugin calls with the provider integration and logo", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -371,6 +414,35 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("plugin-logos/gmail.svg");
     expect(markup).not.toContain("Sparky plugin call");
     expect(markup).not.toContain("lucide-hammer");
+  });
+
+  it("renders MCP tool calls with the MCP mark and readable tool names", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-sparky-mcp-call",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "work-sparky-mcp-call",
+              createdAt: MESSAGE_CREATED_AT,
+              label: "sparky_mcp_call_tool",
+              toolName: "sparky_mcp_call_tool",
+              tone: "tool",
+              itemType: "mcp_tool_call",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("lucide-plug-zap");
+    expect(markup.toLowerCase()).toContain("run mcp tool");
+    expect(markup).not.toContain("sparky_mcp_call_tool");
+    expect(markup).not.toContain("lucide-hammer");
+    expect(resolveWorkEntryToolIconName("sparky_mcp_setup_server")).toBe("plug-zap");
   });
 
   it("renders live file-change stats while the tool is running", () => {
@@ -481,6 +553,26 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("size-3");
     expect(markup).toContain('aria-label="View all 1 changed file in diff panel"');
     expect(markup).toContain("1 changed file");
+  });
+
+  it("derives minimap previews in one pass, keeping each turn's final assistant message", () => {
+    const rows = [
+      { kind: "message", id: "u1", message: { role: "user", text: " first  prompt " } },
+      { kind: "message", id: "a1", message: { role: "assistant", text: "Intermediate" } },
+      { kind: "work", id: "w1" },
+      { kind: "message", id: "a2", message: { role: "assistant", text: "Final  answer" } },
+      { kind: "message", id: "u2", message: { role: "user", text: "Second" } },
+    ] as never;
+
+    expect(deriveTimelineMinimapItems(rows)).toEqual([
+      {
+        id: "u1",
+        rowIndex: 0,
+        userText: "first prompt",
+        assistantText: "Final answer",
+      },
+      { id: "u2", rowIndex: 4, userText: "Second", assistantText: null },
+    ]);
   });
 
   it("uses LegendList isNearEnd when deciding whether the live edge is visible", async () => {

@@ -114,7 +114,7 @@ async fn test_ls_grep_find_tools() {
 }
 
 #[tokio::test]
-async fn all_file_tools_reject_paths_outside_the_working_directory() {
+async fn file_tools_reject_relative_paths_that_escape_the_working_directory() {
     let root = tempdir().unwrap();
     let workspace = root.path().join("workspace");
     std::fs::create_dir(&workspace).unwrap();
@@ -167,6 +167,48 @@ async fn all_file_tools_reject_paths_outside_the_working_directory() {
         std::fs::read_to_string(root.path().join("outside.txt")).unwrap(),
         "do not touch"
     );
+}
+
+#[tokio::test]
+async fn file_tools_accept_absolute_paths_outside_the_working_directory() {
+    let root = tempdir().unwrap();
+    let workspace = root.path().join("workspace");
+    std::fs::create_dir(&workspace).unwrap();
+    let outside = root.path().join("outside.txt");
+    std::fs::write(&outside, "before\n").unwrap();
+    let cwd = workspace.to_str().unwrap();
+
+    let read = ReadTool::default()
+        .execute(serde_json::json!({ "path": outside }), cwd)
+        .await
+        .unwrap();
+    assert!(!read.is_error, "{}", read.output);
+    assert!(read.output.contains("before"));
+
+    let edited = EditTool
+        .execute(
+            serde_json::json!({
+                "path": outside,
+                "old_text": "before",
+                "new_text": "after"
+            }),
+            cwd,
+        )
+        .await
+        .unwrap();
+    assert!(!edited.is_error, "{}", edited.output);
+    assert_eq!(std::fs::read_to_string(&outside).unwrap(), "after\n");
+
+    let created = root.path().join("external-created.txt");
+    let written = WriteTool
+        .execute(
+            serde_json::json!({ "path": created, "content": "external" }),
+            cwd,
+        )
+        .await
+        .unwrap();
+    assert!(!written.is_error, "{}", written.output);
+    assert_eq!(std::fs::read_to_string(created).unwrap(), "external");
 }
 
 #[tokio::test]

@@ -196,7 +196,7 @@ describe("discoverSparkyModels", () => {
       return jsonResponse({
         models: [
           {
-            slug: "gpt-6.1-sol",
+            slug: "gpt-6.2-sol",
             display_name: "GPT Live",
             visibility: "list",
             context_window: 272_000,
@@ -211,6 +211,7 @@ describe("discoverSparkyModels", () => {
               { effort: "ultra", description: "Codex-only delegation" },
             ],
           },
+          { slug: "gpt-6.2-astra", display_name: "Astra Live", visibility: "list" },
           { slug: "old-retired-model", visibility: "hidden" },
         ],
       });
@@ -231,6 +232,7 @@ describe("discoverSparkyModels", () => {
         "gpt-5.6-terra",
         "gpt-5.6-luna",
       ]);
+      expect(models[1]).toMatchObject({ name: "GPT-6.2 Astra" });
       expect(models[0]).toMatchObject({
         name: "GPT-6.2 Sol",
         reasoningSupported: true,

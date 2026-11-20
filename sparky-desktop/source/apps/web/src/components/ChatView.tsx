@@ -44,6 +44,7 @@ import { nextTerminalId, resolveTerminalSessionLabel } from "@sparky/shared/term
 import { Debouncer } from "@tanstack/react-pacer";
 import { useAtomValue } from "@effect/atom-react";
 import {
+  type ComponentProps,
   lazy,
   memo,
   Suspense,
@@ -139,7 +140,6 @@ import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import PlanSidebar from "./PlanSidebar";
-import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { ChevronDownIcon, WifiOffIcon } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
@@ -357,6 +357,16 @@ const PreviewPanel = lazy(() =>
 );
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
+// The terminal drawer pulls in xterm, which is only needed once a terminal is open.
+// Loading it lazily keeps xterm out of the initial chat bundle.
+const LazyThreadTerminalDrawer = lazy(() => import("./ThreadTerminalDrawer"));
+function ThreadTerminalDrawer(props: ComponentProps<typeof LazyThreadTerminalDrawer>) {
+  return (
+    <Suspense fallback={null}>
+      <LazyThreadTerminalDrawer {...props} />
+    </Suspense>
+  );
+}
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   "input",

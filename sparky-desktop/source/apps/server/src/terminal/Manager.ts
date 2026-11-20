@@ -629,11 +629,20 @@ function parseFirstChildPidFromPgrep(stdout: string): number | null {
   return null;
 }
 
-function windowsInspectSubprocess(
-  terminalPid: number,
-  platform: NodeJS.Platform,
-): Effect.Effect<
-  TerminalSubprocessInspectResult,
+export interface WindowsProcessTable {
+  readonly processNameById: ReadonlyMap<number, string>;
+  readonly childrenByParent: ReadonlyMap<number, ReadonlyArray<number>>;
+}
+
+const EMPTY_WINDOWS_PROCESS_TABLE: WindowsProcessTable = {
+  processNameById: new Map(),
+  childrenByParent: new Map(),
+};
+
+// One process-table enumeration serves every running terminal in a poll tick.
+// Spawning PowerShell + Get-CimInstance per terminal was the dominant idle cost on Windows.
+function readWindowsProcessTable(): Effect.Effect<
+  WindowsProcessTable,
   TerminalSubprocessCheckError,
   ProcessRunner.ProcessRunner
 > {
@@ -641,66 +650,75 @@ function windowsInspectSubprocess(
     'Get-CimInstance Win32_Process -ErrorAction Stop | ForEach-Object { Write-Output "$($_.ProcessId)|$($_.ParentProcessId)|$($_.Name)" }';
   return Effect.gen(function* () {
     const processRunner = yield* ProcessRunner.ProcessRunner;
-    return yield* processRunner.run({
+    const result = yield* processRunner.run({
       // powershell.exe is a real executable — never spawn it through cmd.exe
       // shell mode, which would re-tokenize the `-Command` payload (pipes,
       // semicolons) before PowerShell ever sees it.
       command: "powershell.exe",
       args: ["-NoProfile", "-NonInteractive", "-Command", command],
       timeout: "1500 millis",
-      maxOutputBytes: 32_768,
+      // A full process table is well past 32 KiB on a busy machine. Truncating it
+      // silently dropped child processes, so the activity state was wrong.
+      maxOutputBytes: 1024 * 1024,
       outputMode: "truncate",
       timeoutBehavior: "timedOutResult",
     });
+    if (result.code !== 0) {
+      return EMPTY_WINDOWS_PROCESS_TABLE;
+    }
+    const processNameById = new Map<number, string>();
+    const childrenByParent = new Map<number, number[]>();
+    for (const line of result.stdout.split(/\r?\n/g)) {
+      const [pidRaw, parentPidRaw, nameRaw] = line.trim().split("|", 3);
+      const pid = Number(pidRaw);
+      const parentPid = Number(parentPidRaw);
+      if (!Number.isInteger(pid) || !Number.isInteger(parentPid)) continue;
+      processNameById.set(pid, nameRaw?.trim() ?? "");
+      const children = childrenByParent.get(parentPid) ?? [];
+      children.push(pid);
+      childrenByParent.set(parentPid, children);
+    }
+    return { processNameById, childrenByParent };
   }).pipe(
-    Effect.map((result) => {
-      if (result.code !== 0) {
-        return { hasRunningSubprocess: false, childCommand: null, processIds: [] } as const;
-      }
-      const processNameById = new Map<number, string>();
-      const childrenByParent = new Map<number, number[]>();
-      for (const line of result.stdout.split(/\r?\n/g)) {
-        const [pidRaw, parentPidRaw, nameRaw] = line.trim().split("|", 3);
-        const pid = Number(pidRaw);
-        const parentPid = Number(parentPidRaw);
-        if (!Number.isInteger(pid) || !Number.isInteger(parentPid)) continue;
-        processNameById.set(pid, nameRaw?.trim() ?? "");
-        const children = childrenByParent.get(parentPid) ?? [];
-        children.push(pid);
-        childrenByParent.set(parentPid, children);
-      }
-      const directChildren = childrenByParent.get(terminalPid) ?? [];
-      const childPid = directChildren[0];
-      if (childPid === undefined) {
-        return { hasRunningSubprocess: false, childCommand: null, processIds: [] } as const;
-      }
-      const processIds = new Set<number>([terminalPid]);
-      const pending = [terminalPid];
-      while (pending.length > 0) {
-        const parentPid = pending.pop();
-        if (parentPid === undefined) continue;
-        for (const pid of childrenByParent.get(parentPid) ?? []) {
-          if (processIds.has(pid)) continue;
-          processIds.add(pid);
-          pending.push(pid);
-        }
-      }
-      const normalized = normalizeChildCommandName(processNameById.get(childPid) ?? "", platform);
-      return {
-        hasRunningSubprocess: true,
-        childCommand: normalized ? truncateTerminalWireLabel(normalized) : null,
-        processIds: [...processIds],
-      } as const;
-    }),
+    // The table is shared across terminals, so there is no single terminal PID to report.
     Effect.mapError(
       (cause) =>
         new TerminalSubprocessCheckError({
           cause,
-          terminalPid,
+          terminalPid: 0,
           command: "powershell",
         }),
     ),
   );
+}
+
+export function inspectWindowsSubprocessFromTable(
+  terminalPid: number,
+  platform: NodeJS.Platform,
+  table: WindowsProcessTable,
+): TerminalSubprocessInspectResult {
+  const directChildren = table.childrenByParent.get(terminalPid) ?? [];
+  const childPid = directChildren[0];
+  if (childPid === undefined) {
+    return { hasRunningSubprocess: false, childCommand: null, processIds: [] };
+  }
+  const processIds = new Set<number>([terminalPid]);
+  const pending = [terminalPid];
+  while (pending.length > 0) {
+    const parentPid = pending.pop();
+    if (parentPid === undefined) continue;
+    for (const pid of table.childrenByParent.get(parentPid) ?? []) {
+      if (processIds.has(pid)) continue;
+      processIds.add(pid);
+      pending.push(pid);
+    }
+  }
+  const normalized = normalizeChildCommandName(table.processNameById.get(childPid) ?? "", platform);
+  return {
+    hasRunningSubprocess: true,
+    childCommand: normalized ? truncateTerminalWireLabel(normalized) : null,
+    processIds: [...processIds],
+  };
 }
 
 const posixInspectSubprocess = Effect.fn("terminal.posixInspectSubprocess")(function* (
@@ -855,7 +873,8 @@ function defaultSubprocessInspectorForPlatform(platform: NodeJS.Platform) {
       return { hasRunningSubprocess: false, childCommand: null, processIds: [] };
     }
     if (platform === "win32") {
-      return yield* windowsInspectSubprocess(terminalPid, platform);
+      const table = yield* readWindowsProcessTable();
+      return inspectWindowsSubprocessFromTable(terminalPid, platform, table);
     }
     return yield* posixInspectSubprocess(terminalPid, platform);
   });
@@ -2036,11 +2055,33 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       return;
     }
 
+    // Probe the Windows process table once per tick and reuse it for every running
+    // terminal. A test-injected inspector keeps its own per-terminal seam.
+    const sharedWindowsProbe = platform === "win32" && options.subprocessInspector === undefined;
+    const windowsTable = sharedWindowsProbe
+      ? yield* readWindowsProcessTable().pipe(
+          Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
+          Effect.catch((reason) =>
+            Effect.logWarning("failed to check terminal subprocess activity", {
+              terminalPids: runningSessions.map((session) => session.pid),
+              reason,
+            }).pipe(Effect.as(null)),
+          ),
+        )
+      : null;
+    if (sharedWindowsProbe && windowsTable === null) {
+      return;
+    }
+
     const checkSubprocessActivity = Effect.fn("terminal.checkSubprocessActivity")(function* (
       session: TerminalSessionState & { pid: number },
     ) {
       const terminalPid = session.pid;
-      const inspectResult = yield* subprocessInspector(terminalPid).pipe(
+      const inspect: Effect.Effect<TerminalSubprocessInspectResult, TerminalSubprocessCheckError> =
+        windowsTable === null
+          ? subprocessInspector(terminalPid)
+          : Effect.succeed(inspectWindowsSubprocessFromTable(terminalPid, platform, windowsTable));
+      const inspectResult = yield* inspect.pipe(
         Effect.map(Option.some),
         Effect.catch((reason) =>
           Effect.logWarning("failed to check terminal subprocess activity", {

@@ -1,0 +1,138 @@
+// @effect-diagnostics nodeBuiltinImport:off - OS vault integration tests need isolated temporary files.
+// @effect-diagnostics globalDate:off - Test timestamps are wall-clock timestamps.
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import * as os from "node:os";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import * as Vault from "./SecretVault.ts";
+
+const mock = vi.hoisted(() => ({
+  directory: "/invalid",
+  available: true,
+  backend: "gnome_libsecret",
+}));
+vi.mock("electron", () => ({
+  app: { getPath: () => mock.directory },
+  safeStorage: {
+    isEncryptionAvailable: () => mock.available,
+    getSelectedStorageBackend: () => mock.backend,
+    encryptString: (plain: string) => Buffer.from("ciphertext:" + plain, "utf8"),
+    decryptString: (encoded: Buffer) => encoded.toString("utf8").slice("ciphertext:".length),
+  },
+}));
+
+const example = {
+  name: "Example",
+  kind: "password" as const,
+  description: "Test account",
+  origin: "https://example.com/login",
+  email: "user@example.com",
+  password: "super-private-secret",
+};
+
+describe("local encrypted credential vault", () => {
+  beforeEach(async () => {
+    mock.directory = await fs.mkdtemp(path.join(os.tmpdir(), "sparky-secrets-test-"));
+    mock.backend = "gnome_libsecret";
+    mock.available = true;
+  });
+  afterEach(async () => {
+    await fs.rm(mock.directory, { recursive: true, force: true });
+  });
+
+  it("stores encrypted values and exposes only metadata in listings", async () => {
+    const entry = await Vault.saveSecret(example);
+    expect(entry.origin).toBe("https://example.com");
+    expect(JSON.stringify(await Vault.listSecrets())).not.toContain(example.password);
+    const rawFile = await fs.readFile(path.join(mock.directory, "sparky-secret-vault-v1.json"), "utf8");
+    expect(rawFile).not.toContain(example.password);
+    const retrieved = await Vault.getSecretForOrigin(entry.id, "https://example.com/dashboard");
+    expect(retrieved.password).toBe(example.password);
+    expect(retrieved.metadata.name).toBe("Example");
+  });
+
+  it("selects a saved login by friendly name only for the exact site", async () => {
+    await Vault.saveSecret(example);
+    expect((await Vault.getSecretForOrigin("example", "https://example.com/signin")).password).toBe(example.password);
+    await expect(Vault.getSecretForOrigin("example", "https://attacker.example")).rejects.toThrow();
+  });
+
+  it("rejects ambiguous credential names", async () => {
+    await Vault.saveSecret(example);
+    await Vault.saveSecret({ ...example, email: "other@example.com" });
+    await expect(Vault.getSecretForOrigin("Example", "https://example.com")).rejects.toThrow("Multiple logins");
+  });
+
+  it("never reveals a saved credential to another site", async () => {
+    const entry = await Vault.saveSecret(example);
+    await expect(Vault.getSecretForOrigin(entry.id, "https://attacker.example")).rejects.toThrow(
+      "Credential site does not match",
+    );
+    await expect(Vault.getSecretForOrigin(entry.id, "http://example.com")).rejects.toThrow();
+  });
+
+  it("refuses the insecure Linux basic_text backend", async () => {
+    // Electron only exposes the backend selector on Linux.
+    if (process.platform !== "linux") return;
+    mock.backend = "basic_text";
+    await expect(Vault.saveSecret(example)).rejects.toThrow("Secure credential storage is unavailable");
+  });
+
+  it("preserves the old password on metadata edits and replaces it only when supplied", async () => {
+    const entry = await Vault.saveSecret(example);
+    await Vault.saveSecret({ ...example, id: entry.id, name: "Renamed", password: "" });
+    expect((await Vault.getSecretForOrigin(entry.id, example.origin)).password).toBe(example.password);
+    await Vault.saveSecret({ ...example, id: entry.id, password: "a-new-password" });
+    expect((await Vault.getSecretForOrigin(entry.id, example.origin)).password).toBe("a-new-password");
+    await Vault.removeSecret(entry.id);
+    await expect(Vault.getSecretForOrigin(entry.id, example.origin)).rejects.toThrow("Credential not found");
+  });
+
+  it("refuses corrupt and duplicate vault records without overwriting them", async () => {
+    const entry = await Vault.saveSecret(example);
+    const filename = path.join(mock.directory, "sparky-secret-vault-v1.json");
+    const valid = JSON.parse(await fs.readFile(filename, "utf8"));
+    for (const entries of [
+      [{ ...valid.entries[0], metadata: { ...valid.entries[0].metadata, origin: "http://another-site.test" } }],
+      [{ ...valid.entries[0], metadata: { ...valid.entries[0].metadata, kind: "passkey" } }],
+      [valid.entries[0], valid.entries[0]],
+    ]) {
+      const raw = JSON.stringify({ version: 1, entries });
+      await fs.writeFile(filename, raw);
+      await expect(Vault.listSecrets()).rejects.toThrow("Credential vault file is invalid");
+      await expect(Vault.saveSecret({ ...example, id: entry.id })).rejects.toThrow("Credential vault file is invalid");
+      expect(await fs.readFile(filename, "utf8")).toBe(raw);
+    }
+  });
+
+  it("fails closed when OS encryption is unavailable", async () => {
+    mock.available = false;
+    await expect(Vault.saveSecret(example)).rejects.toThrow("Secure credential storage is unavailable");
+    await expect(Vault.listSecrets()).rejects.toThrow("Secure credential storage is unavailable");
+  });
+
+  it("does not lose entries when several credentials are saved concurrently", async () => {
+    const created = await Promise.all(Array.from({ length: 12 }, (_, index) =>
+      Vault.saveSecret({ ...example, name: `Login ${index}`, email: `user${index}@example.com` }),
+    ));
+    const listed = await Vault.listSecrets();
+    expect(new Set(created.map((entry) => entry.id)).size).toBe(12);
+    expect(listed).toHaveLength(12);
+    for (const entry of created) {
+      expect((await Vault.getSecretForOrigin(entry.id, "https://example.com/sign-in")).password)
+        .toBe(example.password);
+    }
+  });
+
+  it("stores native passkeys as metadata-only references", async () => {
+    const entry = await Vault.saveSecret({
+      name: "Passkey test",
+      origin: "https://example.com",
+      kind: "passkey",
+      email: "user@example.com",
+      description: "",
+    });
+    expect((await Vault.getSecretForOrigin(entry.id, "https://example.com")).password).toBeNull();
+    expect((await Vault.listSecrets())[0]?.kind).toBe("passkey");
+  });
+});

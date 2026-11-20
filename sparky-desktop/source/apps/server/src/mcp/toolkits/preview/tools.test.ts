@@ -39,3 +39,16 @@ it("exports provider-compatible object schemas with described parameters", () =>
     }
   }
 });
+
+it("registers credential tools without an agent-readable password parameter", () => {
+  const list = PreviewToolkit.tools.secrets_list;
+  const use = PreviewToolkit.tools.secrets_use;
+  expect(list).toBeDefined();
+  expect(use).toBeDefined();
+  const listSchema = Tool.getJsonSchema(list) as { readonly properties?: Record<string, unknown> };
+  expect(listSchema.properties?.tabId).toBeDefined();
+  const useSchema = Tool.getJsonSchema(use) as { readonly properties?: Record<string, unknown> };
+  expect(useSchema.properties?.id).toBeDefined();
+  expect(useSchema.properties?.password).toBeUndefined();
+  expect(useSchema.properties?.privateKey).toBeUndefined();
+});

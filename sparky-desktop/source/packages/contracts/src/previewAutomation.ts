@@ -47,6 +47,8 @@ export const PREVIEW_AUTOMATION_OPERATIONS = [
   "resize",
   "githubPullRequestComments",
   "threadCollaboration",
+  "secretsList",
+  "secretsUse",
 ] as const;
 
 export const PreviewAutomationOperation = Schema.Literals(PREVIEW_AUTOMATION_OPERATIONS);

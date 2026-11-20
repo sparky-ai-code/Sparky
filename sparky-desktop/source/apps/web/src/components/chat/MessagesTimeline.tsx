@@ -58,6 +58,7 @@ import {
   GitPullRequestIcon,
   HammerIcon,
   KeyboardIcon,
+  KeyRoundIcon,
   ListChecksIcon,
   Maximize2Icon,
   MessageCircleIcon,
@@ -2014,6 +2015,7 @@ type WorkEntryIconName =
   | "search-web"
   | "hammer"
   | "keyboard"
+  | "key-round"
   | "list-checks"
   | "brain"
   | "calendar-clock"
@@ -2129,6 +2131,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <HammerIcon className={className} aria-hidden />;
     case "keyboard":
       return <KeyboardIcon className={className} aria-hidden />;
+    case "key-round":
+      return <KeyRoundIcon className={className} aria-hidden />;
     case "list-checks":
       return <ListChecksIcon className={className} aria-hidden />;
     case "brain":
@@ -2403,10 +2407,16 @@ function WebSearchSourceLogos({
   );
 }
 
+function isSecretsToolName(name: string | undefined): boolean {
+  return /(?:^|[_./])secrets_(?:list|use)$/i.test(name?.trim() ?? "");
+}
+
 function buildToolCallExpandedBody(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
 ): string | null {
+  // Never expand raw tool payloads for credential access in the chat timeline.
+  if (isSecretsToolName(workEntry.toolName)) return null;
   const blocks: string[] = [];
   if (workEntry.itemType === "web_search" && workEntry.toolData !== undefined) {
     const results = webSearchResultPreviews(workEntry.toolData);
@@ -2493,6 +2503,7 @@ function resolveWorkEntryPluginId(
 export function resolveWorkEntryToolIconName(
   toolName: string | undefined,
 ): WorkEntryIconName | undefined {
+  if (isSecretsToolName(toolName)) return "key-round";
   switch (toolName?.trim().toLowerCase()) {
     case "sparky_threads_list":
       return "messages-square";
@@ -2633,6 +2644,9 @@ function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
     case "sparky_thread_steer":
       return "Steer thread";
   }
+  if (isSecretsToolName(workEntry.toolName)) {
+    return /secrets_list$/i.test(workEntry.toolName ?? "") ? "Find saved logins" : "Use saved login";
+  }
   if (workEntry.toolName === "sparky_mcp_setup_server") return "Set up MCP server";
   if (workEntry.toolName === "sparky_mcp_list_tools") return "Discover MCP tools";
   if (workEntry.toolName === "sparky_mcp_call_tool") return "Run MCP tool";
@@ -2669,7 +2683,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
       (!workEntry.toolLifecycleStatus && activity.activeTurnInProgress));
   const entryIconName = showWarningIndicator ? "x" : workEntryIconName(workEntry);
   const heading = toolWorkEntryHeading(workEntry);
-  const rawPreview = isWebSearch ? null : workEntryPreview(workEntry, workspaceRoot);
+  const rawPreview = isWebSearch || isSecretsToolName(workEntry.toolName) ? null : workEntryPreview(workEntry, workspaceRoot);
   const preview =
     rawPreview &&
     normalizeCompactToolLabel(rawPreview).toLowerCase() ===

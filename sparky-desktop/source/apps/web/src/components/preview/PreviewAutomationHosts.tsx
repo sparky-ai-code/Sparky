@@ -282,8 +282,7 @@ export function PreviewAutomationHosts() {
 
 function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId }) {
   const { environmentId } = props;
-  const { environments: connectedEnvironments } = useEnvironments();
-  const registry = useContext(RegistryContext);
+  const { environments: connectedEnvironments } = useEnvironments();  const registry = useContext(RegistryContext);
   const [automationClientId] = useState(createPreviewAutomationClientId);
   const initialAutomationHost = useMemo<PreviewAutomationHostState>(
     () => ({
@@ -359,6 +358,11 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           dispatch: (target, command) =>
             unwrap(dispatchRelayCommand({ environmentId: target, input: command })),
         });
+      }
+      if (request.operation === "secretsList") {
+        const vault = window.desktopBridge?.secrets;
+        if (!vault) throw new Error("Saved logins are only available in the Sparky desktop app.");
+        return await vault.list();
       }
       if (request.operation === "githubPullRequestComments") {
         const githubBridge = window.desktopBridge as
@@ -541,6 +545,15 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
               viewport,
             } satisfies PreviewAutomationResizeResult;
           }
+          case "secretsUse": {
+            const ready = await requireReadyTab();
+            const vault = window.desktopBridge?.secrets;
+            if (!vault) throw new Error("Saved logins are not available on this device.");
+            if (readActiveBrowserRecordingTabId() === ready.tabId) {
+              await stopBrowserRecording(ready.tabId);
+            }
+            return await vault.use(ready.tabId, request.input as Parameters<typeof vault.use>[1]);
+          }
           case "snapshot": {
             const ready = await requireReadyTab();
             return await ready.bridge.automation.snapshot(ready.tabId);
@@ -589,6 +602,9 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           }
           case "recordingStart": {
             const ready = await requireReadyTab();
+            if (await window.desktopBridge?.secrets?.isProtected(ready.tabId)) {
+              throw new Error("Recording is disabled after a saved credential was filled in this tab.");
+            }
             const startedAt = await startBrowserRecording(ready.tabId);
             return {
               tabId: ready.tabId,

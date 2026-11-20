@@ -198,6 +198,9 @@ const isStartupWaitTimeout = (error: unknown): error is BrowserRecordingOperatio
 export async function startBrowserRecording(tabId: string): Promise<string> {
   const bridge = previewBridge;
   if (!bridge) throw new BrowserRecordingUnavailableError({ tabId });
+  if (await window.desktopBridge?.secrets?.isProtected(tabId)) {
+    throw new Error("Recording is disabled for a tab containing a saved credential.");
+  }
   if (active) {
     if (active.tabId === tabId && active.lifecycle.phase === "recording") {
       return active.startedAt;

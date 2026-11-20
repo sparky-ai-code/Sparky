@@ -98,6 +98,7 @@ import {
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
 import { useUiStateStore } from "../uiStateStore";
+import { useOptimisticThreadActivity } from "../optimisticThreadActivity";
 import {
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
@@ -1299,6 +1300,7 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
+  const stopRequestedDuringDispatchRef = useRef(false);
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   useLayoutEffect(() => {
@@ -4471,6 +4473,9 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     sendInFlightRef.current = true;
+    // Start local working state before transitions or backend work so the timer
+    // begins as soon as the user submits, including while creating a worktree.
+    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
     if (isDraftHeroState && activeThreadKey) {
       let resolveDockStarted: (() => void) | undefined;
       const dockStarted = new Promise<void>((resolve) => {
@@ -4486,7 +4491,6 @@ function ChatViewContent(props: ChatViewProps) {
       void dockTransition.catch(() => resolveDockStarted?.());
       await dockStarted;
     }
-    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
@@ -4551,6 +4555,12 @@ function ChatViewContent(props: ChatViewProps) {
       messageId: messageIdForSend,
     });
     optimisticUserMessageThreadIdsRef.current.set(messageIdForSend, threadIdForSend);
+    useOptimisticThreadActivity
+      .getState()
+      .markThreadMessage(
+        scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
+        messageCreatedAt,
+      );
     setOptimisticUserMessages((existing) => [
       ...existing,
       {
@@ -4698,6 +4708,20 @@ function ChatViewContent(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        if (stopRequestedDuringDispatchRef.current) {
+          stopRequestedDuringDispatchRef.current = false;
+          const interruptResult = await interruptThreadTurn({
+            environmentId,
+            input: buildThreadTurnInterruptInput(activeThread),
+          });
+          if (interruptResult._tag === "Failure" && !isAtomCommandInterrupted(interruptResult)) {
+            const error = squashAtomCommandFailure(interruptResult);
+            setThreadError(
+              activeThread.id,
+              error instanceof Error ? error.message : "Failed to interrupt the current turn.",
+            );
+          }
+        }
       }
     }
 
@@ -4748,6 +4772,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     sendInFlightRef.current = false;
     if (!turnStartSucceeded) {
+      stopRequestedDuringDispatchRef.current = false;
       setDockedDraftHeroThreadKey((currentThreadKey) =>
         currentThreadKey === activeThreadKey ? null : currentThreadKey,
       );
@@ -4757,6 +4782,13 @@ function ChatViewContent(props: ChatViewProps) {
 
   const onInterrupt = async () => {
     if (!activeThread) return;
+    if (isSendBusy && phase !== "running") {
+      // The send request may still be starting the server turn. Remember the
+      // user's stop request and issue the real interrupt as soon as it is
+      // accepted, rather than losing the click to a not-yet-running backend.
+      stopRequestedDuringDispatchRef.current = true;
+      return;
+    }
     const result = await interruptThreadTurn({
       environmentId,
       input: buildThreadTurnInterruptInput(activeThread),

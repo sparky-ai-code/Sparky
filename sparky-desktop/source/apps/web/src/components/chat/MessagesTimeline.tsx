@@ -20,6 +20,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
+  type ComponentType,
 } from "react";
 import { flushSync } from "react-dom";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
@@ -62,15 +63,6 @@ import {
   MessageCircleIcon,
   MessagesSquareIcon,
   MousePointerClickIcon,
-  MousePointer2Icon,
-  MoveIcon,
-  ArrowDownUpIcon,
-  CameraIcon,
-  AppWindowIcon,
-  ClockIcon,
-  SettingsIcon,
-  VideoIcon,
-  ZoomInIcon,
   PaintbrushIcon,
   PauseCircleIcon,
   PlugZapIcon,
@@ -83,9 +75,43 @@ import {
   WrenchIcon,
   XIcon,
   ZapIcon,
+  ActivityIcon,
+  AppWindowIcon,
+  ArrowDownUpIcon,
+  BugIcon,
+  CommandIcon,
+  CrosshairIcon,
+  DownloadIcon,
+  HistoryIcon,
+  LayoutGridIcon,
+  ListTreeIcon,
+  LogOutIcon,
+  MenuIcon,
+  MonitorIcon,
+  MouseIcon,
+  MousePointerIcon,
+  MousePointer2Icon,
+  MoveIcon,
+  PaletteIcon,
+  PanelsTopLeftIcon,
+  PowerIcon,
+  RadioIcon,
+  RefreshCwIcon,
+  RocketIcon,
+  RouteIcon,
+  ScanEyeIcon,
+  SettingsIcon,
+  ShieldCheckIcon,
+  SlidersHorizontalIcon,
+  SquareIcon,
+  TextCursorInputIcon,
+  ToggleRightIcon,
+  TypeIcon,
+  VideoIcon,
+  ZoomInIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
-import { resolveComputerUseAction } from "./computerUseWorkEntry";
+import { type ComputerUseIconName, resolveComputerUseAction } from "./computerUseWorkEntry";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
@@ -1996,15 +2022,6 @@ type WorkEntryIconName =
   | "mcp"
   | "plug-zap"
   | "mouse-pointer-click"
-  | "mouse-pointer-2"
-  | "move"
-  | "arrow-down-up"
-  | "camera"
-  | "app-window"
-  | "clock"
-  | "settings"
-  | "video"
-  | "zoom-in"
   | "pause-circle"
   | "play-circle"
   | "square-pen"
@@ -2012,9 +2029,51 @@ type WorkEntryIconName =
   | "trash-2"
   | "wrench"
   | "x"
-  | "zap";
+  | "zap"
+  | ComputerUseIconName;
+
+const COMPUTER_USE_ICON_COMPONENTS: Partial<
+  Record<ComputerUseIconName, ComponentType<{ className?: string; "aria-hidden"?: boolean }>>
+> = {
+  "mouse-pointer-2": MousePointer2Icon,
+  "mouse-pointer": MousePointerIcon,
+  mouse: MouseIcon,
+  menu: MenuIcon,
+  move: MoveIcon,
+  type: TypeIcon,
+  command: CommandIcon,
+  "text-cursor-input": TextCursorInputIcon,
+  "arrow-down-up": ArrowDownUpIcon,
+  "layout-grid": LayoutGridIcon,
+  "panels-top-left": PanelsTopLeftIcon,
+  "scan-eye": ScanEyeIcon,
+  rocket: RocketIcon,
+  power: PowerIcon,
+  bug: BugIcon,
+  "app-window": AppWindowIcon,
+  monitor: MonitorIcon,
+  crosshair: CrosshairIcon,
+  "toggle-right": ToggleRightIcon,
+  route: RouteIcon,
+  palette: PaletteIcon,
+  "shield-check": ShieldCheckIcon,
+  activity: ActivityIcon,
+  "sliders-horizontal": SlidersHorizontalIcon,
+  settings: SettingsIcon,
+  "list-tree": ListTreeIcon,
+  "zoom-in": ZoomInIcon,
+  video: VideoIcon,
+  square: SquareIcon,
+  radio: RadioIcon,
+  history: HistoryIcon,
+  download: DownloadIcon,
+  "log-out": LogOutIcon,
+  "refresh-cw": RefreshCwIcon,
+};
 
 function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; className: string }) {
+  const ComputerUseIcon = COMPUTER_USE_ICON_COMPONENTS[name as ComputerUseIconName];
+  if (ComputerUseIcon) return <ComputerUseIcon className={className} aria-hidden />;
   switch (name) {
     case "bot":
       return <BotIcon className={className} aria-hidden />;
@@ -2086,24 +2145,6 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <PlugZapIcon className={className} aria-hidden />;
     case "mouse-pointer-click":
       return <MousePointerClickIcon className={className} aria-hidden />;
-    case "mouse-pointer-2":
-      return <MousePointer2Icon className={className} aria-hidden />;
-    case "move":
-      return <MoveIcon className={className} aria-hidden />;
-    case "arrow-down-up":
-      return <ArrowDownUpIcon className={className} aria-hidden />;
-    case "camera":
-      return <CameraIcon className={className} aria-hidden />;
-    case "app-window":
-      return <AppWindowIcon className={className} aria-hidden />;
-    case "clock":
-      return <ClockIcon className={className} aria-hidden />;
-    case "settings":
-      return <SettingsIcon className={className} aria-hidden />;
-    case "video":
-      return <VideoIcon className={className} aria-hidden />;
-    case "zoom-in":
-      return <ZoomInIcon className={className} aria-hidden />;
     case "pause-circle":
       return <PauseCircleIcon className={className} aria-hidden />;
     case "play-circle":
@@ -2120,6 +2161,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <XIcon className={className} aria-hidden />;
     case "zap":
       return <ZapIcon className={className} aria-hidden />;
+    default:
+      return null;
   }
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveComputerUseAction } from "./computerUseWorkEntry";
+import { KNOWN_TOOLS, resolveComputerUseAction } from "./computerUseWorkEntry";
 
 const call = (toolName: string, extra: Record<string, unknown> = {}) =>
   resolveComputerUseAction("sparky_computer_use_call_tool", {
@@ -8,18 +8,20 @@ const call = (toolName: string, extra: Record<string, unknown> = {}) =>
   });
 
 describe("resolveComputerUseAction", () => {
-  it("names each driver tool with a short label and its own icon", () => {
+  it("names each driver tool with a friendly label and its own icon", () => {
     expect(call("click")).toEqual({ label: "Click", icon: "mouse-pointer-click" });
-    expect(call("double_click")).toEqual({ label: "Double click", icon: "mouse-pointer-click" });
-    expect(call("move_cursor")).toEqual({ label: "Move", icon: "mouse-pointer-2" });
-    expect(call("scroll")).toEqual({ label: "Scroll", icon: "arrow-down-up" });
-    expect(call("type_text")).toEqual({ label: "Type", icon: "keyboard" });
-    expect(call("press_key")).toEqual({ label: "Press key", icon: "keyboard" });
-    expect(call("hotkey")).toEqual({ label: "Shortcut", icon: "keyboard" });
-    expect(call("get_window_state")).toEqual({ label: "Inspect window", icon: "eye" });
-    expect(call("launch_app")).toEqual({ label: "Open app", icon: "app-window" });
-    expect(call("page")).toEqual({ label: "Browser page", icon: "globe" });
-    expect(call("set_agent_cursor_style")?.label).toBe("Cursor settings");
+    expect(call("double_click")).toEqual({ label: "Double-click", icon: "mouse" });
+    expect(call("right_click")).toEqual({ label: "Right-click", icon: "menu" });
+    expect(call("type_text")).toEqual({ label: "Type", icon: "type" });
+    expect(call("hotkey")).toEqual({ label: "Shortcut", icon: "command" });
+    expect(call("get_window_state")).toEqual({ label: "Look at window", icon: "scan-eye" });
+    expect(call("launch_app")).toEqual({ label: "Open app", icon: "rocket" });
+    expect(call("page")).toEqual({ label: "Web page", icon: "globe" });
+  });
+
+  it("gives every known driver tool its own icon", () => {
+    const names = Object.keys(KNOWN_TOOLS);
+    expect(new Set(names.map((n) => KNOWN_TOOLS[n]!.icon)).size).toBe(names.length);
   });
 
   it("never includes Sparky or computer-use wording in the label", () => {

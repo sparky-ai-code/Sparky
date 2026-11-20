@@ -1,18 +1,42 @@
 export type ComputerUseIconName =
   | "mouse-pointer-click"
   | "mouse-pointer-2"
-  | "keyboard"
+  | "mouse-pointer"
+  | "mouse"
+  | "menu"
   | "move"
+  | "keyboard"
+  | "type"
+  | "command"
+  | "text-cursor-input"
   | "arrow-down-up"
-  | "camera"
-  | "eye"
+  | "layout-grid"
+  | "panels-top-left"
+  | "scan-eye"
+  | "rocket"
+  | "power"
+  | "bug"
   | "app-window"
-  | "clock"
-  | "globe"
+  | "monitor"
+  | "crosshair"
+  | "toggle-right"
+  | "route"
+  | "palette"
+  | "shield-check"
+  | "activity"
+  | "sliders-horizontal"
   | "settings"
-  | "video"
-  | "x"
+  | "list-tree"
   | "zoom-in"
+  | "globe"
+  | "video"
+  | "square"
+  | "radio"
+  | "history"
+  | "download"
+  | "play-circle"
+  | "log-out"
+  | "refresh-cw"
   | "list-checks";
 
 export interface ComputerUseAction {
@@ -63,46 +87,47 @@ const humanize = (name: string): string => {
   return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : "Action";
 };
 
-// Exact names of the tools exposed by `cua-driver mcp`, with short labels.
-const KNOWN_TOOLS: Record<string, ComputerUseAction> = {
-  list_apps: { label: "List apps", icon: "app-window" },
-  list_windows: { label: "List windows", icon: "app-window" },
-  get_window_state: { label: "Inspect window", icon: "eye" },
-  launch_app: { label: "Open app", icon: "app-window" },
-  kill_app: { label: "Close app", icon: "x" },
-  bring_to_front: { label: "Focus window", icon: "app-window" },
-  debug_window_info: { label: "Window info", icon: "eye" },
+// Exact names of the tools exposed by `cua-driver mcp`. Labels are friendly and
+// intentionally differ from the backend names; every tool has its own icon.
+export const KNOWN_TOOLS: Record<string, ComputerUseAction> = {
+  list_apps: { label: "Browse apps", icon: "layout-grid" },
+  list_windows: { label: "Find windows", icon: "panels-top-left" },
+  get_window_state: { label: "Look at window", icon: "scan-eye" },
+  launch_app: { label: "Open app", icon: "rocket" },
+  kill_app: { label: "Quit app", icon: "power" },
+  bring_to_front: { label: "Bring forward", icon: "app-window" },
+  debug_window_info: { label: "Debug window", icon: "bug" },
   click: { label: "Click", icon: "mouse-pointer-click" },
-  double_click: { label: "Double click", icon: "mouse-pointer-click" },
-  right_click: { label: "Right click", icon: "mouse-pointer-click" },
+  double_click: { label: "Double-click", icon: "mouse" },
+  right_click: { label: "Right-click", icon: "menu" },
   drag: { label: "Drag", icon: "move" },
-  type_text: { label: "Type", icon: "keyboard" },
+  type_text: { label: "Type", icon: "type" },
   press_key: { label: "Press key", icon: "keyboard" },
-  hotkey: { label: "Shortcut", icon: "keyboard" },
-  set_value: { label: "Set value", icon: "keyboard" },
+  hotkey: { label: "Shortcut", icon: "command" },
+  set_value: { label: "Fill field", icon: "text-cursor-input" },
   scroll: { label: "Scroll", icon: "arrow-down-up" },
-  get_screen_size: { label: "Screen size", icon: "eye" },
-  get_cursor_position: { label: "Cursor position", icon: "mouse-pointer-2" },
+  get_screen_size: { label: "Screen size", icon: "monitor" },
+  get_cursor_position: { label: "Find cursor", icon: "crosshair" },
   move_cursor: { label: "Move", icon: "mouse-pointer-2" },
-  set_agent_cursor_enabled: { label: "Cursor settings", icon: "mouse-pointer-2" },
-  set_agent_cursor_motion: { label: "Cursor settings", icon: "mouse-pointer-2" },
-  set_agent_cursor_style: { label: "Cursor settings", icon: "mouse-pointer-2" },
-  get_agent_cursor_state: { label: "Cursor settings", icon: "mouse-pointer-2" },
-  check_permissions: { label: "Check access", icon: "settings" },
-  health_report: { label: "Health check", icon: "settings" },
-  get_config: { label: "Driver settings", icon: "settings" },
-  set_config: { label: "Driver settings", icon: "settings" },
-  get_accessibility_tree: { label: "Inspect desktop", icon: "eye" },
+  set_agent_cursor_enabled: { label: "Show cursor", icon: "toggle-right" },
+  set_agent_cursor_motion: { label: "Cursor motion", icon: "route" },
+  set_agent_cursor_style: { label: "Cursor style", icon: "palette" },
+  get_agent_cursor_state: { label: "Cursor info", icon: "mouse-pointer" },
+  check_permissions: { label: "Permissions", icon: "shield-check" },
+  health_report: { label: "Health check", icon: "activity" },
+  get_config: { label: "Read settings", icon: "sliders-horizontal" },
+  set_config: { label: "Change settings", icon: "settings" },
+  get_accessibility_tree: { label: "Scan desktop", icon: "list-tree" },
   zoom: { label: "Zoom", icon: "zoom-in" },
-  page: { label: "Browser page", icon: "globe" },
-  start_recording: { label: "Start recording", icon: "video" },
-  stop_recording: { label: "Stop recording", icon: "video" },
-  get_recording_state: { label: "Recording status", icon: "video" },
-  replay_trajectory: { label: "Replay", icon: "video" },
-  install_ffmpeg: { label: "Install ffmpeg", icon: "settings" },
-  start_session: { label: "Start session", icon: "clock" },
-  end_session: { label: "End session", icon: "clock" },
-  check_for_update: { label: "Check for update", icon: "settings" },
+  page: { label: "Web page", icon: "globe" },
+  start_recording: { label: "Record", icon: "video" },
+  stop_recording: { label: "Stop recording", icon: "square" },
+  get_recording_state: { label: "Recording status", icon: "radio" },
+  replay_trajectory: { label: "Replay", icon: "history" },
+  install_ffmpeg: { label: "Get ffmpeg", icon: "download" },
+  start_session: { label: "Begin session", icon: "play-circle" },
+  end_session: { label: "End session", icon: "log-out" },
+  check_for_update: { label: "Check updates", icon: "refresh-cw" },
 };
 
 /** Maps a driver tool name to a short label and a distinct icon. */
@@ -113,19 +138,19 @@ export function describeComputerUseTool(innerToolName: string): ComputerUseActio
     .replace(/^(computer|cua|desktop)[_\-.]/u, "");
   const known = KNOWN_TOOLS[name];
   if (known) return known;
-  if (/double[_-]?click/u.test(name)) return { label: "Double click", icon: "mouse-pointer-click" };
-  if (/right[_-]?click/u.test(name)) return { label: "Right click", icon: "mouse-pointer-click" };
+  if (/double[_-]?click/u.test(name)) return { label: "Double-click", icon: "mouse-pointer-click" };
+  if (/right[_-]?click/u.test(name)) return { label: "Right-click", icon: "mouse-pointer-click" };
   if (/click|tap/u.test(name)) return { label: "Click", icon: "mouse-pointer-click" };
   if (/drag/u.test(name)) return { label: "Drag", icon: "move" };
   if (/move|hover/u.test(name)) return { label: "Move", icon: "mouse-pointer-2" };
   if (/scroll/u.test(name)) return { label: "Scroll", icon: "arrow-down-up" };
   if (/hotkey|press|key/u.test(name)) return { label: "Press key", icon: "keyboard" };
   if (/type|text|input/u.test(name)) return { label: "Type", icon: "keyboard" };
-  if (/screenshot|capture/u.test(name)) return { label: "Screenshot", icon: "camera" };
+  if (/screenshot|capture/u.test(name)) return { label: "Screenshot", icon: "scan-eye" };
   if (/launch|open[_-]?app/u.test(name)) return { label: "Open app", icon: "app-window" };
   if (/list[_-]?(apps|windows)/u.test(name)) return { label: "List windows", icon: "app-window" };
-  if (/state|snapshot|inspect|read|get/u.test(name)) return { label: "Inspect", icon: "eye" };
-  if (/wait|sleep/u.test(name)) return { label: "Wait", icon: "clock" };
+  if (/state|snapshot|inspect|read|get/u.test(name)) return { label: "Inspect", icon: "scan-eye" };
+  if (/wait|sleep/u.test(name)) return { label: "Wait", icon: "history" };
   return { label: humanize(name), icon: "mouse-pointer-2" };
 }
 

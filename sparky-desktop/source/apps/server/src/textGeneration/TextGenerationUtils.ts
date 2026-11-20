@@ -1,4 +1,4 @@
-import { TextGenerationError } from "@sparky/contracts";
+import { PROMPT_SUGGESTION_MAX_CHARS, TextGenerationError } from "@sparky/contracts";
 import * as Schema from "effect/Schema";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
@@ -118,4 +118,16 @@ export function normalizeCliError(
     detail: fallback,
     cause: error,
   });
+}
+
+/** Normalise a predicted next prompt to one trimmed line within `PROMPT_SUGGESTION_MAX_CHARS`. */
+export function sanitizePromptSuggestion(raw: string): string {
+  const firstLine = raw.trim().split(/\r?\n/g)[0] ?? "";
+  const normalized = firstLine
+    .trim()
+    .replace(/^['"`]+|['"`]+$/g, "")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (normalized.length <= PROMPT_SUGGESTION_MAX_CHARS) return normalized;
+  return normalized.slice(0, PROMPT_SUGGESTION_MAX_CHARS).trimEnd();
 }

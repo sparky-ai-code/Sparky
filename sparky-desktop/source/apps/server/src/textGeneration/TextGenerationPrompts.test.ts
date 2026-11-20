@@ -6,7 +6,11 @@ import {
   buildPrContentPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
-import { normalizeCliError, sanitizeThreadTitle } from "./TextGenerationUtils.ts";
+import {
+  normalizeCliError,
+  sanitizePromptSuggestion,
+  sanitizeThreadTitle,
+} from "./TextGenerationUtils.ts";
 import { TextGenerationError } from "@sparky/contracts";
 
 describe("buildCommitMessagePrompt", () => {
@@ -201,5 +205,27 @@ describe("normalizeCliError", () => {
 
     expect(result.detail).toBe("Failed to generate a commit message");
     expect(result.message).not.toContain("secret-token");
+  });
+});
+
+describe("sanitizePromptSuggestion", () => {
+  it("keeps one trimmed line and strips wrapping quotes", () => {
+    expect(sanitizePromptSuggestion('  "Now run the sync tests\nwith logs"  ')).toBe(
+      "Now run the sync tests",
+    );
+  });
+
+  it("collapses internal whitespace", () => {
+    expect(sanitizePromptSuggestion("Explain   why	the cache misses")).toBe(
+      "Explain why the cache misses",
+    );
+  });
+
+  it("returns an empty string when the agent had no suggestion", () => {
+    expect(sanitizePromptSuggestion("   ")).toBe("");
+  });
+
+  it("caps the length of a suggestion", () => {
+    expect(sanitizePromptSuggestion("a".repeat(400)).length).toBe(240);
   });
 });

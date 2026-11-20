@@ -6,6 +6,8 @@ import type {
   ModelSelection,
   ProviderInstanceId,
   ProviderWorkspaceContext,
+  PromptSuggestionInput,
+  PromptSuggestionResult,
 } from "@sparky/contracts";
 import { TextGenerationError } from "@sparky/contracts";
 
@@ -138,6 +140,14 @@ export class TextGeneration extends Context.Service<
     readonly generateThreadTitle: (
       input: ThreadTitleGenerationInput,
     ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
+
+    /**
+     * Predict the user's next prompt from the last completed round. Runs as a
+     * separate one-shot agent process with no workspace tools.
+     */
+    readonly generatePromptSuggestion: (
+      input: PromptSuggestionInput,
+    ) => Effect.Effect<PromptSuggestionResult, TextGenerationError>;
   }
 >()("t3/textGeneration/TextGeneration") {}
 
@@ -149,7 +159,8 @@ type TextGenerationOp =
   | "generatePrContent"
   | "generatePullRequestReview"
   | "generateBranchName"
-  | "generateThreadTitle";
+  | "generateThreadTitle"
+  | "generatePromptSuggestion";
 
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
@@ -192,6 +203,10 @@ export const makeTextGenerationFromRegistry = (
     generateThreadTitle: (input) =>
       resolveInstance(registry, "generateThreadTitle", input.modelSelection.instanceId).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generateThreadTitle(input)),
+      ),
+    generatePromptSuggestion: (input) =>
+      resolveInstance(registry, "generatePromptSuggestion", input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.generatePromptSuggestion(input)),
       ),
   });
 

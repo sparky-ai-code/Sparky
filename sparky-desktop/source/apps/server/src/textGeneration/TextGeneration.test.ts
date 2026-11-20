@@ -23,6 +23,8 @@ const makeStubTextGeneration = (
       Effect.die("generatePullRequestReview stub not configured for this test"),
     generateBranchName: () => Effect.die("generateBranchName stub not configured for this test"),
     generateThreadTitle: () => Effect.die("generateThreadTitle stub not configured for this test"),
+    generatePromptSuggestion: () =>
+      Effect.die("generatePromptSuggestion stub not configured for this test"),
     ...overrides,
   });
 

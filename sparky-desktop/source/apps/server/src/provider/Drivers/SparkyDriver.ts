@@ -17,7 +17,11 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import type * as TextGeneration from "../../textGeneration/TextGeneration.ts";
-import { sanitizeThreadTitle } from "../../textGeneration/TextGenerationUtils.ts";
+import {
+  limitSection,
+  sanitizePromptSuggestion,
+  sanitizeThreadTitle,
+} from "../../textGeneration/TextGenerationUtils.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import {
@@ -38,6 +42,8 @@ import { COMPUTER_USE_SKILL } from "./computerUseSkill.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 
 const DRIVER_KIND = ProviderDriverKind.make("sparky");
+/** Per-side character cap for the completed round embedded in the suggestion prompt. */
+const PROMPT_SUGGESTION_ROUND_PROMPT_CHARS = 4_000;
 const SPARKY_PLUGIN_INSTRUCTIONS = `Sparky Desktop can expose connected service plugins through the sparky_plugin_call MCP tool. Only use a plugin when the user's current request actually requires that service. An @plugin reference is context, not permission to perform unrelated actions. If the user explicitly asks for a supported service and it is not connected, call sparky_request_plugin_authorization with that plugin id and wait for the user's authorization card. If the user cancels or declines, treat that as a normal non-fatal outcome and continue the conversation without repeatedly asking. Never ask the user for OAuth tokens, passwords, provider client secrets, or other credentials in chat.`;
 
 const SparkySettings = Schema.Struct({
@@ -151,6 +157,28 @@ export function makeSparkyThreadTitlePrompt(message: string): string {
   ].join("\n");
 }
 
+/**
+ * Prompt for predicting the user's next message from the last completed round.
+ * The agent runs without workspace tools and must not continue the conversation.
+ */
+export function makeSparkyPromptSuggestionPrompt(input: {
+  readonly userMessage: string;
+  readonly assistantMessage: string;
+}): string {
+  return [
+    "You are a dedicated next-prompt predictor running in a separate background request.",
+    "Do not answer the conversation and do not continue it.",
+    "Predict the single message the user is most likely to send next, in the user's own voice, based on the completed round below.",
+    "Make it one short line (at most 160 characters) and concrete, such as a follow-up question, a verification request, or the next step.",
+    "If no next message is clearly useful, return an empty suggestion.",
+    'Return JSON only in this exact shape: {"suggestion":"..."}',
+    `User's message:
+${limitSection(input.userMessage.trim(), PROMPT_SUGGESTION_ROUND_PROMPT_CHARS)}`,
+    `Assistant's reply:
+${limitSection(input.assistantMessage.trim(), PROMPT_SUGGESTION_ROUND_PROMPT_CHARS)}`,
+  ].join("\n");
+}
+
 function makeTextGeneration(input: {
   readonly binaryPath: string;
   readonly environment: NodeJS.ProcessEnv;
@@ -237,6 +265,24 @@ function makeTextGeneration(input: {
         Effect.map((result) => ({
           branch: result.response.trim().split(/\s/u)[0] || "sparky-change",
         })),
+      ),
+    generatePromptSuggestion: (request) =>
+      run(
+        "generatePromptSuggestion",
+        request.cwd,
+        request.modelSelection,
+        makeSparkyPromptSuggestionPrompt({
+          userMessage: request.userMessage,
+          assistantMessage: request.assistantMessage,
+        }),
+        "none",
+      ).pipe(
+        Effect.map((result) => {
+          const parsed = parseJsonObject(result.response);
+          const rawSuggestion =
+            typeof parsed?.suggestion === "string" ? parsed.suggestion : result.response;
+          return { suggestion: sanitizePromptSuggestion(rawSuggestion) };
+        }),
       ),
     generateThreadTitle: (request) =>
       run(

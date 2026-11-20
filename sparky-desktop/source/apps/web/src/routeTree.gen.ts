@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TeamsRouteImport } from './routes/teams'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SchedulesRouteImport } from './routes/schedules'
 import { Route as PullRequestsRouteImport } from './routes/pull-requests'
@@ -25,14 +26,19 @@ import { Route as SettingsMcpRouteImport } from './routes/settings.mcp'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsInstructionsRouteImport } from './routes/settings.instructions'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
-import { Route as SettingsComputerUseRouteImport } from './routes/settings.computer-use'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
+import { Route as SettingsComputerUseRouteImport } from './routes/settings.computer-use'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
 import { Route as SettingsAnalyticsRouteImport } from './routes/settings.analytics'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 
+const TeamsRoute = TeamsRouteImport.update({
+  id: '/teams',
+  path: '/teams',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -112,14 +118,14 @@ const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
   path: '/general',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsComputerUseRoute = SettingsComputerUseRouteImport.update({
-  id: '/computer-use',
-  path: '/computer-use',
-  getParentRoute: () => SettingsRoute,
-} as any)
 const SettingsDiagnosticsRoute = SettingsDiagnosticsRouteImport.update({
   id: '/diagnostics',
   path: '/diagnostics',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsComputerUseRoute = SettingsComputerUseRouteImport.update({
+  id: '/computer-use',
+  path: '/computer-use',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsArchivedRoute = SettingsArchivedRouteImport.update({
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/pull-requests': typeof PullRequestsRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/teams': typeof TeamsRoute
   '/settings/analytics': typeof SettingsAnalyticsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
@@ -179,6 +186,7 @@ export interface FileRoutesByTo {
   '/pull-requests': typeof PullRequestsRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/teams': typeof TeamsRoute
   '/settings/analytics': typeof SettingsAnalyticsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
@@ -205,6 +213,7 @@ export interface FileRoutesById {
   '/pull-requests': typeof PullRequestsRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/teams': typeof TeamsRoute
   '/settings/analytics': typeof SettingsAnalyticsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
@@ -232,6 +241,7 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/schedules'
     | '/settings'
+    | '/teams'
     | '/settings/analytics'
     | '/settings/appearance'
     | '/settings/archived'
@@ -255,6 +265,7 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/schedules'
     | '/settings'
+    | '/teams'
     | '/settings/analytics'
     | '/settings/appearance'
     | '/settings/archived'
@@ -280,6 +291,7 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/schedules'
     | '/settings'
+    | '/teams'
     | '/settings/analytics'
     | '/settings/appearance'
     | '/settings/archived'
@@ -306,10 +318,18 @@ export interface RootRouteChildren {
   PullRequestsRoute: typeof PullRequestsRoute
   SchedulesRoute: typeof SchedulesRoute
   SettingsRoute: typeof SettingsRouteWithChildren
+  TeamsRoute: typeof TeamsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/teams': {
+      id: '/teams'
+      path: '/teams'
+      fullPath: '/teams'
+      preLoaderRoute: typeof TeamsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -422,18 +442,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsGeneralRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/settings/computer-use': {
-      id: '/settings/computer-use'
-      path: '/computer-use'
-      fullPath: '/settings/computer-use'
-      preLoaderRoute: typeof SettingsComputerUseRouteImport
-      parentRoute: typeof SettingsRoute
-    }
     '/settings/diagnostics': {
       id: '/settings/diagnostics'
       path: '/diagnostics'
       fullPath: '/settings/diagnostics'
       preLoaderRoute: typeof SettingsDiagnosticsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/computer-use': {
+      id: '/settings/computer-use'
+      path: '/computer-use'
+      fullPath: '/settings/computer-use'
+      preLoaderRoute: typeof SettingsComputerUseRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/archived': {
@@ -533,6 +553,7 @@ const rootRouteChildren: RootRouteChildren = {
   PullRequestsRoute: PullRequestsRoute,
   SchedulesRoute: SchedulesRoute,
   SettingsRoute: SettingsRouteWithChildren,
+  TeamsRoute: TeamsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

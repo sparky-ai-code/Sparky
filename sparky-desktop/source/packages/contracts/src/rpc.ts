@@ -158,6 +158,26 @@ import {
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
+import {
+  TeamsAddProjectInput,
+  TeamsCreateTeamInput,
+  TeamsCreateThreadInput,
+  TeamsError,
+  TeamsInviteMemberInput,
+  TeamsInviteMemberResult,
+  TeamsListMessagesInput,
+  TeamsListMessagesResult,
+  TeamsListTeamsInput,
+  TeamsListTeamsResult,
+  TeamsListThreadsInput,
+  TeamsListThreadsResult,
+  TeamsPostMessageInput,
+  TeamsToggleReactionInput,
+  TeamsToggleReactionResult,
+  Team,
+  TeamMessage,
+  TeamThread,
+} from "./teams.ts";
 import { VcsError } from "./vcs.ts";
 
 export const WS_METHODS = {
@@ -245,6 +265,17 @@ export const WS_METHODS = {
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
+
+  // Teams (GitHub-backed team chat and team projects)
+  teamsListTeams: "teams.listTeams",
+  teamsCreateTeam: "teams.createTeam",
+  teamsAddProject: "teams.addProject",
+  teamsInviteMember: "teams.inviteMember",
+  teamsListThreads: "teams.listThreads",
+  teamsCreateThread: "teams.createThread",
+  teamsListMessages: "teams.listMessages",
+  teamsPostMessage: "teams.postMessage",
+  teamsToggleReaction: "teams.toggleReaction",
 
   // Streaming subscriptions
   subscribeVcsStatus: "subscribeVcsStatus",
@@ -543,6 +574,60 @@ export const WsReviewGetDiffPreviewRpc = Rpc.make(WS_METHODS.reviewGetDiffPrevie
   error: Schema.Union([ReviewDiffPreviewError, EnvironmentAuthorizationError]),
 });
 
+export const WsTeamsListTeamsRpc = Rpc.make(WS_METHODS.teamsListTeams, {
+  payload: TeamsListTeamsInput,
+  success: TeamsListTeamsResult,
+  error: Schema.Union([TeamsError, EnvironmentAuthorizationError]),
+});
+
+export const WsTeamsCreateTeamRpc = Rpc.make(WS_METHODS.teamsCreateTeam, {
+  payload: TeamsCreateTeamInput,
+  success: Team,
+  error: Schema.Union([TeamsError, EnvironmentAuthorizationError]),
+});
+
+export const WsTeamsAddProjectRpc = Rpc.make(WS_METHODS.teamsAddProject, {
+  payload: TeamsAddProjectInput,
+  success: Team,
+  error: Schema.Union([TeamsError, EnvironmentAuthorizationError]),
+});
+
+export const WsTeamsInviteMemberRpc = Rpc.make(WS_METHODS.teamsInviteMember, {
+  payload: TeamsInviteMemberInput,
+  success: TeamsInviteMemberResult,
+  error: Schema.Union([TeamsError, EnvironmentAuthorizationError]),
+});
+
+export const WsTeamsListThreadsRpc = Rpc.make(WS_METHODS.teamsListThreads, {
+  payload: TeamsListThreadsInput,
+  success: TeamsListThreadsResult,
+  error: Schema.Union([TeamsError, EnvironmentAuthorizationError]),
+});
+
+export const WsTeamsCreateThreadRpc = Rpc.make(WS_METHODS.teamsCreateThread, {
+  payload: TeamsCreateThreadInput,
+  success: TeamThread,
+  error: Schema.Union([TeamsError, EnvironmentAuthorizationError]),
+});
+
+export const WsTeamsListMessagesRpc = Rpc.make(WS_METHODS.teamsListMessages, {
+  payload: TeamsListMessagesInput,
+  success: TeamsListMessagesResult,
+  error: Schema.Union([TeamsError, EnvironmentAuthorizationError]),
+});
+
+export const WsTeamsPostMessageRpc = Rpc.make(WS_METHODS.teamsPostMessage, {
+  payload: TeamsPostMessageInput,
+  success: TeamMessage,
+  error: Schema.Union([TeamsError, EnvironmentAuthorizationError]),
+});
+
+export const WsTeamsToggleReactionRpc = Rpc.make(WS_METHODS.teamsToggleReaction, {
+  payload: TeamsToggleReactionInput,
+  success: TeamsToggleReactionResult,
+  error: Schema.Union([TeamsError, EnvironmentAuthorizationError]),
+});
+
 export const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -770,6 +855,15 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
+  WsTeamsListTeamsRpc,
+  WsTeamsCreateTeamRpc,
+  WsTeamsAddProjectRpc,
+  WsTeamsInviteMemberRpc,
+  WsTeamsListThreadsRpc,
+  WsTeamsCreateThreadRpc,
+  WsTeamsListMessagesRpc,
+  WsTeamsPostMessageRpc,
+  WsTeamsToggleReactionRpc,
   WsProjectsListEntriesRpc,
   WsProjectsReadFileRpc,
   WsProjectsSearchEntriesRpc,

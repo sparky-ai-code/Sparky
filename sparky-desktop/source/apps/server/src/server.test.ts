@@ -106,6 +106,7 @@ import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
+import * as TeamsService from "./teams/TeamsService.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -516,6 +517,8 @@ const buildAppUnderTest = (options?: {
           Layer.provideMerge(gitVcsDriverLayer),
           Layer.provide(vcsDriverRegistryLayer),
         );
+    // Teams talk to GitHub through `gh`; tests never call them, so a mock is enough.
+    const teamsLayer = Layer.mock(TeamsService.TeamsService)({});
     const vcsStatusBroadcasterLayer = options?.layers?.vcsStatusBroadcaster
       ? Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
           ...options.layers.vcsStatusBroadcaster,
@@ -631,7 +634,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(gitManagerLayer),
       Layer.provide(gitVcsDriverLayer),
       Layer.provide(gitWorkflowLayer),
-      Layer.provide(reviewLayer),
+      Layer.provide(Layer.merge(reviewLayer, teamsLayer)),
       Layer.provide(vcsProvisioningLayer),
       Layer.provide(
         Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
@@ -5734,7 +5737,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(items[0]?.kind, "snapshot");
-      assert.equal(items[0]?.kind === "snapshot" ? items[0].snapshot.snapshotSequence : null, 10_050);
+      assert.equal(
+        items[0]?.kind === "snapshot" ? items[0].snapshot.snapshotSequence : null,
+        10_050,
+      );
       assert.deepEqual(items[1], { kind: "synchronized" });
       assert.equal(replayCalls, 0);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),

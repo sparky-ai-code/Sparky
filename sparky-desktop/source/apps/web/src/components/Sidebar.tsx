@@ -19,6 +19,7 @@ import {
   TerminalIcon,
   TriangleAlertIcon,
 } from "./Hugeicons";
+import { UsersIcon } from "lucide-react";
 import {
   ChangeRequestStatusIcon,
   prStatusIndicator,
@@ -219,10 +220,7 @@ import {
   ThreadStatusPill,
 } from "./Sidebar.logic";
 import { sortThreads } from "../lib/threadSort";
-import {
-  SidebarArm64IntelBuildWarning,
-  SidebarUpdatePill,
-} from "./sidebar/SidebarUpdatePill";
+import { SidebarArm64IntelBuildWarning, SidebarUpdatePill } from "./sidebar/SidebarUpdatePill";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { CommandDialogTrigger } from "./ui/command";
@@ -720,22 +718,25 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     },
     [attemptArchiveThread, clearConfirmingArchive, threadRef],
   );
-  const handleArchiveFromMenu = useCallback((event: React.MouseEvent) => {
-    // MenuPopup is portaled, but React events still bubble through the row's
-    // component tree. Keep this action from triggering the row navigation.
-    event.stopPropagation();
-    if (isThreadRunning) return;
-    if (appSettingsConfirmThreadArchive && !window.confirm(`Archive thread "${thread.title}"?`)) {
-      return;
-    }
-    void attemptArchiveThread(threadRef);
-  }, [
-    appSettingsConfirmThreadArchive,
-    attemptArchiveThread,
-    isThreadRunning,
-    thread.title,
-    threadRef,
-  ]);
+  const handleArchiveFromMenu = useCallback(
+    (event: React.MouseEvent) => {
+      // MenuPopup is portaled, but React events still bubble through the row's
+      // component tree. Keep this action from triggering the row navigation.
+      event.stopPropagation();
+      if (isThreadRunning) return;
+      if (appSettingsConfirmThreadArchive && !window.confirm(`Archive thread "${thread.title}"?`)) {
+        return;
+      }
+      void attemptArchiveThread(threadRef);
+    },
+    [
+      appSettingsConfirmThreadArchive,
+      attemptArchiveThread,
+      isThreadRunning,
+      thread.title,
+      threadRef,
+    ],
+  );
   const handleMenuTriggerClick = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
   }, []);
@@ -3583,6 +3584,13 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     void navigate({ to: "/schedules" });
   }, [isMobile, navigate, setOpenMobile]);
 
+  const handleOpenTeams = useCallback(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+    void navigate({ to: "/teams" });
+  }, [isMobile, navigate, setOpenMobile]);
+
   const handleProjectSortOrderChange = useCallback(
     (sortOrder: SidebarProjectSortOrder) => {
       updateSettings({ sidebarProjectSortOrder: sortOrder });
@@ -3736,6 +3744,22 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                 <FolderPlusIcon className="size-3.5" />
               </TooltipTrigger>
               <TooltipPopup side="right">Add project</TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label="Open teams"
+                    data-testid="sidebar-teams-trigger"
+                    className="inline-flex h-6 min-w-6 cursor-pointer items-center justify-center rounded-md px-[calc(--spacing(1)-1px)] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+                    onClick={handleOpenTeams}
+                  />
+                }
+              >
+                <UsersIcon className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="right">Teams</TooltipPopup>
             </Tooltip>
           </div>
         </div>

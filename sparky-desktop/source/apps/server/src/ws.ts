@@ -96,6 +96,7 @@ import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
+import * as TeamsService from "./teams/TeamsService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -402,6 +403,15 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.vcsSwitchRef, AuthOrchestrationOperateScope],
   [WS_METHODS.vcsInit, AuthOrchestrationOperateScope],
   [WS_METHODS.reviewGetDiffPreview, AuthReviewWriteScope],
+  [WS_METHODS.teamsListTeams, AuthOrchestrationReadScope],
+  [WS_METHODS.teamsCreateTeam, AuthOrchestrationOperateScope],
+  [WS_METHODS.teamsAddProject, AuthOrchestrationOperateScope],
+  [WS_METHODS.teamsInviteMember, AuthOrchestrationOperateScope],
+  [WS_METHODS.teamsListThreads, AuthOrchestrationReadScope],
+  [WS_METHODS.teamsCreateThread, AuthOrchestrationOperateScope],
+  [WS_METHODS.teamsListMessages, AuthOrchestrationReadScope],
+  [WS_METHODS.teamsPostMessage, AuthOrchestrationOperateScope],
+  [WS_METHODS.teamsToggleReaction, AuthOrchestrationOperateScope],
   [WS_METHODS.terminalOpen, AuthTerminalOperateScope],
   [WS_METHODS.terminalAttach, AuthTerminalOperateScope],
   [WS_METHODS.terminalWrite, AuthTerminalOperateScope],
@@ -483,6 +493,7 @@ const makeWsRpcLayer = (
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const review = yield* ReviewService.ReviewService;
+      const teams = yield* TeamsService.TeamsService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
@@ -2020,6 +2031,42 @@ const makeWsRpcLayer = (
         [WS_METHODS.reviewGetDiffPreview]: (input) =>
           observeRpcEffect(WS_METHODS.reviewGetDiffPreview, review.getDiffPreview(input), {
             "rpc.aggregate": "review",
+          }),
+        [WS_METHODS.teamsListTeams]: (input) =>
+          observeRpcEffect(WS_METHODS.teamsListTeams, teams.listTeams(input), {
+            "rpc.aggregate": "teams",
+          }),
+        [WS_METHODS.teamsCreateTeam]: (input) =>
+          observeRpcEffect(WS_METHODS.teamsCreateTeam, teams.createTeam(input), {
+            "rpc.aggregate": "teams",
+          }),
+        [WS_METHODS.teamsAddProject]: (input) =>
+          observeRpcEffect(WS_METHODS.teamsAddProject, teams.addProject(input), {
+            "rpc.aggregate": "teams",
+          }),
+        [WS_METHODS.teamsInviteMember]: (input) =>
+          observeRpcEffect(WS_METHODS.teamsInviteMember, teams.inviteMember(input), {
+            "rpc.aggregate": "teams",
+          }),
+        [WS_METHODS.teamsListThreads]: (input) =>
+          observeRpcEffect(WS_METHODS.teamsListThreads, teams.listThreads(input), {
+            "rpc.aggregate": "teams",
+          }),
+        [WS_METHODS.teamsCreateThread]: (input) =>
+          observeRpcEffect(WS_METHODS.teamsCreateThread, teams.createThread(input), {
+            "rpc.aggregate": "teams",
+          }),
+        [WS_METHODS.teamsListMessages]: (input) =>
+          observeRpcEffect(WS_METHODS.teamsListMessages, teams.listMessages(input), {
+            "rpc.aggregate": "teams",
+          }),
+        [WS_METHODS.teamsPostMessage]: (input) =>
+          observeRpcEffect(WS_METHODS.teamsPostMessage, teams.postMessage(input), {
+            "rpc.aggregate": "teams",
+          }),
+        [WS_METHODS.teamsToggleReaction]: (input) =>
+          observeRpcEffect(WS_METHODS.teamsToggleReaction, teams.toggleReaction(input), {
+            "rpc.aggregate": "teams",
           }),
         [WS_METHODS.terminalOpen]: (input) =>
           observeRpcEffect(WS_METHODS.terminalOpen, terminalManager.open(input), {

@@ -1290,6 +1290,7 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
+  const stopRequestedDuringDispatchRef = useRef(false);
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   useLayoutEffect(() => {
@@ -4695,6 +4696,20 @@ function ChatViewContent(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        if (stopRequestedDuringDispatchRef.current) {
+          stopRequestedDuringDispatchRef.current = false;
+          const interruptResult = await interruptThreadTurn({
+            environmentId,
+            input: buildThreadTurnInterruptInput(activeThread),
+          });
+          if (interruptResult._tag === "Failure" && !isAtomCommandInterrupted(interruptResult)) {
+            const error = squashAtomCommandFailure(interruptResult);
+            setThreadError(
+              activeThread.id,
+              error instanceof Error ? error.message : "Failed to interrupt the current turn.",
+            );
+          }
+        }
       }
     }
 
@@ -4745,6 +4760,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     sendInFlightRef.current = false;
     if (!turnStartSucceeded) {
+      stopRequestedDuringDispatchRef.current = false;
       setDockedDraftHeroThreadKey((currentThreadKey) =>
         currentThreadKey === activeThreadKey ? null : currentThreadKey,
       );
@@ -4754,6 +4770,13 @@ function ChatViewContent(props: ChatViewProps) {
 
   const onInterrupt = async () => {
     if (!activeThread) return;
+    if (isSendBusy && phase !== "running") {
+      // The send request may still be starting the server turn. Remember the
+      // user's stop request and issue the real interrupt as soon as it is
+      // accepted, rather than losing the click to a not-yet-running backend.
+      stopRequestedDuringDispatchRef.current = true;
+      return;
+    }
     const result = await interruptThreadTurn({
       environmentId,
       input: buildThreadTurnInterruptInput(activeThread),

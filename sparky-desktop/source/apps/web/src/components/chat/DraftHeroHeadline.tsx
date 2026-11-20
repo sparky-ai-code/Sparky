@@ -1,6 +1,6 @@
 import { EnvironmentId, UNSCOPED_CHAT_PROJECT_ID, type ScopedProjectRef } from "@sparky/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@sparky/client-runtime/environment";
-import { FolderMinusIcon, FolderPlusIcon } from "lucide-react";
+import { FolderMinusIcon, FolderPlusIcon } from "../Hugeicons";
 import { useMemo } from "react";
 
 import { useOpenAddProjectCommandPalette } from "~/commandPaletteContext";

@@ -1,6 +1,6 @@
 import { type ProviderInstanceId } from "@sparky/contracts";
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { StarIcon } from "lucide-react";
+import { StarIcon } from "../Hugeicons";
 import type { Icon } from "../Icons";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";

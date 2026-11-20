@@ -1,4 +1,4 @@
-import { MessageCircle, X } from "lucide-react";
+import { MessageCircleIcon as MessageCircle, XIcon as X } from "../Hugeicons";
 
 import {
   COMPOSER_INLINE_CHIP_CLASS_NAME,

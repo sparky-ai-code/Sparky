@@ -17,6 +17,8 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import { ComputerUseToolkitHandlersLive } from "./toolkits/computerUseHandlers.ts";
+import { ComputerUseToolkit } from "./toolkits/computerUseTools.ts";
 import { ExternalMcpToolkitHandlersLive } from "./toolkits/externalMcpHandlers.ts";
 import { ExternalMcpToolkit } from "./toolkits/externalMcpTools.ts";
 import { PluginToolkitHandlersLive } from "./toolkits/plugins/handlers.ts";
@@ -300,7 +302,11 @@ const ExternalMcpToolkitRegistrationLive = McpServer.toolkit(ExternalMcpToolkit)
   Layer.provide(ExternalMcpToolkitHandlersLive),
 );
 
-const HtmlRenderToolkitRegistrationLive = McpServer.toolkit(HtmlRenderToolkit).pipe(
+const ComputerUseToolkitRegistrationLive = McpServer.toolkit(ComputerUseToolkit).pipe(
+  Layer.provide(ComputerUseToolkitHandlersLive),
+);
+
+const HtmlRenderToolkitRegistrationLive =McpServer.toolkit(HtmlRenderToolkit).pipe(
   Layer.provide(HtmlRenderToolkitHandlersLive),
 );
 
@@ -311,6 +317,7 @@ const ToolkitRegistrationLive = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   HtmlRenderToolkitRegistrationLive,
   ExternalMcpToolkitRegistrationLive,
+  ComputerUseToolkitRegistrationLive,
   PluginToolkitRegistrationLive,
   PullRequestReviewToolkitRegistrationLive,
 );

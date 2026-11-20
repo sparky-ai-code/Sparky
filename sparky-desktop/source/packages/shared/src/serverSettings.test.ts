@@ -13,6 +13,25 @@ import {
 } from "./serverSettings.ts";
 
 describe("serverSettings helpers", () => {
+  it("patches one computer-use preference without clobbering its siblings", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      computerUse: {
+        enabled: true,
+        customInstructions: "Ask before submitting forms.",
+        cursorThemeId: "custom.cursor",
+      },
+    };
+
+    expect(
+      applyServerSettingsPatch(current, { computerUse: { enabled: false } }).computerUse,
+    ).toEqual({
+      enabled: false,
+      customInstructions: "Ask before submitting forms.",
+      cursorThemeId: "custom.cursor",
+    });
+  });
+
   it("normalizes optional persisted strings", () => {
     expect(normalizePersistedServerSettingString(undefined)).toBeUndefined();
     expect(normalizePersistedServerSettingString("   ")).toBeUndefined();

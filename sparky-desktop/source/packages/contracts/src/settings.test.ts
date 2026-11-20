@@ -282,3 +282,31 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
   });
 });
+
+describe("ServerSettings computer use", () => {
+  it("defaults computer use to disabled with safe instructions and cursor theme values", () => {
+    expect(decodeServerSettings({}).computerUse).toEqual({
+      enabled: false,
+      customInstructions: "",
+      cursorThemeId: "cua.default",
+    });
+  });
+
+  it("accepts nested computer-use setting patches and trims text values", () => {
+    expect(
+      decodeServerSettingsPatch({
+        computerUse: {
+          enabled: true,
+          customInstructions: "  Ask before submitting forms.  ",
+          cursorThemeId: "  custom.cursor  ",
+        },
+      }),
+    ).toEqual({
+      computerUse: {
+        enabled: true,
+        customInstructions: "Ask before submitting forms.",
+        cursorThemeId: "custom.cursor",
+      },
+    });
+  });
+});

@@ -25,6 +25,7 @@ import { Route as SettingsMcpRouteImport } from './routes/settings.mcp'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsInstructionsRouteImport } from './routes/settings.instructions'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
+import { Route as SettingsComputerUseRouteImport } from './routes/settings.computer-use'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
@@ -111,6 +112,11 @@ const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
   path: '/general',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsComputerUseRoute = SettingsComputerUseRouteImport.update({
+  id: '/computer-use',
+  path: '/computer-use',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsDiagnosticsRoute = SettingsDiagnosticsRouteImport.update({
   id: '/diagnostics',
   path: '/diagnostics',
@@ -153,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/settings/analytics': typeof SettingsAnalyticsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/computer-use': typeof SettingsComputerUseRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/instructions': typeof SettingsInstructionsRoute
@@ -175,6 +182,7 @@ export interface FileRoutesByTo {
   '/settings/analytics': typeof SettingsAnalyticsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/computer-use': typeof SettingsComputerUseRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/instructions': typeof SettingsInstructionsRoute
@@ -200,6 +208,7 @@ export interface FileRoutesById {
   '/settings/analytics': typeof SettingsAnalyticsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/computer-use': typeof SettingsComputerUseRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/instructions': typeof SettingsInstructionsRoute
@@ -226,6 +235,7 @@ export interface FileRouteTypes {
     | '/settings/analytics'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/computer-use'
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/instructions'
@@ -248,6 +258,7 @@ export interface FileRouteTypes {
     | '/settings/analytics'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/computer-use'
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/instructions'
@@ -272,6 +283,7 @@ export interface FileRouteTypes {
     | '/settings/analytics'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/computer-use'
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/instructions'
@@ -410,6 +422,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsGeneralRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/computer-use': {
+      id: '/settings/computer-use'
+      path: '/computer-use'
+      fullPath: '/settings/computer-use'
+      preLoaderRoute: typeof SettingsComputerUseRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/diagnostics': {
       id: '/settings/diagnostics'
       path: '/diagnostics'
@@ -473,6 +492,7 @@ interface SettingsRouteChildren {
   SettingsAnalyticsRoute: typeof SettingsAnalyticsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
+  SettingsComputerUseRoute: typeof SettingsComputerUseRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsInstructionsRoute: typeof SettingsInstructionsRoute
@@ -489,6 +509,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAnalyticsRoute: SettingsAnalyticsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsArchivedRoute: SettingsArchivedRoute,
+  SettingsComputerUseRoute: SettingsComputerUseRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsInstructionsRoute: SettingsInstructionsRoute,

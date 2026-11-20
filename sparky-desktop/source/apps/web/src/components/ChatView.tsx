@@ -3532,37 +3532,39 @@ function ChatViewContent(props: ChatViewProps) {
         }
       }
 
+      // Runtime mode and interaction mode are independent fields, so send both
+      // in parallel instead of paying one serialized command round trip each
+      // before the turn can start. The model update above stays first.
+      const modeUpdates: Array<Promise<AtomCommandResult<void, unknown>>> = [];
       if (input.runtimeMode !== serverThread.runtimeMode) {
-        result = mapAtomCommandResult(
-          await setThreadRuntimeMode({
+        modeUpdates.push(
+          setThreadRuntimeMode({
             environmentId,
             input: {
               threadId: input.threadId,
               runtimeMode: input.runtimeMode,
               createdAt: input.createdAt,
             },
-          }),
-          () => undefined,
+          }).then((modeResult) => mapAtomCommandResult(modeResult, () => undefined)),
         );
-        if (result._tag === "Failure") {
-          return result;
-        }
       }
-
       if (input.interactionMode !== serverThread.interactionMode) {
-        result = mapAtomCommandResult(
-          await setThreadInteractionMode({
+        modeUpdates.push(
+          setThreadInteractionMode({
             environmentId,
             input: {
               threadId: input.threadId,
               interactionMode: input.interactionMode,
               createdAt: input.createdAt,
             },
-          }),
-          () => undefined,
+          }).then((modeResult) => mapAtomCommandResult(modeResult, () => undefined)),
         );
       }
-      return result;
+      if (modeUpdates.length === 0) {
+        return result;
+      }
+      const modeResults = await Promise.all(modeUpdates);
+      return modeResults.find((modeResult) => modeResult._tag === "Failure") ?? result;
     },
     [
       environmentId,

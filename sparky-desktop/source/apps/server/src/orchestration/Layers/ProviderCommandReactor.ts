@@ -1154,10 +1154,21 @@ const make = Effect.gen(function* () {
       generationInput !== undefined && canReplaceThreadTitle(thread.title, event.payload.titleSeed)
         ? generationInput
         : undefined;
+    // Start the provider turn before any title metadata work. The fallback
+    // title is a command dispatch that queues behind the engine's serialized
+    // command worker, so awaiting it here delayed the first streamed turn by
+    // a full command round trip.
+    const providerTurn = providerService
+      .sendTurn(sendTurnRequest.value)
+      .pipe(Effect.catchCause((cause) => recoverTurnStartFailure(cause)));
+
+    yield* providerTurn.pipe(Effect.forkScoped);
+
     if (titleInput !== undefined) {
-      // Put a deterministic local title in place immediately, then run title
-      // generation as an independent text-only request using the exact model
-      // selection. It can finish while the real turn is still streaming.
+      // Put a deterministic local title in place, then run title generation as
+      // an independent text-only request using the exact model selection. Both
+      // run in one forked fiber so generation always follows the fallback.
+      // Neither may hold the turn-start worker open.
       yield* applyFallbackThreadTitle(titleInput).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning(
@@ -1168,19 +1179,11 @@ const make = Effect.gen(function* () {
             },
           ),
         ),
-      );
-      yield* maybeGenerateThreadTitleForFirstTurn(titleInput).pipe(
-        // Metadata generation must never hold the turn-start worker open.
+        Effect.andThen(maybeGenerateThreadTitleForFirstTurn(titleInput)),
         Effect.forkScoped,
         Effect.asVoid,
       );
     }
-
-    const providerTurn = providerService
-      .sendTurn(sendTurnRequest.value)
-      .pipe(Effect.catchCause((cause) => recoverTurnStartFailure(cause)));
-
-    yield* providerTurn.pipe(Effect.forkScoped);
   });
 
   // Keep the provider event subscription alive for adapters that use the

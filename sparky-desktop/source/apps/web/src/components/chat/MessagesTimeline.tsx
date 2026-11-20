@@ -62,6 +62,12 @@ import {
   MessageCircleIcon,
   MessagesSquareIcon,
   MousePointerClickIcon,
+  MousePointer2Icon,
+  MoveIcon,
+  ArrowDownUpIcon,
+  CameraIcon,
+  AppWindowIcon,
+  ClockIcon,
   PaintbrushIcon,
   PauseCircleIcon,
   PlugZapIcon,
@@ -76,6 +82,7 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
+import { resolveComputerUseAction } from "./computerUseWorkEntry";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
@@ -1986,6 +1993,12 @@ type WorkEntryIconName =
   | "mcp"
   | "plug-zap"
   | "mouse-pointer-click"
+  | "mouse-pointer-2"
+  | "move"
+  | "arrow-down-up"
+  | "camera"
+  | "app-window"
+  | "clock"
   | "pause-circle"
   | "play-circle"
   | "square-pen"
@@ -2067,6 +2080,18 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <PlugZapIcon className={className} aria-hidden />;
     case "mouse-pointer-click":
       return <MousePointerClickIcon className={className} aria-hidden />;
+    case "mouse-pointer-2":
+      return <MousePointer2Icon className={className} aria-hidden />;
+    case "move":
+      return <MoveIcon className={className} aria-hidden />;
+    case "arrow-down-up":
+      return <ArrowDownUpIcon className={className} aria-hidden />;
+    case "camera":
+      return <CameraIcon className={className} aria-hidden />;
+    case "app-window":
+      return <AppWindowIcon className={className} aria-hidden />;
+    case "clock":
+      return <ClockIcon className={className} aria-hidden />;
     case "pause-circle":
       return <PauseCircleIcon className={className} aria-hidden />;
     case "play-circle":
@@ -2480,6 +2505,8 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
+  const computerUseAction = resolveComputerUseAction(workEntry.toolName, workEntry.toolData);
+  if (computerUseAction) return computerUseAction.icon;
   const toolIconName = resolveWorkEntryToolIconName(workEntry.toolName);
   if (toolIconName) return toolIconName;
   if (workEntry.requestKind === "command") return "terminal";
@@ -2533,6 +2560,8 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  const computerUseAction = resolveComputerUseAction(workEntry.toolName, workEntry.toolData);
+  if (computerUseAction) return computerUseAction.label;
   switch (workEntry.toolName?.trim().toLowerCase()) {
     case "sparky_threads_list":
       return "List threads";

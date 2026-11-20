@@ -335,7 +335,10 @@ export const SparkyDriver: ProviderDriver<
                 (settings as Record<string, unknown>).sparkyPersonality ?? "coding";
               const personalityPrompt = personalityInstructions[personality as string] ?? "";
               const custom = settings.customInstructions.trim();
-              return [personalityPrompt, custom, SPARKY_PLUGIN_INSTRUCTIONS]
+              const computerUse = settings.computerUse.enabled
+                ? settings.computerUse.customInstructions.trim()
+                : "";
+              return [personalityPrompt, custom, computerUse, SPARKY_PLUGIN_INSTRUCTIONS]
                 .filter((instructions) => instructions.length > 0)
                 .join("\n\n");
             }),

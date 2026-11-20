@@ -34,6 +34,7 @@ import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { discoverSparkyModels, type SparkyModelDiscovery } from "./SparkyModelCatalog.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ServerConfig } from "../../config.ts";
+import { COMPUTER_USE_SKILL } from "./computerUseSkill.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 
 const DRIVER_KIND = ProviderDriverKind.make("sparky");
@@ -335,7 +336,12 @@ export const SparkyDriver: ProviderDriver<
                 (settings as Record<string, unknown>).sparkyPersonality ?? "coding";
               const personalityPrompt = personalityInstructions[personality as string] ?? "";
               const custom = settings.customInstructions.trim();
-              return [personalityPrompt, custom, SPARKY_PLUGIN_INSTRUCTIONS]
+              const computerUse = settings.computerUse.enabled
+                ? [COMPUTER_USE_SKILL, settings.computerUse.customInstructions.trim()]
+                    .filter((part) => part.length > 0)
+                    .join("\n\n")
+                : "";
+              return [personalityPrompt, custom, computerUse, SPARKY_PLUGIN_INSTRUCTIONS]
                 .filter((instructions) => instructions.length > 0)
                 .join("\n\n");
             }),

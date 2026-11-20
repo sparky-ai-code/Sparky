@@ -590,10 +590,15 @@ async fn run_persistent_json_stream(
         match result {
             Ok(response) => write_result(cli, &response, session.session_id()),
             Err(error) => {
-                tracing::error!("Persistent Sparky turn failed: {error:#}");
+                // Tracing is not initialised in --json-stream mode, so surface the
+                // cause in the message itself instead of pointing at logs that
+                // were never written.
+                let detail: String = format!("{error:#}").chars().take(600).collect();
+                tracing::error!("Persistent Sparky turn failed: {detail}");
+                eprintln!("Persistent Sparky turn failed: {detail}");
                 write_json_line(serde_json::json!({
                     "type": "error",
-                    "message": "Sparky could not complete this turn. Check the server logs for details.",
+                    "message": format!("Sparky could not complete this turn: {detail}"),
                     "sessionId": session.session_id(),
                 }));
             }

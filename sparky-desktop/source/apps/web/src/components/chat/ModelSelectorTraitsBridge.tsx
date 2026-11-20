@@ -15,7 +15,7 @@ import {
   isClaudeUltrathinkPrompt,
 } from "@sparky/shared/model";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
-import { ZapIcon } from "lucide-react";
+import { ZapIcon } from "../Hugeicons";
 
 import { useComposerDraftStore, type DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
@@ -243,7 +243,8 @@ export const ModelSelectorTraitsBridge = memo(function ModelSelectorTraitsBridge
             variant="ghost"
             className={cn(
               "rounded-full text-muted-foreground transition-colors hover:text-foreground",
-              fastModeEnabled && "bg-amber-500/10 text-amber-400 hover:bg-amber-500/15 hover:text-amber-300",
+              fastModeEnabled &&
+                "bg-amber-500/10 text-amber-400 hover:bg-amber-500/15 hover:text-amber-300",
             )}
             aria-label={fastModeEnabled ? "Disable fast mode" : "Enable fast mode"}
             aria-pressed={fastModeEnabled}
@@ -251,10 +252,7 @@ export const ModelSelectorTraitsBridge = memo(function ModelSelectorTraitsBridge
           />
         }
       >
-        <ZapIcon
-          aria-hidden="true"
-          className={cn("size-4", fastModeEnabled && "fill-current")}
-        />
+        <ZapIcon aria-hidden="true" className={cn("size-4", fastModeEnabled && "fill-current")} />
       </TooltipTrigger>
       <TooltipPopup side="top">{fastModeTooltip}</TooltipPopup>
     </Tooltip>

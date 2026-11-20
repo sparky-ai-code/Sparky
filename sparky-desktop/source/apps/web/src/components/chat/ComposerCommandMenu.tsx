@@ -4,7 +4,7 @@ import {
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
 } from "@sparky/contracts";
-import { BotIcon, ListTodoIcon, PaperclipIcon } from "lucide-react";
+import { BotIcon, ListTodoIcon, PaperclipIcon } from "../Hugeicons";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";

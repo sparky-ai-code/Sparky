@@ -51,7 +51,7 @@ const SparkySettings = Schema.Struct({
 });
 type SparkySettings = typeof SparkySettings.Type;
 
-function makeSnapshot(input: {
+export function makeSnapshot(input: {
   readonly instanceId: ProviderInstanceId;
   readonly displayName: string;
   readonly accentColor?: string | undefined;
@@ -60,14 +60,19 @@ function makeSnapshot(input: {
   readonly binaryInstalled: boolean;
   readonly binaryPath: string;
   readonly discovery: SparkyModelDiscovery;
+  /** True while model discovery is still in flight; the discovery is a placeholder. */
+  readonly pending?: boolean | undefined;
 }): ServerProvider {
   const { discovery } = input;
   const displayName = input.displayName.trim() === "T3 Code" ? "OpenAI" : input.displayName;
   const hasModels = discovery.models.length > 0;
   const hasCodexModels = discovery.models.some((model) => model.slug.startsWith("openai-codex/"));
   const hasDiscoveryErrors = discovery.errors.length > 0;
+  const isPending = input.pending === true;
   const message = !input.binaryInstalled
     ? `Sparky runtime was not found at ${input.binaryPath}.`
+    : isPending
+      ? "Loading Sparky models…"
     : discovery.configuredProviderCount === 0
       ? "Connect a model in Models settings."
       : hasDiscoveryErrors
@@ -94,11 +99,13 @@ function makeSnapshot(input: {
         : hasModels
           ? "ready"
           : "warning",
-    auth: {
-      status: hasModels ? "authenticated" : "unauthenticated",
-      type: hasCodexModels ? "oauth" : "apiKey",
-      label: hasModels ? "Models connected" : "Connect a model in Models settings",
-    },
+    auth: isPending
+      ? { status: "unknown", type: "apiKey", label: "Checking models" }
+      : {
+          status: hasModels ? "authenticated" : "unauthenticated",
+          type: hasCodexModels ? "oauth" : "apiKey",
+          label: hasModels ? "Models connected" : "Connect a model in Models settings",
+        },
     checkedAt: new Date().toISOString(),
     availability: "available",
     ...(message ? { message } : {}),
@@ -353,8 +360,24 @@ export const SparkyDriver: ProviderDriver<
           }),
         ),
       );
-      const snapshotValue = yield* loadSnapshot;
-      const snapshotRef = yield* Ref.make(snapshotValue);
+      // Model discovery makes network requests (models.dev plus each configured
+      // provider's model list, each with a 12s timeout). The registry constructs
+      // drivers synchronously during server startup, so awaiting discovery here
+      // held back server readiness on slow or unreachable networks. Start from a
+      // pending snapshot and publish the discovered models when they arrive.
+      const snapshotRef = yield* Ref.make(
+        makeSnapshot({
+          instanceId,
+          displayName: displayName ?? "Sparky",
+          ...(accentColor ? { accentColor } : {}),
+          continuationKey: continuationIdentity.continuationKey,
+          enabled,
+          binaryInstalled,
+          binaryPath,
+          discovery: { models: [], configuredProviderCount: 0, errors: [] },
+          pending: true,
+        }),
+      );
       const snapshotChanges = yield* PubSub.sliding<ServerProvider>(1);
       const refreshSnapshot = Effect.gen(function* () {
         const snapshot = yield* loadSnapshot;
@@ -362,6 +385,7 @@ export const SparkyDriver: ProviderDriver<
         yield* PubSub.publish(snapshotChanges, snapshot);
         return snapshot;
       });
+      yield* refreshSnapshot.pipe(Effect.ignoreCause({ log: true }), Effect.forkScoped);
       const adapter = yield* makeSparkyAdapter({
         instanceId,
         binaryPath,
@@ -410,6 +434,9 @@ export const SparkyDriver: ProviderDriver<
           maintenanceCapabilities,
           getSnapshot: Ref.get(snapshotRef),
           refresh: refreshSnapshot,
+          // Acquire the subscription synchronously so a discovery publish that
+          // lands before the registry reads the snapshot cannot be missed.
+          subscribeChanges: PubSub.subscribe(snapshotChanges),
           streamChanges: Stream.fromPubSub(snapshotChanges),
         },
         adapter,

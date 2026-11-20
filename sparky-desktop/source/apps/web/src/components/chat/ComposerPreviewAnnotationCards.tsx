@@ -1,5 +1,11 @@
 import type { PreviewAnnotationPayload } from "@sparky/contracts";
-import { Frame, MousePointerClick, Paintbrush, PenLine, X } from "lucide-react";
+import {
+  FrameIcon as Frame,
+  MousePointerClickIcon as MousePointerClick,
+  PaintbrushIcon as Paintbrush,
+  PenLineIcon as PenLine,
+  XIcon as X,
+} from "../Hugeicons";
 import type { ReactNode } from "react";
 
 import type { ComposerImageAttachment } from "~/composerDraftStore";

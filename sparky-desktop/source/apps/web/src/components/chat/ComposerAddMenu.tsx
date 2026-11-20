@@ -1,5 +1,5 @@
 import type { EnvironmentId, ProviderInteractionMode } from "@sparky/contracts";
-import { PlusIcon } from "lucide-react";
+import { PlusIcon } from "../Hugeicons";
 import { memo } from "react";
 
 import { Button } from "../ui/button";

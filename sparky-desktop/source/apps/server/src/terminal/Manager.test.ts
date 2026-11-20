@@ -36,6 +36,38 @@ it("uses a less aggressive default process scan cadence on Windows", () => {
   expect(TerminalManager.defaultSubprocessPollIntervalMs("darwin")).toBe(2_000);
 });
 
+it("resolves each terminal's descendants from one shared Windows process table", () => {
+  const table = {
+    processNameById: new Map([
+      [100, "pwsh.exe"],
+      [200, "node.exe"],
+      [300, "npm.exe"],
+      [400, "explorer.exe"],
+    ]),
+    childrenByParent: new Map([
+      [100, [200]],
+      [200, [300]],
+      [400, []],
+    ]),
+  };
+
+  expect(TerminalManager.inspectWindowsSubprocessFromTable(100, "win32", table)).toEqual({
+    hasRunningSubprocess: true,
+    childCommand: "node",
+    processIds: [100, 200, 300],
+  });
+  expect(TerminalManager.inspectWindowsSubprocessFromTable(400, "win32", table)).toEqual({
+    hasRunningSubprocess: false,
+    childCommand: null,
+    processIds: [],
+  });
+  expect(TerminalManager.inspectWindowsSubprocessFromTable(999, "win32", table)).toEqual({
+    hasRunningSubprocess: false,
+    childCommand: null,
+    processIds: [],
+  });
+});
+
 class WaitForConditionError extends Data.TaggedError("WaitForConditionError")<{
   readonly message: string;
 }> {}

@@ -1,8 +1,4 @@
-import {
-  HugeiconsIcon,
-  type HugeiconsIconProps,
-  type IconSvgElement,
-} from "@hugeicons/react";
+import { HugeiconsIcon, type HugeiconsIconProps, type IconSvgElement } from "@hugeicons/react";
 import AlertCircleIcon from "@hugeicons/core-free-icons/AlertCircleIcon";
 import Robot01Glyph from "@hugeicons/core-free-icons/Robot01Icon";
 import Archive02Icon from "@hugeicons/core-free-icons/Archive02Icon";
@@ -38,12 +34,34 @@ import Alert01Glyph from "@hugeicons/core-free-icons/Alert01Icon";
 import Search01Icon from "@hugeicons/core-free-icons/Search01Icon";
 import Settings01Icon from "@hugeicons/core-free-icons/Settings01Icon";
 import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
+import ArrowLeft01Glyph from "@hugeicons/core-free-icons/ArrowLeft01Icon";
+import Attachment01Glyph from "@hugeicons/core-free-icons/Attachment01Icon";
+import ChevronsDownUpGlyph from "@hugeicons/core-free-icons/ChevronsDownUpIcon";
+import Copy01Glyph from "@hugeicons/core-free-icons/Copy01Icon";
+import File01Glyph from "@hugeicons/core-free-icons/File01Icon";
+import FileDiffGlyph from "@hugeicons/core-free-icons/FileDiffIcon";
+import FlashGlyph from "@hugeicons/core-free-icons/FlashIcon";
+import FolderRemoveGlyph from "@hugeicons/core-free-icons/FolderRemoveIcon";
+import FrameGlyph from "@hugeicons/core-free-icons/FrameIcon";
+import FullScreenGlyph from "@hugeicons/core-free-icons/FullScreenIcon";
+import InformationCircleGlyph from "@hugeicons/core-free-icons/InformationCircleIcon";
+import LayoutBottomGlyph from "@hugeicons/core-free-icons/LayoutBottomIcon";
+import LayoutRightGlyph from "@hugeicons/core-free-icons/LayoutRightIcon";
+import MessageCircleGlyph from "@hugeicons/core-free-icons/MessageCircleIcon";
+import MinimizeScreenGlyph from "@hugeicons/core-free-icons/MinimizeScreenIcon";
+import MouseLeftClickGlyph from "@hugeicons/core-free-icons/MouseLeftClick01Icon";
+import PaintBrushGlyph from "@hugeicons/core-free-icons/PaintBrush01Icon";
+import StarGlyph from "@hugeicons/core-free-icons/StarIcon";
 
-export type IconProps = Omit<HugeiconsIconProps, "icon">;
+// SVG attributes allow `strokeWidth` as a string, so accept that too and
+// normalise it before handing it to HugeiconsIcon.
+export type IconProps = Omit<HugeiconsIconProps, "icon" | "strokeWidth"> & {
+  strokeWidth?: number | string | undefined;
+};
 
 function wrap(icon: IconSvgElement, name: string) {
   function Icon({ strokeWidth = 1.75, ...props }: IconProps) {
-    return <HugeiconsIcon icon={icon} strokeWidth={strokeWidth} {...props} />;
+    return <HugeiconsIcon icon={icon} strokeWidth={Number(strokeWidth)} {...props} />;
   }
   Icon.displayName = name;
   return Icon;
@@ -86,3 +104,22 @@ export const CancelIcon = wrap(Cancel01Glyph, "CancelIcon");
 export const XIcon = wrap(Cancel01Glyph, "XIcon");
 export const TerminalIcon = wrap(ComputerTerminal01Icon, "TerminalIcon");
 export const TriangleAlertIcon = wrap(Alert01Glyph, "TriangleAlertIcon");
+export const ChevronLeftIcon = wrap(ArrowLeft01Glyph, "ChevronLeftIcon");
+export const ChevronsDownUpIcon = wrap(ChevronsDownUpGlyph, "ChevronsDownUpIcon");
+export const CopyIcon = wrap(Copy01Glyph, "CopyIcon");
+export const FileDiffIcon = wrap(FileDiffGlyph, "FileDiffIcon");
+export const FileIcon = wrap(File01Glyph, "FileIcon");
+export const FolderClosedIcon = wrap(Folder01Glyph, "FolderClosedIcon");
+export const FolderMinusIcon = wrap(FolderRemoveGlyph, "FolderMinusIcon");
+export const FrameIcon = wrap(FrameGlyph, "FrameIcon");
+export const InfoIcon = wrap(InformationCircleGlyph, "InfoIcon");
+export const Maximize2Icon = wrap(FullScreenGlyph, "Maximize2Icon");
+export const Minimize2Icon = wrap(MinimizeScreenGlyph, "Minimize2Icon");
+export const MessageCircleIcon = wrap(MessageCircleGlyph, "MessageCircleIcon");
+export const MousePointerClickIcon = wrap(MouseLeftClickGlyph, "MousePointerClickIcon");
+export const PaintbrushIcon = wrap(PaintBrushGlyph, "PaintbrushIcon");
+export const PaperclipIcon = wrap(Attachment01Glyph, "PaperclipIcon");
+export const PanelBottomIcon = wrap(LayoutBottomGlyph, "PanelBottomIcon");
+export const PanelRightIcon = wrap(LayoutRightGlyph, "PanelRightIcon");
+export const StarIcon = wrap(StarGlyph, "StarIcon");
+export const ZapIcon = wrap(FlashGlyph, "ZapIcon");

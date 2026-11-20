@@ -6,11 +6,16 @@ import { useDesktopUpdateState } from "../state/desktopUpdate";
 import {
   getDesktopUpdateActionError,
   getDesktopUpdateInstallConfirmationMessage,
+  getDesktopUpdateNoticeKey,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldToastDesktopUpdateActionResult,
 } from "./desktopUpdate.logic";
 import { stackedThreadToast, toastManager } from "./ui/toast";
+
+// Notice keys the user dismissed with the X. Module-scoped so the dismissal
+// survives the transient status changes that reset the component's own refs.
+const dismissedDesktopUpdateNoticeKeys = new Set<string>();
 
 export function DesktopUpdateBanner() {
   const state = useDesktopUpdateState();
@@ -26,57 +31,66 @@ export function DesktopUpdateBanner() {
     if (!bridge || !state || isDesktopUpdateButtonDisabled(state) || action === "none") return;
 
     if (action === "download") {
-      void bridge.downloadUpdate().then((result) => {
-        if (!result.completed && shouldToastDesktopUpdateActionResult(result)) {
-          const message = getDesktopUpdateActionError(result);
-          if (message) {
-            toastManager.add(stackedThreadToast({
+      void bridge
+        .downloadUpdate()
+        .then((result) => {
+          if (!result.completed && shouldToastDesktopUpdateActionResult(result)) {
+            const message = getDesktopUpdateActionError(result);
+            if (message) {
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Could not download update",
+                  description: message,
+                }),
+              );
+            }
+          }
+        })
+        .catch(() => {
+          toastManager.add(
+            stackedThreadToast({
               type: "error",
               title: "Could not download update",
-              description: message,
-            }));
-          }
-        }
-      }).catch(() => {
-        toastManager.add(stackedThreadToast({
-          type: "error",
-          title: "Could not download update",
-          description: "Sparky couldn't start the update download. Try again in a moment.",
-        }));
-      });
+              description: "Sparky couldn't start the update download. Try again in a moment.",
+            }),
+          );
+        });
       return;
     }
 
     if (action === "install") {
       if (!window.confirm(getDesktopUpdateInstallConfirmationMessage(state))) return;
       void bridge.installUpdate().catch(() => {
-        toastManager.add(stackedThreadToast({
-          type: "error",
-          title: "Could not install update",
-          description: "Sparky couldn't start the update install. Try again later.",
-        }));
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not install update",
+            description: "Sparky couldn't start the update install. Try again later.",
+          }),
+        );
       });
     }
   }, [action, state]);
 
   useEffect(() => {
     const notification = lastNotification.current;
-    const isVisible =
-      isElectron &&
-      state !== null &&
-      version !== null &&
-      version !== undefined &&
-      ["available", "downloading", "downloaded"].includes(state.status);
+    const key = isElectron ? getDesktopUpdateNoticeKey(state) : null;
 
-    if (!isVisible || !state || !version) {
+    if (key === null || !state || !version) {
       if (notification) toastManager.close(notification.id);
       lastNotification.current = null;
       return;
     }
 
-    const key = `${version}:${state.status}`;
     if (notification?.key === key) return;
     if (notification) toastManager.close(notification.id);
+    lastNotification.current = null;
+
+    // The user already dismissed this exact notice. Background checks flip the
+    // status through "checking" and back, which re-runs this effect, so the
+    // dismissal has to be honored here or the popup returns right away.
+    if (dismissedDesktopUpdateNoticeKeys.has(key)) return;
 
     const downloaded = state.status === "downloaded";
     const downloading = state.status === "downloading";
@@ -85,17 +99,30 @@ export function DesktopUpdateBanner() {
       : downloaded
         ? "Restart Sparky to install the update."
         : "Get the latest fixes and improvements.";
-    const id = toastManager.add(stackedThreadToast({
-      type: "info",
-      title: downloaded ? `Sparky ${version} is ready` : `Sparky ${version} is available`,
-      description,
-      timeout: 0,
-      actionProps: downloading ? undefined : {
-        children: downloaded ? "Restart to update" : "Download update",
-        onClick: runAction,
-      },
-      data: { leadingIcon: downloaded ? <RotateCwIcon className="size-4" /> : <DownloadIcon className="size-4" /> },
-    }));
+    const id = toastManager.add(
+      stackedThreadToast({
+        type: "info",
+        title: downloaded ? `Sparky ${version} is ready` : `Sparky ${version} is available`,
+        description,
+        timeout: 0,
+        actionProps: downloading
+          ? undefined
+          : {
+              children: downloaded ? "Restart to update" : "Download update",
+              onClick: runAction,
+            },
+        data: {
+          leadingIcon: downloaded ? (
+            <RotateCwIcon className="size-4" />
+          ) : (
+            <DownloadIcon className="size-4" />
+          ),
+          onClose: () => {
+            dismissedDesktopUpdateNoticeKeys.add(key);
+          },
+        },
+      }),
+    );
     lastNotification.current = { key, id };
   }, [runAction, state, version]);
 

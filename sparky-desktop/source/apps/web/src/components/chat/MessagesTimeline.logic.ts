@@ -17,6 +17,25 @@ export const TIMELINE_CONTENT_MAX_WIDTH = 768;
 export const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48;
 export const STREAMING_MARKDOWN_FRAME_MS = 48;
 
+export interface AgentThreadAttribution {
+  readonly threadId: string;
+  readonly environmentId: string;
+  readonly message: string;
+}
+
+export function parseAgentThreadAttribution(text: string): AgentThreadAttribution | null {
+  const match = /^\[Message from Sparky agent in thread (.+?) \(environment (.+?)\)\]\nReply to this agent with sparky_thread_message\(threadId=("(?:[^"\\]|\\.)*"), environmentId=("(?:[^"\\]|\\.)*")\)\. A reply in this conversation alone is not delivered to the sender\.\n\n([\s\S]*)$/.exec(text);
+  if (!match) return null;
+  try {
+    const threadId = JSON.parse(match[3]) as unknown;
+    const environmentId = JSON.parse(match[4]) as unknown;
+    if (typeof threadId !== "string" || typeof environmentId !== "string") return null;
+    return { threadId, environmentId, message: match[5] };
+  } catch {
+    return null;
+  }
+}
+
 export function resolveStreamingMarkdownFlushDelay(lastFlushAt: number, now: number): number {
   if (!Number.isFinite(lastFlushAt) || !Number.isFinite(now)) {
     return STREAMING_MARKDOWN_FRAME_MS;

@@ -1,6 +1,7 @@
 {
   "name": "sparky-auth-worker",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "test": "node --test src/*.test.js",

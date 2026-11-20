@@ -34,12 +34,10 @@ import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { discoverSparkyModels, type SparkyModelDiscovery } from "./SparkyModelCatalog.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ServerConfig } from "../../config.ts";
+import { COMPUTER_USE_SKILL } from "./computerUseSkill.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 
 const DRIVER_KIND = ProviderDriverKind.make("sparky");
-const SPARKY_COMPUTER_USE_INSTRUCTIONS =
-  "The user has enabled computer use. To act on their computer, call sparky_computer_use_list_tools to discover the available tools, then sparky_computer_use_call_tool with the exact tool name. Do not claim an action happened unless the call succeeded, and ask before irreversible actions.";
-
 const SPARKY_PLUGIN_INSTRUCTIONS = `Sparky Desktop can expose connected service plugins through the sparky_plugin_call MCP tool. Only use a plugin when the user's current request actually requires that service. An @plugin reference is context, not permission to perform unrelated actions. If the user explicitly asks for a supported service and it is not connected, call sparky_request_plugin_authorization with that plugin id and wait for the user's authorization card. If the user cancels or declines, treat that as a normal non-fatal outcome and continue the conversation without repeatedly asking. Never ask the user for OAuth tokens, passwords, provider client secrets, or other credentials in chat.`;
 
 const SparkySettings = Schema.Struct({
@@ -339,7 +337,7 @@ export const SparkyDriver: ProviderDriver<
               const personalityPrompt = personalityInstructions[personality as string] ?? "";
               const custom = settings.customInstructions.trim();
               const computerUse = settings.computerUse.enabled
-                ? [SPARKY_COMPUTER_USE_INSTRUCTIONS, settings.computerUse.customInstructions.trim()]
+                ? [COMPUTER_USE_SKILL, settings.computerUse.customInstructions.trim()]
                     .filter((part) => part.length > 0)
                     .join("\n\n")
                 : "";

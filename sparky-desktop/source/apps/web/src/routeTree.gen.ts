@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SchedulesRouteImport } from './routes/schedules'
 import { Route as PullRequestsRouteImport } from './routes/pull-requests'
+import { Route as IssuesRouteImport } from './routes/issues'
 import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as ChatRouteImport } from './routes/_chat'
@@ -46,6 +47,11 @@ const SchedulesRoute = SchedulesRouteImport.update({
 const PullRequestsRoute = PullRequestsRouteImport.update({
   id: '/pull-requests',
   path: '/pull-requests',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IssuesRoute = IssuesRouteImport.update({
+  id: '/issues',
+  path: '/issues',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PluginsRoute = PluginsRouteImport.update({
@@ -154,6 +160,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/plugins': typeof PluginsRoute
   '/pull-requests': typeof PullRequestsRoute
+  '/issues': typeof IssuesRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRouteWithChildren
   '/settings/analytics': typeof SettingsAnalyticsRoute
@@ -177,6 +184,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/plugins': typeof PluginsRoute
   '/pull-requests': typeof PullRequestsRoute
+  '/issues': typeof IssuesRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRouteWithChildren
   '/settings/analytics': typeof SettingsAnalyticsRoute
@@ -203,6 +211,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/plugins': typeof PluginsRoute
   '/pull-requests': typeof PullRequestsRoute
+  '/issues': typeof IssuesRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRouteWithChildren
   '/settings/analytics': typeof SettingsAnalyticsRoute
@@ -230,6 +239,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/plugins'
     | '/pull-requests'
+    | '/issues'
     | '/schedules'
     | '/settings'
     | '/settings/analytics'
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/plugins'
     | '/pull-requests'
+    | '/issues'
     | '/schedules'
     | '/settings'
     | '/settings/analytics'
@@ -278,6 +289,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/plugins'
     | '/pull-requests'
+    | '/issues'
     | '/schedules'
     | '/settings'
     | '/settings/analytics'
@@ -304,6 +316,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   PluginsRoute: typeof PluginsRoute
   PullRequestsRoute: typeof PullRequestsRoute
+  IssuesRoute: typeof IssuesRoute
   SchedulesRoute: typeof SchedulesRoute
   SettingsRoute: typeof SettingsRouteWithChildren
 }
@@ -329,6 +342,13 @@ declare module '@tanstack/react-router' {
       path: '/pull-requests'
       fullPath: '/pull-requests'
       preLoaderRoute: typeof PullRequestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/issues': {
+      id: '/issues'
+      path: '/issues'
+      fullPath: '/issues'
+      preLoaderRoute: typeof IssuesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/plugins': {
@@ -531,6 +551,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   PluginsRoute: PluginsRoute,
   PullRequestsRoute: PullRequestsRoute,
+  IssuesRoute: IssuesRoute,
   SchedulesRoute: SchedulesRoute,
   SettingsRoute: SettingsRouteWithChildren,
 }

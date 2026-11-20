@@ -9,10 +9,11 @@ import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings"
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { DesktopUpdateBanner } from "./DesktopUpdateBanner";
-import ThreadSidebar from "./Sidebar";
-import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
+import { IssuesSidebarEntry } from "./issues/IssuesSidebarEntry";
 import { PluginsSidebarEntry } from "./plugins/PluginsSidebarEntry";
 import { PullRequestsSidebarEntry } from "./pullRequests/PullRequestsSidebarEntry";
+import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
+import ThreadSidebar from "./Sidebar";
 import {
   resolveInitialThreadSidebarWidth,
   resolveThreadSidebarMaximumWidth,
@@ -171,6 +172,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         }}
       >
         <ThreadSidebar />
+        <IssuesSidebarEntry />
         <PullRequestsSidebarEntry />
         <PluginsSidebarEntry />
         <SidebarRail />

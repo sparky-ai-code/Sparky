@@ -98,6 +98,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(syncGitHubPluginConnectionMethod);
   yield* ipc.handle(GitHubCliIpc.listRepositoriesMethod);
   yield* ipc.handle(GitHubCliIpc.list);
+  yield* ipc.handle(GitHubCliIpc.listIssuesMethod);
   yield* ipc.handle(GitHubCliIpc.getPullRequestMethod);
   yield* ipc.handle(GitHubCliIpc.getPullRequestCommentsMethod);
   yield* ipc.handle(GitHubCliIpc.updatePullRequestMethod);

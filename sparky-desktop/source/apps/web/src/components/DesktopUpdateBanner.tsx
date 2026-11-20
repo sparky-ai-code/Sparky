@@ -105,12 +105,14 @@ export function DesktopUpdateBanner() {
         title: downloaded ? `Sparky ${version} is ready` : `Sparky ${version} is available`,
         description,
         timeout: 0,
-        actionProps: downloading
-          ? undefined
+        ...(downloading
+          ? {}
           : {
-              children: downloaded ? "Restart to update" : "Download update",
-              onClick: runAction,
-            },
+              actionProps: {
+                children: downloaded ? "Restart to update" : "Download update",
+                onClick: runAction,
+              },
+            }),
         data: {
           leadingIcon: downloaded ? (
             <RotateCwIcon className="size-4" />

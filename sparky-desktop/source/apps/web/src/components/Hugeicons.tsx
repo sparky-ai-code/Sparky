@@ -56,7 +56,7 @@ import StarGlyph from "@hugeicons/core-free-icons/StarIcon";
 // SVG attributes allow `strokeWidth` as a string, so accept that too and
 // normalise it before handing it to HugeiconsIcon.
 export type IconProps = Omit<HugeiconsIconProps, "icon" | "strokeWidth"> & {
-  strokeWidth?: number | string;
+  strokeWidth?: number | string | undefined;
 };
 
 function wrap(icon: IconSvgElement, name: string) {

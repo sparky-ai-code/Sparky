@@ -7,6 +7,7 @@ import {
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateInstallConfirmationMessage,
+  getDesktopUpdateNoticeKey,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
@@ -282,6 +283,35 @@ describe("canCheckForUpdate", () => {
         message: "network",
       }),
     ).toBe(true);
+  });
+});
+
+describe("getDesktopUpdateNoticeKey", () => {
+  it("keys the notice by version and status while an update is pending", () => {
+    expect(
+      getDesktopUpdateNoticeKey({ ...baseState, status: "available", availableVersion: "1.1.0" }),
+    ).toBe("1.1.0:available");
+    expect(
+      getDesktopUpdateNoticeKey({ ...baseState, status: "downloading", availableVersion: "1.1.0" }),
+    ).toBe("1.1.0:downloading");
+    expect(
+      getDesktopUpdateNoticeKey({ ...baseState, status: "downloaded", downloadedVersion: "1.1.0" }),
+    ).toBe("1.1.0:downloaded");
+  });
+
+  it("keeps the same key across a background re-check of the same update", () => {
+    // A background check passes through "checking" (no notice key) and comes
+    // back to the same "available" key, so a dismissal of that key still holds.
+    const available = { ...baseState, status: "available" as const, availableVersion: "1.1.0" };
+    const checking = { ...available, status: "checking" as const };
+    expect(getDesktopUpdateNoticeKey(checking)).toBeNull();
+    expect(getDesktopUpdateNoticeKey(available)).toBe("1.1.0:available");
+  });
+
+  it("returns no key when there is nothing to announce", () => {
+    expect(getDesktopUpdateNoticeKey(null)).toBeNull();
+    expect(getDesktopUpdateNoticeKey({ ...baseState, status: "up-to-date" })).toBeNull();
+    expect(getDesktopUpdateNoticeKey({ ...baseState, status: "available" })).toBeNull();
   });
 });
 

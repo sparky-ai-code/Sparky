@@ -29,6 +29,25 @@ export function shouldShowDesktopUpdateButton(state: DesktopUpdateState | null):
   return resolveDesktopUpdateButtonAction(state) !== "none";
 }
 
+const DESKTOP_UPDATE_NOTICE_STATUSES: ReadonlyArray<string> = [
+  "available",
+  "downloading",
+  "downloaded",
+];
+
+/**
+ * Identity of the update notice for a given state: the version plus the status
+ * it is in. Null when no notice should be shown. A dismissal is scoped to this
+ * key, so the notice returns only when the update actually moves to a new
+ * version or status (for example, when the user starts the download).
+ */
+export function getDesktopUpdateNoticeKey(state: DesktopUpdateState | null): string | null {
+  if (!state) return null;
+  const version = state.availableVersion ?? state.downloadedVersion;
+  if (!version || !DESKTOP_UPDATE_NOTICE_STATUSES.includes(state.status)) return null;
+  return `${version}:${state.status}`;
+}
+
 export function shouldShowArm64IntelBuildWarning(state: DesktopUpdateState | null): boolean {
   return state?.hostArch === "arm64" && state.appArch === "x64";
 }

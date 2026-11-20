@@ -51,6 +51,10 @@ Each service has its own `package.json` and can be run from its directory, for e
 - Product documentation lives in [`sparky-website/docs/`](sparky-website/docs).
 - Desktop app docs live in [`sparky-desktop/source/docs/`](sparky-desktop/source/docs).
 
+## Acknowledgements
+
+Sparky is built on the [T3 Code](https://github.com/pingdotgg/t3code) codebase, which is MIT licensed and copyright T3 Tools Inc. Thank you to the T3 Code team for the foundation this project builds on.
+
 ## Contributing
 
 Sparky is not accepting outside contributions yet.

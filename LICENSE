@@ -2,6 +2,10 @@ MIT License
 
 Copyright (c) 2026 Sparky
 
+Sparky is built on the T3 Code codebase. Portions of this software are derived
+from T3 Code, Copyright (c) 2026 T3 Tools Inc., licensed under the MIT License
+(https://github.com/pingdotgg/t3code).
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights

@@ -68,6 +68,9 @@ import {
   CameraIcon,
   AppWindowIcon,
   ClockIcon,
+  SettingsIcon,
+  VideoIcon,
+  ZoomInIcon,
   PaintbrushIcon,
   PauseCircleIcon,
   PlugZapIcon,
@@ -1999,6 +2002,9 @@ type WorkEntryIconName =
   | "camera"
   | "app-window"
   | "clock"
+  | "settings"
+  | "video"
+  | "zoom-in"
   | "pause-circle"
   | "play-circle"
   | "square-pen"
@@ -2092,6 +2098,12 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <AppWindowIcon className={className} aria-hidden />;
     case "clock":
       return <ClockIcon className={className} aria-hidden />;
+    case "settings":
+      return <SettingsIcon className={className} aria-hidden />;
+    case "video":
+      return <VideoIcon className={className} aria-hidden />;
+    case "zoom-in":
+      return <ZoomInIcon className={className} aria-hidden />;
     case "pause-circle":
       return <PauseCircleIcon className={className} aria-hidden />;
     case "play-circle":

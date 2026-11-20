@@ -14,9 +14,12 @@ describe("resolveComputerUseAction", () => {
     expect(call("move_cursor")).toEqual({ label: "Move", icon: "mouse-pointer-2" });
     expect(call("scroll")).toEqual({ label: "Scroll", icon: "arrow-down-up" });
     expect(call("type_text")).toEqual({ label: "Type", icon: "keyboard" });
-    expect(call("hotkey")).toEqual({ label: "Press key", icon: "keyboard" });
-    expect(call("screenshot")).toEqual({ label: "Screenshot", icon: "camera" });
-    expect(call("get_window_state")).toEqual({ label: "Inspect", icon: "eye" });
+    expect(call("press_key")).toEqual({ label: "Press key", icon: "keyboard" });
+    expect(call("hotkey")).toEqual({ label: "Shortcut", icon: "keyboard" });
+    expect(call("get_window_state")).toEqual({ label: "Inspect window", icon: "eye" });
+    expect(call("launch_app")).toEqual({ label: "Open app", icon: "app-window" });
+    expect(call("page")).toEqual({ label: "Browser page", icon: "globe" });
+    expect(call("set_agent_cursor_style")?.label).toBe("Cursor settings");
   });
 
   it("never includes Sparky or computer-use wording in the label", () => {

@@ -1,6 +1,6 @@
 import { type ServerProvider } from "@sparky/contracts";
 import { memo } from "react";
-import { InfoIcon } from "lucide-react";
+import { InfoIcon } from "../Hugeicons";
 import { cn } from "~/lib/utils";
 import { formatProviderDriverKindLabel } from "../../providerModels";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -24,12 +24,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
 }: {
   status: ServerProvider | null;
 }) {
-  if (
-    isDemoRenderer() ||
-    !status ||
-    status.status === "ready" ||
-    status.status === "disabled"
-  ) {
+  if (isDemoRenderer() || !status || status.status === "ready" || status.status === "disabled") {
     return null;
   }
 

@@ -6,7 +6,7 @@ import {
 import { resolveSelectableModel } from "@sparky/shared/model";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { memo, useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { SearchIcon } from "lucide-react";
+import { SearchIcon } from "../Hugeicons";
 import { ModelListRow } from "./ModelListRow";
 import {
   ModelPickerSidebar,

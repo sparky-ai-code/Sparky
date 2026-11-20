@@ -6,7 +6,7 @@ import {
 import type { ModelSelectorStyle } from "@sparky/contracts/settings";
 import { memo, useMemo, useState, type ReactNode } from "react";
 import type { VariantProps } from "class-variance-authority";
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, ZapIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, ZapIcon } from "../Hugeicons";
 import { Button, buttonVariants } from "../ui/button";
 import {
   Menu,

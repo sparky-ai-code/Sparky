@@ -8,12 +8,12 @@ import {
 } from "../../lib/turnDiffTree";
 import {
   ChevronsDownUpIcon,
-  ChevronsUpDownIcon,
+  ArrowUpDownIcon as ChevronsUpDownIcon,
   ChevronRightIcon,
   FileDiffIcon,
   FolderIcon,
   FolderClosedIcon,
-} from "lucide-react";
+} from "../Hugeicons";
 import { cn } from "~/lib/utils";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { PierreEntryIcon } from "./PierreEntryIcon";

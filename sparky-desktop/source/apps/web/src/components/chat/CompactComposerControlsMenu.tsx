@@ -1,6 +1,6 @@
 import { ProviderInteractionMode, RuntimeMode } from "@sparky/contracts";
 import { memo, type ReactNode } from "react";
-import { EllipsisIcon, ListTodoIcon, PencilRulerIcon } from "lucide-react";
+import { EllipsisIcon, ListTodoIcon, PencilRulerIcon } from "../Hugeicons";
 import { Button } from "../ui/button";
 import {
   Menu,

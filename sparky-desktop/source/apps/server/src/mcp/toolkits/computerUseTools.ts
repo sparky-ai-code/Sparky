@@ -4,7 +4,9 @@ import { Tool, Toolkit } from "effect/unstable/ai";
 export const ComputerUseListTools = Tool.make("sparky_computer_use_list_tools", {
   description:
     "List the computer-use tools (screenshots, clicking, typing, window control) available on the user's computer. Only works when the user has enabled computer use in Sparky settings. Call this before sparky_computer_use_call_tool.",
-  parameters: Schema.Struct({}),
+  // Must be a non-empty struct: an empty one serialises to a JSON schema with no
+  // top-level `type: "object"`, which providers reject, failing every turn.
+  parameters: Schema.Struct({ refresh: Schema.optional(Schema.Boolean) }),
   success: Schema.Unknown,
   failure: Schema.Never,
 })

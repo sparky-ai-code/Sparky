@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ProjectId,

@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalDateInEffect:off
 import * as NodePath from "node:path";
 
 import { it } from "@effect/vitest";

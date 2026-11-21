@@ -63,6 +63,10 @@
       "types": "./src/state/git.ts",
       "default": "./src/state/git.ts"
     },
+    "./state/textGeneration": {
+      "types": "./src/state/textGeneration.ts",
+      "default": "./src/state/textGeneration.ts"
+    },
     "./state/models": {
       "types": "./src/state/models.ts",
       "default": "./src/state/models.ts"

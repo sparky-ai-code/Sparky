@@ -105,6 +105,7 @@ import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
@@ -807,6 +808,11 @@ const buildAppUnderTest = (options?: {
       Layer.provideMerge(ServerSecretStore.layer),
       Layer.provide(workspaceAndProjectServicesLayer),
       Layer.provideMerge(FetchHttpClient.layer),
+      Layer.provide(
+        Layer.mock(TextGeneration.TextGeneration)({
+          generatePromptSuggestion: () => Effect.succeed({ suggestion: "" }),
+        }),
+      ),
       Layer.provide(layerConfig),
     );
 
@@ -5734,7 +5740,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(items[0]?.kind, "snapshot");
-      assert.equal(items[0]?.kind === "snapshot" ? items[0].snapshot.snapshotSequence : null, 10_050);
+      assert.equal(
+        items[0]?.kind === "snapshot" ? items[0].snapshot.snapshotSequence : null,
+        10_050,
+      );
       assert.deepEqual(items[1], { kind: "synchronized" });
       assert.equal(replayCalls, 0);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),

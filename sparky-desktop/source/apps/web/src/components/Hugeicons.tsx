@@ -1,5 +1,6 @@
 import { HugeiconsIcon, type HugeiconsIconProps, type IconSvgElement } from "@hugeicons/react";
 import AlertCircleIcon from "@hugeicons/core-free-icons/AlertCircleIcon";
+import AudioLinesGlyph from "@hugeicons/core-free-icons/AudioLinesIcon";
 import Robot01Glyph from "@hugeicons/core-free-icons/Robot01Icon";
 import Archive02Icon from "@hugeicons/core-free-icons/Archive02Icon";
 import AppWindowIcon from "@hugeicons/core-free-icons/AppWindowIcon";
@@ -70,6 +71,7 @@ function wrap(icon: IconSvgElement, name: string) {
 // Shared app-chrome glyphs aligned with MonoCode's Hugeicons set.
 export const BotIcon = wrap(Robot01Glyph, "BotIcon");
 export const ArchiveIcon = wrap(Archive02Icon, "ArchiveIcon");
+export const AudioLinesIcon = wrap(AudioLinesGlyph, "AudioLinesIcon");
 export const ArrowUpDownIcon = wrap(ArrowUpDownGlyph, "ArrowUpDownIcon");
 export const CalendarClockIcon = wrap(Clock01Glyph, "CalendarClockIcon");
 export const CheckIcon = wrap(Tick02Icon, "CheckIcon");

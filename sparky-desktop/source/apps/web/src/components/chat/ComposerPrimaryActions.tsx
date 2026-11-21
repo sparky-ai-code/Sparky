@@ -1,9 +1,10 @@
 import { memo, type PointerEventHandler } from "react";
-import { ChevronDownIcon, ChevronLeftIcon } from "../Hugeicons";
+import { AudioLinesIcon, ChevronDownIcon, ChevronLeftIcon } from "../Hugeicons";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
+import { shouldShowInlineVoiceAction } from "../../voice/voiceCall.logic";
 
 interface PendingActionState {
   questionIndex: number;
@@ -15,6 +16,8 @@ interface PendingActionState {
 
 interface ComposerPrimaryActionsProps {
   compact: boolean;
+  voiceActive?: boolean;
+  onVoiceToggle?: () => void;
   pendingAction: PendingActionState | null;
   isRunning: boolean;
   showPlanFollowUpPrompt: boolean;
@@ -54,6 +57,8 @@ const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
 
 export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   compact,
+  voiceActive = false,
+  onVoiceToggle,
   pendingAction,
   isRunning,
   showPlanFollowUpPrompt,
@@ -123,8 +128,27 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
+  // A call stays reachable while Sparky replies, next to the stop control.
+  const renderVoiceButton = () => (
+    <button
+      type="button"
+      data-voice-input-action="true"
+      aria-label={voiceActive ? "Stop voice input" : "Start voice input"}
+      aria-pressed={voiceActive}
+      title={voiceActive ? "Stop voice input" : "Speak to Sparky"}
+      onClick={onVoiceToggle}
+      disabled={!voiceActive && (isConnecting || isSendBusy || isEnvironmentUnavailable || isPreparingWorktree)}
+      className={cn(
+        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40 sm:h-8 sm:w-8",
+        voiceActive && "ring-2 ring-primary/40 ring-offset-2 ring-offset-background",
+      )}
+    >
+      <AudioLinesIcon className={cn("size-5", voiceActive && "animate-pulse")} aria-hidden="true" />
+    </button>
+  );
+
   if (isRunning) {
-    return (
+    const stopButton = (
       <button
         type="button"
         className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-[0_1px_--theme(--color-white/16%)] transition-all duration-150 hover:bg-destructive hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none sm:h-8 sm:w-8"
@@ -136,6 +160,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <rect x="2" y="2" width="8" height="8" rx="1.5" />
         </svg>
       </button>
+    );
+    if (!(voiceActive && onVoiceToggle)) return stopButton;
+    return (
+      <div className="flex items-center gap-1.5">
+        {renderVoiceButton()}
+        {stopButton}
+      </div>
     );
   }
 
@@ -191,6 +222,15 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         </Menu>
       </div>
     );
+  }
+
+  if (onVoiceToggle && (voiceActive || shouldShowInlineVoiceAction({
+    isRunning,
+    pendingAction: Boolean(pendingAction),
+    showPlanFollowUpPrompt,
+    hasSendableContent,
+  }))) {
+    return renderVoiceButton();
   }
 
   return (

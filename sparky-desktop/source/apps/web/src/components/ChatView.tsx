@@ -214,6 +214,7 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { VoiceSession } from "../voice/VoiceSession";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -1241,6 +1242,11 @@ function ChatViewContent(props: ChatViewProps) {
   const composerRef = useComposerHandleContext() ?? localComposerRef;
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
+  const [voiceSession, setVoiceSession] = useState<{ context: AudioContext; threadKey: string } | null>(null);
+  const [voiceStatus, setVoiceStatus] = useState("");
+  useEffect(() => {
+    if (voiceSession && voiceSession.threadKey !== routeThreadKey) setVoiceSession(null);
+  }, [routeThreadKey, voiceSession]);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
   const [steeredMessageIds, setSteeredMessageIds] = useState<ReadonlySet<string>>(() => new Set());
   const [steeringStartedAt, setSteeringStartedAt] = useState<string | null>(null);
@@ -4310,7 +4316,7 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
-  const onSend = async (e?: { preventDefault: () => void }) => {
+  const onSend = async (e?: { preventDefault: () => void }, spokenText?: string) => {
     e?.preventDefault();
     if (
       !activeThread ||
@@ -4321,11 +4327,16 @@ function ChatViewContent(props: ChatViewProps) {
     )
       return;
     if (activePendingProgress) {
-      onAdvanceActivePendingUserInput();
-      return;
+      if (spokenText === undefined) onAdvanceActivePendingUserInput();
+      return false;
     }
-    const sendCtx = composerRef.current?.getSendContext();
-    if (!sendCtx) return;
+    const baseSendCtx = composerRef.current?.getSendContext();
+    if (!baseSendCtx) return false;
+    // A call uses the same selected model, runtime mode and tools, without
+    // replacing or attaching the user’s unsent text, images or contexts.
+    const sendCtx = spokenText === undefined
+      ? baseSendCtx
+      : { ...baseSendCtx, prompt: spokenText, images: [], terminalContexts: [], elementContexts: [], previewAnnotations: [], reviewComments: [] };
     const {
       prompt: promptForSend,
       images: composerImages,
@@ -4362,9 +4373,11 @@ function ChatViewContent(props: ChatViewProps) {
         draftText: trimmed,
         planMarkdown: activeProposedPlan.planMarkdown,
       });
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
+      if (spokenText === undefined) {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      }
       await onSubmitPlanFollowUp({
         text: followUp.text,
         interactionMode: followUp.interactionMode,
@@ -4381,9 +4394,11 @@ function ChatViewContent(props: ChatViewProps) {
         : null;
     if (standaloneSlashCommand) {
       handleInteractionModeChange(standaloneSlashCommand);
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
+      if (spokenText === undefined) {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      }
       return;
     }
     if (!hasSendableContent) {
@@ -4431,9 +4446,11 @@ function ChatViewContent(props: ChatViewProps) {
           streaming: false,
         },
       ]);
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
+      if (spokenText === undefined) {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      }
       window.setTimeout(() => {
         const repliedAt = new Date().toISOString();
         setOptimisticUserMessages((existing) => [
@@ -4449,7 +4466,7 @@ function ChatViewContent(props: ChatViewProps) {
           },
         ]);
       }, 500);
-      return;
+      return true;
     }
     const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
     const baseBranchForWorktree =
@@ -4589,9 +4606,11 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
     }
-    promptRef.current = "";
-    clearComposerDraftContent(composerDraftTarget);
-    composerRef.current?.resetCursorState();
+    if (spokenText === undefined) {
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+    }
 
     let firstComposerImageName: string | null = null;
     if (composerImagesSnapshot.length > 0) {
@@ -4726,7 +4745,12 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     if (failure !== null) {
+      if (spokenText !== undefined) {
+        optimisticUserMessageThreadIdsRef.current.delete(messageIdForSend);
+        setOptimisticUserMessages((messages) => messages.filter((message) => message.id !== messageIdForSend));
+      }
       if (
+        spokenText === undefined &&
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
         composerTerminalContextsRef.current.length === 0 &&
@@ -4778,6 +4802,7 @@ function ChatViewContent(props: ChatViewProps) {
       );
       resetLocalDispatch();
     }
+    return turnStartSucceeded;
   };
 
   const onInterrupt = async () => {
@@ -5830,6 +5855,22 @@ function ChatViewContent(props: ChatViewProps) {
                         composerTerminalContextsRef={composerTerminalContextsRef}
                         composerElementContextsRef={composerElementContextsRef}
                         onSend={onSend}
+                        onVoiceToggle={() => {
+                          if (voiceSession) {
+                            setVoiceSession(null);
+                            return;
+                          }
+                          if (typeof AudioContext === "undefined") {
+                            toastManager.add({ type: "error", title: "Audio playback is unavailable." });
+                            return;
+                          }
+                          const context = new AudioContext();
+                          void context.resume().catch(() => {});
+                          setVoiceStatus("Starting voice…");
+                          setVoiceSession({ context, threadKey: routeThreadKey });
+                        }}
+                        voiceActive={voiceSession?.threadKey === routeThreadKey}
+                        voiceStatus={voiceStatus}
                         onInterrupt={onInterrupt}
                         onImplementPlanInNewThread={onImplementPlanInNewThread}
                         onRespondToApproval={onRespondToApproval}
@@ -6023,6 +6064,20 @@ function ChatViewContent(props: ChatViewProps) {
             {rightPanelContent}
           </RightPanelTabs>
         </RightPanelSheet>
+      ) : null}
+
+      {voiceSession && voiceSession.threadKey === routeThreadKey ? (
+        <VoiceSession
+          audioContext={voiceSession.context}
+          messages={timelineMessages}
+          needsAttention={Boolean(activePendingApproval || activePendingUserInput)}
+          voice={settings.voiceSelection}
+          speed={settings.voiceSpeed}
+          onSend={async (text) => Boolean(await onSend(undefined, text))}
+          onStatus={setVoiceStatus}
+          onError={(message) => toastManager.add({ type: "error", title: message })}
+          onClose={() => setVoiceSession(null)}
+        />
       ) : null}
 
       {expandedImage && (

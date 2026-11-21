@@ -85,8 +85,12 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "'self'",
     `${input.scheme}:`,
     "'unsafe-inline'",
+    // Both local voice engines compile WebAssembly. Do not grant JS 'unsafe-eval'.
+    "'wasm-unsafe-eval'",
     ...(neonAuthOrigin ? [neonAuthOrigin] : []),
     "https://challenges.cloudflare.com",
+    // Pinned, on-demand ONNX Runtime Web for Kitten TTS and local Whisper.
+    "https://cdn.jsdelivr.net",
   ];
 
   // The renderer connects directly to user-configured environments in addition to

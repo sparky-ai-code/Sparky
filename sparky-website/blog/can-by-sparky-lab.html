@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b0b0b" />
+  <meta name="description" content="Can by Sparky Lab is a fully virtual sandbox for AI agents: its own filesystem, processes, ports, JavaScript runtime and headless browser, with zero npm dependencies." />
+  <title>Introducing Can by Sparky Lab - Sparky Blog</title>
+  <link rel="icon" href="../assets/sparky-favicon.png?v=5" type="image/png" sizes="256x256" />
+  <link rel="preload" href="../assets/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="../landing.css" />
+  <link rel="stylesheet" href="../blog.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header wrap">
+    <a class="brand" href="../index.html" aria-label="Sparky home"><img src="../assets/sparky-symbol.png" alt="" width="36" height="36" /><span>Sparky</span></a>
+    <nav aria-label="Main navigation"><a href="../index.html#product">Product</a><a href="../docs/overview.html">Docs</a><a href="../changelog.html">Changelog</a><a href="index.html" aria-current="page">Blog</a></nav>
+    <a class="button button-small" href="../index.html#download">Get Sparky <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v12m-5-5 5 5 5-5M4 17h12" /></svg></a>
+  </header>
+
+  <main id="main" class="post">
+    <article>
+      <header class="post-header">
+        <p class="post-kicker"><a href="index.html">Blog</a> · Sparky Lab</p>
+        <h1>Introducing Can: a virtual sandbox for AI agents</h1>
+        <p class="post-dek">Agents that write code also need somewhere to run it. Can gives each agent its own small machine, with its own files, processes, ports and browser, kept apart from the computer it runs on.</p>
+        <p class="post-meta">By Sparky Lab · November 22, 2026 · <a href="https://github.com/darkness22s/can">Source on GitHub</a></p>
+      </header>
+
+      <div class="post-body">
+        <h2>Why agents need their own machine</h2>
+        <p>Agents now do more than suggest code. They install packages, start servers, open pages in a browser and check their own work. On your own computer, that means trusting every line the agent writes and every command it decides to run.</p>
+        <p>Can gives the agent a place to do all of that. A <strong>can</strong> is a small virtual machine with its own filesystem, processes, virtual network ports, JavaScript runtime and headless browser. Code inside a can cannot read or write files on the host, start host processes, or see host environment variables.</p>
+
+        <h2>What is inside a can</h2>
+        <ul>
+          <li><strong>A filesystem</strong> with POSIX paths such as <code>/app</code>, <code>/tmp</code> and <code>/home/agent</code>.</li>
+          <li><strong>Processes</strong> you can start in the background, list, read the logs of and signal.</li>
+          <li><strong>Virtual ports</strong>, so a server running in a can can be reached from inside it.</li>
+          <li><strong>A shell and a JavaScript runtime</strong> with the Node.js built-ins most projects use: <code>fs</code>, <code>path</code>, <code>http</code>, <code>crypto</code>, <code>child_process</code> and more.</li>
+          <li><strong>A headless browser</strong> that opens local or internet URLs, reads pages, fills in forms, clicks, runs scripts and takes screenshots.</li>
+        </ul>
+
+        <h2>How the isolation works</h2>
+        <p>Each can runs in its own child Node process, with Node's Permission Model turned on. That child can read only Can's own source folder. It cannot write files, start other processes, open workers or load native addons. It starts with an almost empty environment, the only exception being the variable Windows needs for name lookups, and its memory heap is capped at 512 MB. The host talks to it through a small asynchronous RPC client.</p>
+        <p>A second layer sits on top of the process boundary. It wraps every host value that enters can code, disables code generation from strings, removes escape hatches such as <code>process.binding</code>, and refuses to listen on host ports. The test suites include escape attempts, and they check that the process boundary holds even with this second layer switched off.</p>
+        <p>Can has no npm dependencies. It is built on Node.js built-ins only, which leaves very little third-party code to review before you run it. It requires Node.js 20 or newer. We run it on Node 24.15.0 and Windows 11.</p>
+
+        <h2>Built to be driven by agents</h2>
+        <p>Can runs as a Model Context Protocol (MCP) server over stdio. Sparky and any other MCP client that runs a stdio server can use it. Once it is registered, the agent has tools such as <code>can_create</code>, <code>can_exec</code>, <code>can_write_file</code>, <code>can_spawn</code>, <code>can_ports</code>, <code>can_http</code> and <code>browser_goto</code>.</p>
+        <p>A typical server session goes like this. The agent creates a can, writes <code>server.js</code>, starts it with <code>can_spawn</code>, finds the port with <code>can_ports</code>, and opens <code>http://localhost:&lt;port&gt;/</code> in the can's browser. The browser returns a page snapshot with element references, so the agent can click and type by label or ref rather than guessing at selectors.</p>
+        <p>The same capabilities are available from a command line tool, for when you want to work with a can yourself:</p>
+        <div class="code-block"><pre><code>node bin/can.js create demo
+node bin/can.js exec demo -- echo "hello from the can"
+node bin/can.js cat demo /app/a.txt
+node bin/can.js ls
+node bin/can.js rm demo</code></pre></div>
+        <p>The full source is on GitHub at <a href="https://github.com/darkness22s/can">github.com/darkness22s/can</a>, including the test suites mentioned above.</p>
+
+        <h2>Moving files in and out</h2>
+        <p>Files cross the boundary only through explicit calls. <code>can_import</code> copies a host file or folder into a can, and <code>can_export</code> copies a file back out. Both directions copy bytes, so PNG, gzip and other binary files arrive unchanged. Exports land only under a transfer folder on the host, and any path that tries to leave it is refused. Each call is limited to 256 MB per file, 500 MB in total and 5,000 files.</p>
+        <p>You can also mount folders read-only. You list the folders you are willing to share in one configuration file, and a can refers to them only by label. A mounted folder shows its current contents, and every write to it fails.</p>
+
+        <h2>Set up a can before it starts</h2>
+        <p>A can can be prepared from a spec before anything runs. The spec sets the start folder, copies in host files while leaving out folders such as <code>node_modules</code> and <code>.git</code>, writes files, sets environment variables and runs setup commands such as <code>npm install</code>. If a required step fails, the can is discarded and the error includes that step's output.</p>
+        <div class="code-block"><pre><code>{
+  "workdir": "/app",
+  "node": "24",
+  "imports": [{ "hostPath": "C:\\work\\my-app", "canPath": "/app", "exclude": ["node_modules", ".git"] }],
+  "requireTools": ["npm"],
+  "setup": [{ "command": "npm install", "label": "dependencies", "timeoutMs": 600000 }]
+}</code></pre></div>
+        <p>Packages install inside the can from the registry, so the host's binaries stay out. Packages that need install scripts or native addons are not supported yet. The project's README lists the full set of limits.</p>
+
+        <h2>CI pipelines in a can</h2>
+        <p>The same spec can drive a continuous integration pipeline. <code>can_ci</code> over MCP, or <code>can ci pipeline.json</code> on the command line, creates one fresh can and runs its jobs in order: a test job, a build job, and any others you define. A failing step stops the run, and a failed run keeps its can so you can inspect it. Artifacts are exported only when the whole pipeline passes.</p>
+
+        <h2>Recording a session</h2>
+        <p>A recording tool captures a QA session on a can. It writes a timeline of every call, with its arguments and result, and a video of the browser at each step that changes the page. The timeline has real timestamps. The video is a sequence of frames, one per step, meant for review.</p>
+
+        <h2>Known limits</h2>
+        <p>Can is strongest at JavaScript and shell work. These are the gaps today:</p>
+        <ul>
+          <li><strong>No native toolchains.</strong> There is no <code>cargo</code> and no C or C++ compiler. Install scripts and native addons do not run, and workspaces such as <code>pnpm -r</code> are not supported.</li>
+          <li><strong>The default browser is a virtual DOM.</strong> Its screenshots approximate a layout so an agent can check it, but they are not pixel-accurate. Set <code>chromiumBrowser</code> to <code>true</code> in the configuration file to drive a real Chrome or Edge on the host instead. The can process stays sandboxed either way.</li>
+          <li><strong>Outbound network is open.</strong> Node 24 has no <code>--allow-net</code> flag, so a can with internet access can connect out to any host. Listening on host ports is refused, but outbound connections are allowed by design.</li>
+          <li><strong>CPU is not capped.</strong> Memory is limited to 512 MB, but a synchronous infinite loop will block that can until it is destroyed.</li>
+          <li><strong>Tested on a narrow set of runtimes.</strong> The permission flags were verified on Node 24.15.0 only, although the package declares Node 20 or newer. Continuous integration runs the test suite on macOS with Node 20 and 24.</li>
+        </ul>
+
+        <h2>Try it</h2>
+        <p>Can is a Sparky Lab project. It runs its tests with <code>node --test</code>, and there is nothing to install beyond Node.js. If your agents run code, give them a can rather than your own machine. Start with the commands above, then read the agent's timeline to see what it did.</p>
+        <p>The code is on GitHub at <a href="https://github.com/darkness22s/can">github.com/darkness22s/can</a>. Clone it, run <code>node --test</code>, and open an issue if something breaks.</p>
+        <p>We will keep writing about Can as it grows.</p>
+      </div>
+
+      <footer class="post-end">
+        <span>Written by Sparky Lab. <a href="https://github.com/darkness22s/can">View the Can repo on GitHub</a></span>
+        <a class="text-link" href="index.html">All posts <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h14m-5-5 5 5-5 5" /></svg></a>
+      </footer>
+    </article>
+  </main>
+
+  <footer class="site-footer wrap">
+    <div><a class="brand" href="../index.html" aria-label="Sparky home"><img src="../assets/sparky-symbol.png" alt="" width="30" height="30" /><span>Sparky</span></a><p>More room to build.</p></div>
+    <nav aria-label="Resources"><a href="../docs/overview.html">Documentation</a><a href="index.html">Blog</a><a href="../changelog.html">Changelog</a><a href="../licenses.html">Legal &amp; licenses</a></nav>
+    <span class="copyright">© 2026 Sparky</span>
+  </footer>
+</body>
+</html>

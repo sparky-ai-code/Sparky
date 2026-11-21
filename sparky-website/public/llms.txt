@@ -16,6 +16,7 @@ Current stable release: **v1.1.47** (2026-11-17 release tag). See the [changelog
 - [Website previews](https://sparky.llc/docs/preview.html): local previews and browser-profile settings.
 - [Sessions](https://sparky.llc/docs/sessions.html): saved conversations and steering a running thread.
 - [Changelog](https://sparky.llc/changelog.html): published product updates.
+- [Blog](https://sparky.llc/blog/index.html): product introductions and notes from the Sparky team and Sparky Lab, such as [Introducing Can by Sparky Lab](https://sparky.llc/blog/can-by-sparky-lab.html).
 
 ## Current capabilities
 

@@ -1,9 +1,26 @@
-import type { EnvironmentId, Team, TeamMessage, TeamThread } from "@sparky/contracts";
+import type { EnvironmentId, Team } from "@sparky/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { ArrowLeftIcon, FolderIcon, LoaderCircleIcon, UserPlusIcon } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 
 import { cn } from "../../lib/utils";
+import { useTeamAgentDraft, useTeamAgentProjectRef } from "../../hooks/useTeamAgentDraft";
+import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
+import ChatView from "../ChatView";
+import {
+  ChevronLeftIcon,
+  FolderPlusIcon,
+  LoaderIcon,
+  MessageCircleIcon,
+  UserPlusIcon,
+} from "../Hugeicons";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { teamsEnvironment } from "../../state/teams";
@@ -11,19 +28,27 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { SidebarMenu } from "../ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InviteMemberDialog } from "./InviteMemberDialog";
-import { TeamComposer } from "./TeamComposer";
-import { TeamMessageList, teamThreadKey } from "./TeamMessageList";
+import { TeamChatPage } from "./TeamChatPage";
 import { TeamProjectsDialog } from "./TeamProjectsDialog";
-import { TeamThreadList } from "./TeamThreadList";
+import { TeamSuggestedPrompts } from "./TeamSuggestedPrompts";
+import { TeamProjectPage } from "./TeamProjectPage";
+import { TeamProjectRow } from "./TeamProjectRow";
+import { TeamsTitlebarActions } from "./TeamsTitlebarActions";
+import { TeamSidebarRow, TeamSidebarRowList } from "./TeamSidebarRow";
 import { teamsFailureMessage } from "./teamsErrors";
-import { mergeById, pickDefaultTeam, SUGGESTED_TEAM_PROMPTS, teamsViewMode } from "./teamsLogic";
-import { useTeamPolling } from "./useTeamPolling";
+import {
+  pickDefaultTeam,
+  pickSuggestedPrompts,
+  SUGGESTED_PROMPT_COUNT,
+  TEAM_PROMPT_POOL,
+  teamsViewMode,
+} from "./teamsLogic";
 
-const THREAD_POLL_INTERVAL_MS = 15_000;
 const TEAMS_LOAD_STALL_MS = 10_000;
 const EMPTY_TEAMS: readonly Team[] = [];
-const EMPTY_THREADS: readonly TeamThread[] = [];
 
 export function TeamsPage() {
   const environmentId = usePrimaryEnvironmentId();
@@ -47,7 +72,6 @@ export function TeamsPage() {
   }, [teamsData]);
 
   const teams = teamsData?.teams ?? EMPTY_TEAMS;
-  const viewerLogin = teamsData?.viewer ?? null;
   const refreshTeams = teamsQuery.refresh;
   const mode = teamsViewMode(teams.length);
   const activeTeam: Team | null =
@@ -78,7 +102,7 @@ export function TeamsPage() {
       </p>
     ) : (
       <div className="flex flex-1 items-center justify-center py-20">
-        <LoaderCircleIcon className="size-5 animate-spin text-muted-foreground" />
+        <LoaderIcon className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   } else if (teamsData === null && teamsQuery.error !== null) {
@@ -114,7 +138,6 @@ export function TeamsPage() {
         environmentId={environmentId}
         team={activeTeam}
         teams={teams}
-        viewerLogin={viewerLogin}
         showBack={mode === "list"}
         onBack={() => setOpenTeamId(null)}
         onSwitchTeam={setOpenTeamId}
@@ -123,13 +146,12 @@ export function TeamsPage() {
     );
   }
 
-  // The workspace draws its own top bar. Other states get a plain title.
-  const showTitleBar = activeTeam === null;
-
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-x-hidden overflow-y-auto">
-      {showTitleBar ? (
-        <header className="flex items-center gap-2 border-b border-border px-4 py-3 sm:px-6">
+    // Content starts below the window title bar so its buttons never sit under the
+    // Windows minimize / maximize / close controls.
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-x-hidden overflow-y-auto pt-[var(--workspace-topbar-height)]">
+      {activeTeam === null ? (
+        <header className="px-4 pb-3 pt-2 sm:px-6">
           <h1 className="text-base font-semibold text-foreground">Teams</h1>
         </header>
       ) : null}
@@ -199,124 +221,111 @@ interface TeamWorkspaceProps {
   readonly environmentId: EnvironmentId;
   readonly team: Team;
   readonly teams: readonly Team[];
-  readonly viewerLogin: string | null;
   readonly showBack: boolean;
   readonly onBack: () => void;
   readonly onSwitchTeam: (teamId: string) => void;
   readonly onTeamsChanged: () => void;
 }
 
-/** One open team: top bar, composer, prompts, then threads beside messages. */
+/** One open team: top row, Sparky's composer, suggested prompts, then projects with their threads. */
 function TeamWorkspace(props: TeamWorkspaceProps) {
-  const {
-    environmentId,
-    team,
-    teams,
-    viewerLogin,
-    showBack,
-    onBack,
-    onSwitchTeam,
-    onTeamsChanged,
-  } = props;
+  const { environmentId, team, teams, showBack, onBack, onSwitchTeam, onTeamsChanged } = props;
 
   const [projectChoice, setProjectChoice] = useState<string | null>(null);
   const projectId =
     team.projects.find((project) => project.id === projectChoice)?.id ??
     team.projects[0]?.id ??
     null;
+  const selectedProject = team.projects.find((project) => project.id === projectId) ?? null;
 
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  // The project whose page (its threads) is open. Null shows the list of projects.
+  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  const openProject = team.projects.find((project) => project.id === openProjectId) ?? null;
+  // The team chat lives in the first project, so it never moves when the selection changes.
+  const chatProjectId = team.projects[0]?.id ?? null;
 
-  const [threadId, setThreadId] = useState<string | null>(null);
-  const [replyTo, setReplyTo] = useState<TeamMessage | null>(null);
-  const [draft, setDraft] = useState("");
-  const [focusRequest, setFocusRequest] = useState(0);
-  const [messageRefresh, setMessageRefresh] = useState(0);
-
-  const threadsQuery = useEnvironmentQuery(
-    projectId !== null
-      ? teamsEnvironment.listThreads({ environmentId, input: { projectId } })
-      : null,
-  );
-  const threadsData = threadsQuery.data;
-  const refreshThreads = threadsQuery.refresh;
-
-  // Thread list is merged by id, so a poll that changes nothing keeps the same array.
-  const [threadState, setThreadState] = useState<{
-    readonly projectId: string | null;
-    readonly items: readonly TeamThread[];
-  }>({ projectId: null, items: EMPTY_THREADS });
-
+  // Sparky's composer runs on a draft for the selected project's chat.
+  const agentProjectRef = useTeamAgentProjectRef(selectedProject?.localPath ?? null);
+  const ensureDraft = useTeamAgentDraft();
+  const [draftId, setDraftId] = useState<DraftId | null>(null);
+  // Text typed before switching projects, carried into the next project's draft.
+  const carriedPromptRef = useRef<string | null>(null);
   useEffect(() => {
-    if (threadsData === null || projectId === null) {
+    if (draftId !== null || agentProjectRef === null) {
       return;
     }
-    const incoming = threadsData.threads;
-    setThreadState((previous) => {
-      const base = previous.projectId === projectId ? previous.items : EMPTY_THREADS;
-      const items = mergeById(base, incoming);
-      return previous.projectId === projectId && items === previous.items
-        ? previous
-        : { projectId, items };
-    });
-  }, [threadsData, projectId]);
-
-  useTeamPolling({
-    enabled: projectId !== null,
-    intervalMs: THREAD_POLL_INTERVAL_MS,
-    run: refreshThreads,
-  });
-
-  const threads = threadState.projectId === projectId ? threadState.items : EMPTY_THREADS;
-  const threadsLoading = threadsData === null && threadsQuery.isPending;
-  const threadsError = threadsData === null ? threadsQuery.error : null;
+    const nextDraftId = ensureDraft(agentProjectRef);
+    const carried = carriedPromptRef.current;
+    if (carried !== null) {
+      useComposerDraftStore.getState().setPrompt(nextDraftId, carried);
+      carriedPromptRef.current = null;
+    }
+    setDraftId(nextDraftId);
+  }, [agentProjectRef, draftId, ensureDraft]);
+  // Team projects the @ menu can tag. Tagging one moves the composer to that project's chat.
+  const teamMentions = useMemo(
+    () =>
+      team.projects.map((project) => ({
+        id: project.id,
+        label: project.nameWithOwner,
+        description: project.localPath ?? "",
+      })),
+    [team.projects],
+  );
+  const draftSession = useComposerDraftStore((store) =>
+    draftId !== null ? store.getDraftSession(draftId) : null,
+  );
+  const draftPrompt = useComposerDraftStore((store) =>
+    draftId !== null ? (store.getComposerDraft(draftId)?.prompt ?? "") : "",
+  );
+  // Suggested prompts are picked once per mount, so reopening the page shows a different set.
+  const [suggestedPrompts] = useState(() =>
+    pickSuggestedPrompts(TEAM_PROMPT_POOL, SUGGESTED_PROMPT_COUNT),
+  );
 
   const selectProject = (nextProjectId: string) => {
+    if (draftId !== null) {
+      const store = useComposerDraftStore.getState();
+      carriedPromptRef.current = store.getComposerDraft(draftId)?.prompt ?? "";
+      store.setPrompt(draftId, "");
+    }
     setProjectChoice(nextProjectId);
-    setThreadId(null);
-    setReplyTo(null);
+    setDraftId(null);
   };
 
-  const selectThread = (nextThreadId: string) => {
-    setThreadId(nextThreadId);
-    setReplyTo(null);
+  const openProjectPage = (projectIdToOpen: string) => {
+    setOpenProjectId(projectIdToOpen);
+    selectProject(projectIdToOpen);
   };
 
-  const handleThreadCreated = (thread: TeamThread) => {
-    setThreadState((previous) => ({
-      projectId,
-      items: [
-        thread,
-        ...(previous.projectId === projectId ? previous.items : []).filter(
-          (entry) => entry.id !== thread.id,
-        ),
-      ],
-    }));
-    setThreadId(thread.id);
-    setReplyTo(null);
-    refreshThreads();
-    onTeamsChanged();
-  };
-
-  const handleMessagePosted = () => {
-    setMessageRefresh((count) => count + 1);
-    refreshThreads();
-  };
-
-  const handleReply = (message: TeamMessage) => {
-    setReplyTo(message);
-    setFocusRequest((count) => count + 1);
-  };
-
+  // A suggested prompt is sent to the selected project, so it starts with that project's tag.
   const pickPrompt = (prompt: string) => {
-    setDraft(prompt);
-    setFocusRequest((count) => count + 1);
+    if (draftId !== null) {
+      const tag = selectedProject !== null ? `@${selectedProject.nameWithOwner} ` : "";
+      useComposerDraftStore.getState().setPrompt(draftId, `${tag}${prompt}`);
+    }
   };
+
+  if (chatOpen && chatProjectId !== null) {
+    return (
+      <TeamChatPage
+        environmentId={environmentId}
+        projectId={chatProjectId}
+        onBack={() => setChatOpen(false)}
+      />
+    );
+  }
+
+  if (openProject !== null) {
+    return <TeamProjectPage project={openProject} onBack={() => setOpenProjectId(null)} />;
+  }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 sm:px-6">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-4 px-4 pb-6 pt-2 sm:px-6">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         {showBack ? (
           <Button
             type="button"
@@ -325,7 +334,7 @@ function TeamWorkspace(props: TeamWorkspaceProps) {
             aria-label="Back to teams"
             onClick={onBack}
           >
-            <ArrowLeftIcon />
+            <ChevronLeftIcon />
           </Button>
         ) : null}
         {teams.length > 1 && !showBack ? (
@@ -353,79 +362,86 @@ function TeamWorkspace(props: TeamWorkspaceProps) {
         ) : (
           <h1 className="min-w-0 truncate text-base font-semibold text-foreground">{team.name}</h1>
         )}
-        <div className="ml-auto flex items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setProjectsOpen(true)}>
-            <FolderIcon />
-            Projects
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => setInviteOpen(true)}>
-            <UserPlusIcon />
-            Invite
-          </Button>
-        </div>
+        <TeamsTitlebarActions>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="Team chat"
+                  disabled={chatProjectId === null}
+                  className="inline-flex h-6 min-w-6 cursor-pointer items-center justify-center rounded-md px-1 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                  onClick={() => setChatOpen(true)}
+                />
+              }
+            >
+              <MessageCircleIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">Team chat</TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="Add team members"
+                  className="inline-flex h-6 min-w-6 cursor-pointer items-center justify-center rounded-md px-1 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+                  onClick={() => setInviteOpen(true)}
+                />
+              }
+            >
+              <UserPlusIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">Add team members</TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="Add project"
+                  className="inline-flex h-6 min-w-6 cursor-pointer items-center justify-center rounded-md px-1 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+                  onClick={() => setProjectsOpen(true)}
+                />
+              }
+            >
+              <FolderPlusIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">Add project</TooltipPopup>
+          </Tooltip>{" "}
+        </TeamsTitlebarActions>
       </div>
 
-      <TeamComposer
-        environmentId={environmentId}
-        projectId={projectId}
-        threadId={threadId}
-        replyTo={replyTo}
-        draft={draft}
-        focusRequest={focusRequest}
-        onDraftChange={setDraft}
-        onClearReply={() => setReplyTo(null)}
-        onThreadCreated={handleThreadCreated}
-        onMessagePosted={handleMessagePosted}
-        onOpenProjects={() => setProjectsOpen(true)}
-      />
+      <div className="relative flex h-[260px] min-h-0 flex-col [&_.chat-composer-glass]:shadow-none">
+        {draftId !== null && draftSession !== null ? (
+          <ChatView
+            key={draftId}
+            composerOnly
+            teamProjectMentions={teamMentions}
+            onSelectTeamProject={selectProject}
+            routeKind="draft"
+            draftId={draftId}
+            environmentId={draftSession.environmentId}
+            threadId={draftSession.threadId}
+            forceExpandedMobileComposer
+          />
+        ) : null}
+      </div>
 
-      {projectId !== null ? (
-        <div className="flex flex-wrap gap-1.5">
-          {SUGGESTED_TEAM_PROMPTS.map((prompt) => (
-            <button
-              key={prompt}
-              type="button"
-              onClick={() => pickPrompt(prompt)}
-              className="max-w-full rounded-full border border-border px-2.5 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
+      {draftPrompt.trim().length === 0 ? (
+        <TeamSuggestedPrompts prompts={suggestedPrompts} onPick={pickPrompt} />
       ) : null}
 
-      <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(220px,300px)_minmax(0,1fr)]">
-        <section className="min-w-0 rounded-lg border border-border bg-card">
-          <TeamThreadList
-            projects={team.projects}
-            projectId={projectId}
-            onSelectProject={selectProject}
-            threads={threads}
-            loading={threadsLoading}
-            error={threadsError}
-            selectedThreadId={threadId}
-            onSelectThread={selectThread}
-            viewerLogin={viewerLogin}
+      <SidebarMenu>
+        {team.projects.map((project) => (
+          <TeamProjectRow
+            key={project.id}
+            name={project.nameWithOwner}
+            localPath={project.localPath}
+            onSelect={() => openProjectPage(project.id)}
           />
-        </section>
-
-        <section className="flex h-[60vh] min-h-72 min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card lg:h-[520px]">
-          {projectId !== null && threadId !== null ? (
-            <TeamMessageList
-              key={teamThreadKey(projectId, threadId)}
-              environmentId={environmentId}
-              projectId={projectId}
-              threadId={threadId}
-              refreshToken={messageRefresh}
-              onReply={handleReply}
-            />
-          ) : (
-            <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-              {projectId === null ? "No project yet." : "Select a thread."}
-            </div>
-          )}
-        </section>
-      </div>
+        ))}
+      </SidebarMenu>
 
       <TeamProjectsDialog
         open={projectsOpen}

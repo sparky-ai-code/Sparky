@@ -4,7 +4,7 @@ import {
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
 } from "@sparky/contracts";
-import { BotIcon, ListTodoIcon, PaperclipIcon } from "../Hugeicons";
+import { BotIcon, FolderIcon, ListTodoIcon, PaperclipIcon } from "../Hugeicons";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
@@ -29,6 +29,13 @@ export type ComposerCommandItem =
       type: "path";
       path: string;
       pathKind: ProjectEntry["kind"];
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "team-project";
+      projectId: string;
       label: string;
       description: string;
     }
@@ -160,6 +167,14 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
       ),
     [props.items],
   );
+  const teamProjectItems = useMemo(
+    () =>
+      props.items.filter(
+        (item): item is Extract<ComposerCommandItem, { type: "team-project" }> =>
+          item.type === "team-project",
+      ),
+    [props.items],
+  );
   const pluginItems = useMemo(() => searchPlugins(props.pluginQuery), [props.pluginQuery]);
   const pathPicker = props.triggerKind === "path";
 
@@ -223,6 +238,47 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
 
   if (pathPicker && pathMenuDismissed) {
     return null;
+  }
+  // Team projects replace the file list while the Teams page is the composer's host.
+  if (teamProjectItems.length > 0) {
+    return (
+      <Command autoHighlight={false} mode="none">
+        <div
+          ref={listRef}
+          data-composer-command-menu="true"
+          className="relative w-full overflow-hidden rounded-[22px] border border-border/80 bg-popover text-popover-foreground shadow-2xl"
+        >
+          <CommandList className="max-h-[min(20rem,45vh)] p-1.5">
+            <CommandGroup>
+              {teamProjectItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-composer-item-id={item.id}
+                  className={cn(
+                    pathActionClassName,
+                    props.activeItemId === item.id && "bg-accent/70",
+                  )}
+                  onMouseMove={() => props.onHighlightedItemChange(item.id)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => props.onSelect(item)}
+                >
+                  <FolderIcon className="size-[18px] shrink-0 text-foreground/85" />
+                  <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                    <span className="shrink-0 text-[14px] font-medium text-foreground">
+                      {item.label}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground/70">
+                      {item.description}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </div>
+      </Command>
+    );
   }
 
   return (

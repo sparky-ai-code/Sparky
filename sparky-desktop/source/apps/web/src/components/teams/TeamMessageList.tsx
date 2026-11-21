@@ -1,6 +1,6 @@
 import type { EnvironmentId, TeamMessage } from "@sparky/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { LoaderCircleIcon, ReplyIcon, SmilePlusIcon } from "lucide-react";
+import { ArrowTurnBackwardIcon, LoaderIcon, SmileIcon } from "../Hugeicons";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
@@ -42,6 +42,8 @@ interface TeamMessageListProps {
   /** Incremented by the parent after the viewer posts, to fetch right away. */
   readonly refreshToken: number;
   readonly onReply: (message: TeamMessage) => void;
+  /** The signed-in GitHub login. The viewer's own messages are drawn on the right. */
+  readonly viewerLogin: string | null;
 }
 
 /**
@@ -49,7 +51,7 @@ interface TeamMessageListProps {
  * only this component re-renders. The parent keys it by thread, so switching threads remounts it.
  */
 export function TeamMessageList(props: TeamMessageListProps) {
-  const { environmentId, projectId, threadId, refreshToken, onReply } = props;
+  const { environmentId, projectId, threadId, refreshToken, onReply, viewerLogin } = props;
   const threadKey = teamThreadKey(projectId, threadId);
 
   const query = useEnvironmentQuery(
@@ -141,11 +143,11 @@ export function TeamMessageList(props: TeamMessageListProps) {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 space-y-2.5 overflow-x-hidden overflow-y-auto px-3 py-3"
+        className="min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto px-4 py-4"
       >
         {!loaded ? (
           <div className="flex justify-center py-12">
-            <LoaderCircleIcon className="size-5 animate-spin text-muted-foreground" />
+            <LoaderIcon className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : messages.length === 0 ? (
           <p className="py-12 text-center text-sm text-muted-foreground">No messages yet.</p>
@@ -155,75 +157,80 @@ export function TeamMessageList(props: TeamMessageListProps) {
           const parent =
             message.replyToId !== null ? messagesById.get(message.replyToId) : undefined;
           const pickerOpen = pickerMessageId === message.id;
+          const own = viewerLogin !== null && message.author === viewerLogin;
           return (
-            <article
+            <div
               key={message.id}
-              className="rounded-md border border-border/60 bg-background px-3 py-2"
+              className={cn("group flex flex-col gap-1", own ? "items-end" : "items-start")}
             >
-              <header className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-                <span className="min-w-0 truncate font-medium text-foreground">
-                  {message.author}
-                </span>
-                <time dateTime={message.createdAt} className="shrink-0">
-                  {formatRelativeTime(message.createdAt)}
-                </time>
-              </header>
+              {!own ? (
+                <span className="px-1 text-xs text-muted-foreground">{message.author}</span>
+              ) : null}
 
               {message.replyToId !== null ? (
-                <div className="mt-1.5 min-w-0 border-l-2 border-border pl-2 text-xs text-muted-foreground">
-                  {parent !== undefined ? (
-                    <span className="block truncate">
-                      {parent.author}: {firstLine(parent.body)}
-                    </span>
-                  ) : (
-                    <span className="block truncate">Replying to an earlier message</span>
-                  )}
+                <div className="max-w-[75%] truncate rounded-md border-l-2 border-primary/60 bg-primary/5 px-2 py-1 text-xs text-muted-foreground">
+                  {parent !== undefined
+                    ? `${parent.author}: ${firstLine(parent.body)}`
+                    : "Replying to an earlier message"}
                 </div>
               ) : null}
 
-              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">
-                {message.body}
-              </p>
-
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {message.reactions.map((reaction) => (
+              <div className={cn("flex items-center gap-2", own ? "flex-row-reverse" : "flex-row")}>
+                <div
+                  className={cn(
+                    "max-w-[75%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2 text-sm",
+                    own
+                      ? "rounded-br-md bg-primary text-primary-foreground"
+                      : "rounded-bl-md bg-muted text-foreground",
+                  )}
+                >
+                  {message.body}
+                </div>
+                <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                   <button
-                    key={reaction.emoji}
                     type="button"
-                    aria-pressed={reaction.reactedByViewer}
-                    onClick={() => void handleToggleReaction(message, reaction.emoji)}
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors",
-                      reaction.reactedByViewer
-                        ? "border-primary/50 bg-primary/10 text-foreground"
-                        : "border-border text-muted-foreground hover:bg-accent",
-                    )}
+                    aria-label="Reply"
+                    onClick={() => onReply(message)}
+                    className="inline-flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   >
-                    <span>{reaction.emoji}</span>
-                    <span className="tabular-nums">{reaction.count}</span>
+                    <ArrowTurnBackwardIcon className="size-3.5" />
                   </button>
-                ))}
-                <button
-                  type="button"
-                  aria-label="Add reaction"
-                  aria-expanded={pickerOpen}
-                  onClick={() => setPickerMessageId(pickerOpen ? null : message.id)}
-                  className="inline-flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  <SmilePlusIcon className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onReply(message)}
-                  className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  <ReplyIcon className="size-3" />
-                  Reply
-                </button>
+                  <button
+                    type="button"
+                    aria-label="Add reaction"
+                    aria-expanded={pickerOpen}
+                    onClick={() => setPickerMessageId(pickerOpen ? null : message.id)}
+                    className="inline-flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    <SmileIcon className="size-3.5" />
+                  </button>
+                </div>
               </div>
 
+              {message.reactions.length > 0 ? (
+                <div className={cn("flex flex-wrap gap-1", own ? "justify-end" : "justify-start")}>
+                  {message.reactions.map((reaction) => (
+                    <button
+                      key={reaction.emoji}
+                      type="button"
+                      aria-pressed={reaction.reactedByViewer}
+                      onClick={() => void handleToggleReaction(message, reaction.emoji)}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors",
+                        reaction.reactedByViewer
+                          ? "border-primary/50 bg-primary/10 text-foreground"
+                          : "border-border text-muted-foreground hover:bg-accent",
+                      )}
+                    >
+                      <span>{reaction.emoji}</span>
+                      <span className="tabular-nums">{reaction.count}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
               {pickerOpen ? (
-                <div className="mt-2 flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1">
                   {REACTION_EMOJIS.map((emoji) => (
                     <button
                       key={emoji}
@@ -237,12 +244,12 @@ export function TeamMessageList(props: TeamMessageListProps) {
                   ))}
                 </div>
               ) : null}
-            </article>
+            </div>
           );
         })}
       </div>
       {actionError !== null ? (
-        <p className="px-3 pb-2 text-xs text-destructive">{actionError}</p>
+        <p className="px-4 pb-2 text-xs text-destructive">{actionError}</p>
       ) : null}
     </div>
   );

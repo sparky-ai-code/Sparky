@@ -446,6 +446,14 @@ export type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      /** Show only the composer (used by the Teams page). Off by default. */
+      composerOnly?: boolean;
+      teamProjectMentions?: ReadonlyArray<{
+        readonly id: string;
+        readonly label: string;
+        readonly description: string;
+      }>;
+      onSelectTeamProject?: (projectId: string) => void;
       routeKind: "server";
       draftId?: never;
     }
@@ -455,6 +463,14 @@ export type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      /** Show only the composer (used by the Teams page). Off by default. */
+      composerOnly?: boolean;
+      teamProjectMentions?: ReadonlyArray<{
+        readonly id: string;
+        readonly label: string;
+        readonly description: string;
+      }>;
+      onSelectTeamProject?: (projectId: string) => void;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -2196,7 +2212,9 @@ function ChatViewContent(props: ChatViewProps) {
     if (!serverMessages) return [];
     return serverMessages.map((message) => {
       if (!message.attachments || message.attachments.length === 0) {
-        return steeredMessageIds.has(String(message.id)) ? { ...message, isSteered: true } : message;
+        return steeredMessageIds.has(String(message.id))
+          ? { ...message, isSteered: true }
+          : message;
       }
       return {
         ...message,
@@ -2597,12 +2615,9 @@ function ChatViewContent(props: ChatViewProps) {
   }, [focusComposer]);
   const addPluginToComposer = useCallback(
     (pluginId: PluginId) => {
-      composerRef.current?.insertTextAtEnd(
-        `${serializePluginToken(pluginId)} `,
-        {
-          ensureLeadingBoundary: true,
-        },
-      );
+      composerRef.current?.insertTextAtEnd(`${serializePluginToken(pluginId)} `, {
+        ensureLeadingBoundary: true,
+      });
     },
     [composerRef],
   );
@@ -5553,6 +5568,7 @@ function ChatViewContent(props: ChatViewProps) {
     ) : null
   ) : null;
 
+  const isComposerOnly = props.composerOnly === true;
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
       {rightPanelOpen && !shouldUsePlanSidebarSheet ? panelLayoutControls : null}
@@ -5564,45 +5580,47 @@ function ChatViewContent(props: ChatViewProps) {
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
         {/* Top bar */}
-        <header
-          data-chat-header
-          className={cn(
-            "border-b border-border transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none",
-            isElectron
-              ? cn(
-                  "workspace-topbar drag-region relative px-3 sm:px-5",
-                  reserveTitleBarControlInset &&
-                    !inlineRightPanelOwnsTitleBar &&
-                    "wco:pr-[var(--workspace-native-controls-inset)]",
-                )
-              : "workspace-topbar pl-[calc(env(safe-area-inset-left)+0.75rem)] pr-[calc(env(safe-area-inset-right)+0.75rem)] sm:pl-[calc(env(safe-area-inset-left)+1.25rem)] sm:pr-[calc(env(safe-area-inset-right)+1.25rem)]",
-            COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-          )}
-        >
-          {!rightPanelOpen ? panelLayoutControls : null}
-          <ChatHeader
-            activeThreadEnvironmentId={
-              workspaceContextEnabled ? activeThread.environmentId : undefined
-            }
-            activeThreadId={activeThread.id}
-            {...(routeKind === "draft" && draftId ? { draftId } : {})}
-            activeThreadTitle={activeThread.title}
-            activeProjectName={activeProject?.title}
-            openInCwd={gitCwd}
-            activeProjectScripts={activeProject?.scripts}
-            preferredScriptId={
-              activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
-            }
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            rightPanelOpen={rightPanelOpen}
-            gitCwd={gitCwd}
-            onRunProjectScript={runProjectScript}
-            onAddProjectScript={saveProjectScript}
-            onUpdateProjectScript={updateProjectScript}
-            onDeleteProjectScript={deleteProjectScript}
-          />
-        </header>
+        {isComposerOnly ? null : (
+          <header
+            data-chat-header
+            className={cn(
+              "border-b border-border transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none",
+              isElectron
+                ? cn(
+                    "workspace-topbar drag-region relative px-3 sm:px-5",
+                    reserveTitleBarControlInset &&
+                      !inlineRightPanelOwnsTitleBar &&
+                      "wco:pr-[var(--workspace-native-controls-inset)]",
+                  )
+                : "workspace-topbar pl-[calc(env(safe-area-inset-left)+0.75rem)] pr-[calc(env(safe-area-inset-right)+0.75rem)] sm:pl-[calc(env(safe-area-inset-left)+1.25rem)] sm:pr-[calc(env(safe-area-inset-right)+1.25rem)]",
+              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+            )}
+          >
+            {!rightPanelOpen ? panelLayoutControls : null}
+            <ChatHeader
+              activeThreadEnvironmentId={
+                workspaceContextEnabled ? activeThread.environmentId : undefined
+              }
+              activeThreadId={activeThread.id}
+              {...(routeKind === "draft" && draftId ? { draftId } : {})}
+              activeThreadTitle={activeThread.title}
+              activeProjectName={activeProject?.title}
+              openInCwd={gitCwd}
+              activeProjectScripts={activeProject?.scripts}
+              preferredScriptId={
+                activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
+              }
+              keybindings={keybindings}
+              availableEditors={availableEditors}
+              rightPanelOpen={rightPanelOpen}
+              gitCwd={gitCwd}
+              onRunProjectScript={runProjectScript}
+              onAddProjectScript={saveProjectScript}
+              onUpdateProjectScript={updateProjectScript}
+              onDeleteProjectScript={deleteProjectScript}
+            />
+          </header>
+        )}
 
         {/* Error banner */}
         <ProviderStatusBanner status={activeProviderStatus} />
@@ -5617,48 +5635,50 @@ function ChatViewContent(props: ChatViewProps) {
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
-              <MessagesTimeline
-                key={activeThread.id}
-                isWorking={timelineIsWorking}
-                activeTurnInProgress={timelineActiveTurnInProgress}
-                activeTurnStartedAt={activeWorkStartedAt}
-                listRef={legendListRef}
-                timelineEntries={timelineEntries}
-                latestTurn={activeLatestTurn}
-                runningTurnId={
-                  activeThread.session?.status === "running"
-                    ? (activeThread.session.activeTurnId ?? null)
-                    : null
-                }
-                turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
-                activeThreadEnvironmentId={
-                  workspaceContextEnabled ? activeThread.environmentId : null
-                }
-                workspaceContextEnabled={workspaceContextEnabled}
-                routeThreadKey={routeThreadKey}
-                onOpenTurnDiff={onOpenTurnDiff}
-                revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
-                onRevertUserMessage={onRevertUserMessage}
-                isRevertingCheckpoint={isRevertingCheckpoint}
-                onImageExpand={onExpandTimelineImage}
-                markdownCwd={gitCwd ?? undefined}
-                resolvedTheme={resolvedTheme}
-                timestampFormat={timestampFormat}
-                streamingTextAnimation={settings.streamingTextAnimation}
-                workspaceRoot={activeWorkspaceRoot}
-                skills={
-                  workspaceContextEnabled
-                    ? (activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS)
-                    : EMPTY_PROVIDER_SKILLS
-                }
-                anchorMessageId={timelineAnchorMessageId}
-                onAnchorReady={onTimelineAnchorReady}
-                onAnchorSizeChanged={onTimelineAnchorSizeChanged}
-                contentInsetEndAdjustment={composerOverlayHeight}
-                onIsAtEndChange={onIsAtEndChange}
-                onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
-                hideEmptyPlaceholder={isDraftHeroState}
-              />
+              {isComposerOnly ? null : (
+                <MessagesTimeline
+                  key={activeThread.id}
+                  isWorking={timelineIsWorking}
+                  activeTurnInProgress={timelineActiveTurnInProgress}
+                  activeTurnStartedAt={activeWorkStartedAt}
+                  listRef={legendListRef}
+                  timelineEntries={timelineEntries}
+                  latestTurn={activeLatestTurn}
+                  runningTurnId={
+                    activeThread.session?.status === "running"
+                      ? (activeThread.session.activeTurnId ?? null)
+                      : null
+                  }
+                  turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+                  activeThreadEnvironmentId={
+                    workspaceContextEnabled ? activeThread.environmentId : null
+                  }
+                  workspaceContextEnabled={workspaceContextEnabled}
+                  routeThreadKey={routeThreadKey}
+                  onOpenTurnDiff={onOpenTurnDiff}
+                  revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
+                  onRevertUserMessage={onRevertUserMessage}
+                  isRevertingCheckpoint={isRevertingCheckpoint}
+                  onImageExpand={onExpandTimelineImage}
+                  markdownCwd={gitCwd ?? undefined}
+                  resolvedTheme={resolvedTheme}
+                  timestampFormat={timestampFormat}
+                  streamingTextAnimation={settings.streamingTextAnimation}
+                  workspaceRoot={activeWorkspaceRoot}
+                  skills={
+                    workspaceContextEnabled
+                      ? (activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS)
+                      : EMPTY_PROVIDER_SKILLS
+                  }
+                  anchorMessageId={timelineAnchorMessageId}
+                  onAnchorReady={onTimelineAnchorReady}
+                  onAnchorSizeChanged={onTimelineAnchorSizeChanged}
+                  contentInsetEndAdjustment={composerOverlayHeight}
+                  onIsAtEndChange={onIsAtEndChange}
+                  onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
+                  hideEmptyPlaceholder={isDraftHeroState}
+                />
+              )}
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
               {showScrollToBottom && (
@@ -5706,7 +5726,7 @@ function ChatViewContent(props: ChatViewProps) {
                 className="chat-composer-horizontal-inset w-full"
               >
                 <div className="pointer-events-auto relative z-10 isolate">
-                  {isDraftHeroState ? (
+                  {isDraftHeroState && !isComposerOnly ? (
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
                         className="pb-8"
@@ -5742,6 +5762,12 @@ function ChatViewContent(props: ChatViewProps) {
                     >
                       <ChatComposer
                         composerRef={composerRef}
+                        {...(props.teamProjectMentions !== undefined
+                          ? { teamProjectMentions: props.teamProjectMentions }
+                          : {})}
+                        {...(props.onSelectTeamProject !== undefined
+                          ? { onSelectTeamProject: props.onSelectTeamProject }
+                          : {})}
                         composerDraftTarget={composerDraftTarget}
                         environmentId={workspaceContextEnabled ? environmentId : null}
                         routeKind={routeKind}

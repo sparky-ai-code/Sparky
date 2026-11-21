@@ -2,6 +2,7 @@ import type { EnvironmentId, Team, TeamsInviteMemberResult } from "@sparky/contr
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useEffect, useState, type FormEvent } from "react";
 
+import { UserPlusIcon } from "../Hugeicons";
 import { teamsEnvironment } from "../../state/teams";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
@@ -14,15 +15,23 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { Input } from "../ui/input";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 import { teamsFailureMessage } from "./teamsErrors";
 
 type InviteGrant = TeamsInviteMemberResult["grants"][number];
 
-const GRANT_LABELS: Record<InviteGrant["status"], string> = {
-  invited: "Access granted",
-  "already-member": "Already a collaborator",
-  failed: "Failed",
-};
+/** One line that says what the invite did, for the toast. */
+function summarizeGrants(login: string, grants: readonly InviteGrant[]): string {
+  const invited = grants.filter((grant) => grant.status === "invited").length;
+  const existing = grants.filter((grant) => grant.status === "already-member").length;
+  const failed = grants.filter((grant) => grant.status === "failed").length;
+  const parts: string[] = [];
+  if (invited > 0) parts.push(`invited to ${invited} project${invited === 1 ? "" : "s"}`);
+  if (existing > 0) parts.push(`already on ${existing}`);
+  if (failed > 0) parts.push(`failed on ${failed}`);
+  if (parts.length === 0) return `${login} has no projects to join yet.`;
+  return `${login}: ${parts.join(", ")}.`;
+}
 
 interface InviteMemberDialogProps {
   readonly open: boolean;
@@ -40,13 +49,11 @@ export function InviteMemberDialog(props: InviteMemberDialogProps) {
   const [login, setLogin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [grants, setGrants] = useState<readonly InviteGrant[] | null>(null);
 
   useEffect(() => {
     if (!open) {
       setLogin("");
       setError(null);
-      setGrants(null);
     }
   }, [open]);
 
@@ -60,16 +67,29 @@ export function InviteMemberDialog(props: InviteMemberDialogProps) {
     }
     setBusy(true);
     setError(null);
-    setGrants(null);
     try {
       const result = await inviteMember({
         environmentId,
         input: { teamId: team.id, login: trimmedLogin },
       });
       if (AsyncResult.isSuccess(result)) {
-        setGrants(result.value.grants);
+        const allFailed =
+          result.value.grants.length > 0 &&
+          result.value.grants.every((grant) => grant.status === "failed");
+        toastManager.add(
+          stackedThreadToast({
+            type: allFailed ? "error" : "success",
+            title: allFailed ? "Invite failed" : "Team member invited",
+            description: summarizeGrants(trimmedLogin, result.value.grants),
+            data: {
+              hideCopyButton: true,
+              leadingIcon: <UserPlusIcon aria-hidden="true" className="size-4 text-success" />,
+            },
+          }),
+        );
         setLogin("");
         onInvited();
+        onOpenChange(false);
       } else {
         setError(teamsFailureMessage(result, "Could not invite that GitHub account."));
       }
@@ -78,14 +98,11 @@ export function InviteMemberDialog(props: InviteMemberDialogProps) {
     }
   };
 
-  const projectName = (projectId: string) =>
-    team.projects.find((project) => project.id === projectId)?.nameWithOwner ?? projectId;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Invite</DialogTitle>
+          <DialogTitle>Add team members</DialogTitle>
         </DialogHeader>
         <form onSubmit={(event) => void handleSubmit(event)}>
           <DialogPanel className="space-y-3">
@@ -111,31 +128,6 @@ export function InviteMemberDialog(props: InviteMemberDialogProps) {
               disabled={busy}
             />
             {error !== null ? <p className="text-xs text-destructive">{error}</p> : null}
-            {grants !== null ? (
-              <ul className="space-y-1.5 text-xs">
-                {grants.length === 0 ? (
-                  <li className="text-muted-foreground">No projects in this team yet.</li>
-                ) : null}
-                {grants.map((grant) => (
-                  <li
-                    key={grant.projectId}
-                    className="flex min-w-0 flex-col rounded-md border border-border px-2.5 py-1.5"
-                  >
-                    <span className="truncate font-medium text-foreground">
-                      {projectName(grant.projectId)}
-                    </span>
-                    <span
-                      className={
-                        grant.status === "failed" ? "text-destructive" : "text-muted-foreground"
-                      }
-                    >
-                      {GRANT_LABELS[grant.status]}
-                      {grant.detail !== undefined ? ` · ${grant.detail}` : ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
           </DialogPanel>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

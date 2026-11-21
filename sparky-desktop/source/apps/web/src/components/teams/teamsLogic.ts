@@ -3,14 +3,62 @@
  * unit tested directly and reused by any component.
  */
 
-export const SUGGESTED_TEAM_PROMPTS: readonly string[] = [
-  "Summarize open pull requests and what needs review",
-  "Open an issue for a bug we saw today",
-  "Plan a feature and split it into tasks",
-  "Review the latest PR and leave comments",
-  "Write a standup update for the team",
-  "What is blocking the next release?",
+/** Title of the one team-wide chat thread. Its title never changes, so the chat stays the same. */
+export const TEAM_CHAT_TITLE = "Team chat";
+
+/** Icon names for suggested prompts. The component maps each name to a lucide icon. */
+export type TeamPromptIcon =
+  | "pull-request"
+  | "bug"
+  | "checklist"
+  | "message"
+  | "calendar"
+  | "alert"
+  | "file"
+  | "list"
+  | "users";
+
+export interface TeamPrompt {
+  readonly text: string;
+  readonly icon: TeamPromptIcon;
+}
+
+/** Pool of suggested prompts. Each time the Teams page opens, a few are picked from here. */
+export const TEAM_PROMPT_POOL: readonly TeamPrompt[] = [
+  { text: "Summarize open pull requests and what needs review", icon: "pull-request" },
+  { text: "Open an issue for a bug we saw today", icon: "bug" },
+  { text: "Plan a feature and split it into tasks", icon: "checklist" },
+  { text: "Review the latest PR and leave comments", icon: "message" },
+  { text: "Write a standup update for the team", icon: "calendar" },
+  { text: "What is blocking the next release?", icon: "alert" },
+  { text: "Draft release notes for what shipped this week", icon: "file" },
+  { text: "List stale issues that can be closed", icon: "list" },
+  { text: "Break this idea into small reviewable PRs", icon: "pull-request" },
+  { text: "Who should review the open pull requests?", icon: "users" },
 ];
+
+export const SUGGESTED_PROMPT_COUNT = 3;
+
+/**
+ * Pick `count` distinct prompts from `pool`. `random` returns a number in [0, 1); it is
+ * injectable so tests can check the result.
+ */
+export function pickSuggestedPrompts<T>(
+  pool: readonly T[],
+  count: number,
+  random: () => number = Math.random,
+): T[] {
+  const remaining = [...pool];
+  const picked: T[] = [];
+  while (picked.length < count && remaining.length > 0) {
+    const index = Math.min(remaining.length - 1, Math.floor(random() * remaining.length));
+    const [item] = remaining.splice(index, 1);
+    if (item !== undefined) {
+      picked.push(item);
+    }
+  }
+  return picked;
+}
 
 export const REACTION_EMOJIS = ["👍", "❤️", "🎉", "👀", "🚀", "😂"] as const;
 

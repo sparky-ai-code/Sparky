@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   LAST_SEEN_STORAGE_KEY,
   REACTION_EMOJIS,
-  SUGGESTED_TEAM_PROMPTS,
+  TEAM_PROMPT_POOL,
+  pickSuggestedPrompts,
+  SUGGESTED_PROMPT_COUNT,
   countUnread,
   formatRelativeTime,
   mergeById,
@@ -37,9 +39,31 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("pickSuggestedPrompts", () => {
+  it("returns the requested number of distinct prompts from the pool", () => {
+    const picked = pickSuggestedPrompts(TEAM_PROMPT_POOL, SUGGESTED_PROMPT_COUNT);
+    expect(picked).toHaveLength(SUGGESTED_PROMPT_COUNT);
+    expect(new Set(picked).size).toBe(SUGGESTED_PROMPT_COUNT);
+    for (const prompt of picked) {
+      expect(TEAM_PROMPT_POOL).toContain(prompt);
+    }
+    expect(new Set(picked.map((prompt) => prompt.text)).size).toBe(SUGGESTED_PROMPT_COUNT);
+  });
+
+  it("changes the selection when the random source changes", () => {
+    const low = pickSuggestedPrompts(TEAM_PROMPT_POOL, 3, () => 0);
+    const high = pickSuggestedPrompts(TEAM_PROMPT_POOL, 3, () => 0.99);
+    expect(low).not.toEqual(high);
+  });
+
+  it("returns fewer items when the pool is small", () => {
+    expect(pickSuggestedPrompts(["a", "b"], 3, () => 0)).toEqual(["a", "b"]);
+  });
+});
+
 describe("constants", () => {
-  it("exposes six suggested prompts and six reaction emojis", () => {
-    expect(SUGGESTED_TEAM_PROMPTS).toHaveLength(6);
+  it("has a prompt pool larger than the shown count, and six reaction emojis", () => {
+    expect(TEAM_PROMPT_POOL.length).toBeGreaterThanOrEqual(SUGGESTED_PROMPT_COUNT);
     expect(REACTION_EMOJIS).toEqual(["👍", "❤️", "🎉", "👀", "🚀", "😂"]);
   });
 });

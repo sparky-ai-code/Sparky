@@ -456,6 +456,13 @@ export interface ChatComposerHandle {
   };
 }
 
+/** A team project the @ menu can target. Only the Teams page passes these. */
+export interface TeamProjectMention {
+  readonly id: string;
+  readonly label: string;
+  readonly description: string;
+}
+
 export interface ChatComposerProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
   environmentId: EnvironmentId | null;
@@ -544,6 +551,9 @@ export interface ChatComposerProps {
   scheduleComposerFocus: () => void;
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   onExpandImage: (preview: ExpandedImagePreview) => void;
+  /** Team projects the @ menu can target. Only the Teams page passes this. */
+  teamProjectMentions?: ReadonlyArray<TeamProjectMention>;
+  onSelectTeamProject?: (projectId: string) => void;
 }
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
@@ -616,6 +626,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     scheduleComposerFocus,
     setThreadError,
     onExpandImage,
+    teamProjectMentions,
+    onSelectTeamProject,
   } = props;
 
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
@@ -914,6 +926,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!activeComposerTrigger) return [];
+    if (activeComposerTrigger.kind === "path" && teamProjectMentions !== undefined) {
+      const query = activeComposerTrigger.query.trim().toLowerCase();
+      return teamProjectMentions
+        .filter((project) => !query || project.label.toLowerCase().includes(query))
+        .map((project) => ({
+          id: `team-project:${project.id}`,
+          type: "team-project" as const,
+          projectId: project.id,
+          label: project.label,
+          description: project.description,
+        }));
+    }
     if (activeComposerTrigger.kind === "path") {
       return workspaceEntries.entries.map((entry) => ({
         id: `path:${entry.kind}:${entry.path}`,
@@ -980,7 +1004,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }));
     }
     return [];
-  }, [activeComposerTrigger, selectedProvider, selectedProviderStatus, workspaceEntries.entries]);
+  }, [
+    activeComposerTrigger,
+    selectedProvider,
+    selectedProviderStatus,
+    teamProjectMentions,
+    workspaceEntries.entries,
+  ]);
 
   const liveComposerTrigger = detectComposerTrigger(
     prompt,
@@ -1482,6 +1512,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       const { snapshot, trigger } = resolveActiveComposerTrigger();
       if (!trigger) return;
+      if (item.type === "team-project") {
+        const replacement = `@${item.label} `;
+        const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+          snapshot.value,
+          trigger.rangeEnd,
+          replacement,
+        );
+        const applied = applyPromptReplacement(
+          trigger.rangeStart,
+          replacementRangeEnd,
+          replacement,
+          { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+        );
+        if (applied) {
+          setComposerHighlightedItemId(null);
+          setComposerTrigger(null);
+          onSelectTeamProject?.(item.projectId);
+        }
+        return;
+      }
       if (item.type === "path") {
         const replacement = `${serializeComposerFileLink(item.path)} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
@@ -1562,7 +1612,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
       }
     },
-    [applyPromptReplacement, handleInteractionModeChange, resolveActiveComposerTrigger],
+    [
+      applyPromptReplacement,
+      handleInteractionModeChange,
+      onSelectTeamProject,
+      resolveActiveComposerTrigger,
+    ],
   );
 
   const onSelectComposerPlugin = useCallback(

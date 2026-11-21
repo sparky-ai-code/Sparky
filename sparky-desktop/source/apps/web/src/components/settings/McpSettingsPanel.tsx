@@ -1,3 +1,4 @@
+// @effect-diagnostics cryptoRandomUUID:off
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import type { McpServerConnectionStatus } from "@sparky/contracts";
@@ -20,9 +21,9 @@ export function McpSettingsPanel() {
   const [endpoint, setEndpoint] = useState("");
   const [authorizationToken, setAuthorizationToken] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [serverStatuses, setServerStatuses] = useState<ReadonlyMap<string, McpServerConnectionStatus>>(
-    () => new Map(),
-  );
+  const [serverStatuses, setServerStatuses] = useState<
+    ReadonlyMap<string, McpServerConnectionStatus>
+  >(() => new Map());
   const [checkingStatus, setCheckingStatus] = useState(false);
   const environmentId = usePrimaryEnvironment()?.environmentId ?? null;
   const checkMcpServers = useAtomCommand(serverEnvironment.checkMcpServers, {
@@ -60,7 +61,9 @@ export function McpSettingsPanel() {
         throw new Error("Use an HTTP or HTTPS endpoint.");
       }
       if (!normalizedName) throw new Error("Enter a name for this MCP server.");
-      if (connections.some((server) => server.name.toLowerCase() === normalizedName.toLowerCase())) {
+      if (
+        connections.some((server) => server.name.toLowerCase() === normalizedName.toLowerCase())
+      ) {
         throw new Error("Choose a unique server name.");
       }
       save([
@@ -93,9 +96,9 @@ export function McpSettingsPanel() {
           </span>
         </div>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Add streamable HTTP MCP servers here. Connections are saved in server settings and restored
-          after restart. Their status is checked when this page opens and periodically; unreachable
-          servers are marked Offline.
+          Add streamable HTTP MCP servers here. Connections are saved in server settings and
+          restored after restart. Their status is checked when this page opens and periodically;
+          unreachable servers are marked Offline.
         </p>
       </div>
 
@@ -139,7 +142,9 @@ export function McpSettingsPanel() {
               className="flex min-w-0 items-center gap-3 border-t border-border/60 px-4 py-3.5 sm:px-5"
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-semibold text-foreground">{connection.name}</p>
+                <p className="truncate text-[13px] font-semibold text-foreground">
+                  {connection.name}
+                </p>
                 <p className="truncate text-xs text-muted-foreground">{connection.url}</p>
               </div>
               <span
@@ -165,9 +170,13 @@ export function McpSettingsPanel() {
               <Switch
                 checked={connection.enabled}
                 onCheckedChange={(enabled) =>
-                  save(connections.map((server) =>
-                    server.id === connection.id ? { ...server, enabled: Boolean(enabled) } : server,
-                  ))
+                  save(
+                    connections.map((server) =>
+                      server.id === connection.id
+                        ? { ...server, enabled: Boolean(enabled) }
+                        : server,
+                    ),
+                  )
                 }
                 aria-label={`${connection.enabled ? "Disable" : "Enable"} ${connection.name}`}
               />
@@ -187,7 +196,11 @@ export function McpSettingsPanel() {
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1.5 text-xs font-medium text-foreground">
               Server name
-              <Input value={name} onChange={(event) => setName(event.currentTarget.value)} placeholder="My MCP server" />
+              <Input
+                value={name}
+                onChange={(event) => setName(event.currentTarget.value)}
+                placeholder="My MCP server"
+              />
             </label>
             <label className="grid gap-1.5 text-xs font-medium text-foreground">
               Server URL
@@ -209,9 +222,15 @@ export function McpSettingsPanel() {
               />
             </label>
           </div>
-          {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+          {error ? (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          ) : null}
           <div className="flex justify-end">
-            <Button type="submit" size="sm"><PlusIcon className="size-4" /> Add server</Button>
+            <Button type="submit" size="sm">
+              <PlusIcon className="size-4" /> Add server
+            </Button>
           </div>
         </form>
       </SettingsSection>

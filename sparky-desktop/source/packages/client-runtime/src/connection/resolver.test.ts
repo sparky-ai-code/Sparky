@@ -166,7 +166,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
     Layer.succeed(ConnectionCredentialStore.ConnectionCredentialStore, credentialStore),
     Layer.succeed(
       ClientCapabilities.CloudSession,
-      ClientCapabilities.CloudSession.of({ clerkToken: Effect.succeed("clerk-session") }),
+      ClientCapabilities.CloudSession.of({ accountToken: Effect.succeed("clerk-session") }),
     ),
     Layer.succeed(
       ClientCapabilities.PrimaryEnvironmentAuth,
@@ -303,7 +303,7 @@ describe("ConnectionResolver", () => {
     Effect.gen(function* () {
       const relayInputs = yield* Ref.make<
         ReadonlyArray<{
-          readonly clerkToken: string;
+          readonly accountToken: string;
           readonly scopes: ReadonlyArray<string>;
           readonly deviceId?: string;
         }>
@@ -318,7 +318,7 @@ describe("ConnectionResolver", () => {
           Ref.update(relayInputs, (values) => [
             ...values,
             {
-              clerkToken: input.clerkToken,
+              accountToken: input.accountToken,
               scopes: input.scopes,
               ...(input.deviceId ? { deviceId: input.deviceId } : {}),
             },
@@ -352,7 +352,7 @@ describe("ConnectionResolver", () => {
       expect((yield* broker.prepare(catalogEntry(target))).socketUrl).toContain("wsTicket=dpop");
       expect(yield* Ref.get(relayInputs)).toEqual([
         {
-          clerkToken: "clerk-session",
+          accountToken: "clerk-session",
           scopes: [RelayEnvironmentConnectScope],
           deviceId: "device-1",
         },

@@ -1,3 +1,4 @@
+// @effect-diagnostics globalFetch:off
 import type { McpServerConfig } from "@sparky/contracts";
 
 type JsonRpcResponse = {
@@ -68,7 +69,8 @@ async function send(
   } catch {
     throw new Error(`MCP server ${config.name} returned an invalid JSON-RPC response.`);
   }
-  if (parsed.error) throw new Error(parsed.error.message ?? `MCP server ${config.name} returned an error.`);
+  if (parsed.error)
+    throw new Error(parsed.error.message ?? `MCP server ${config.name} returned an error.`);
   return { response: parsed, ...(nextSessionId ? { sessionId: nextSessionId } : {}) };
 }
 

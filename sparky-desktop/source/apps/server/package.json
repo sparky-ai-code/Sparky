@@ -22,6 +22,7 @@
     "test": "vp test run"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "2.4.0",
     "@effect/platform-bun": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/platform-node-shared": "catalog:",

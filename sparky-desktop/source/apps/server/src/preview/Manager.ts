@@ -211,25 +211,36 @@ export const make = Effect.gen(function* PreviewManagerMake() {
       // The renderer can replay one automation request after a subscription
       // reconnect. Claim the request atomically so it cannot create extra tabs.
       // Manual opens have no requestId and intentionally remain independent.
-      const opened = yield* SynchronizedRef.modify(stateRef, (state) => {
-        const existing =
-          input.requestId === undefined
-            ? undefined
-            : sessionsForThread(state, input.threadId).find(
-                (session) => session.requestId === input.requestId,
-              );
-        if (existing) {
-          return [{ snapshot: existing.snapshot, created: false }, state] as const;
-        }
-        const sessions = new Map(state.sessions);
-        sessions.set(compositeKey(input.threadId, tabId), {
-          threadId: input.threadId,
-          tabId,
-          snapshot,
-          ...(input.requestId === undefined ? {} : { requestId: input.requestId }),
-        });
-        return [{ snapshot, created: true }, { sessions }] as const;
-      });
+      const opened = yield* SynchronizedRef.modify(
+        stateRef,
+        (
+          state: ManagerState,
+        ): readonly [
+          { readonly snapshot: PreviewSessionSnapshot; readonly created: boolean },
+          ManagerState,
+        ] => {
+          const existing =
+            input.requestId === undefined
+              ? undefined
+              : sessionsForThread(state, input.threadId).find(
+                  (session) => session.requestId === input.requestId,
+                );
+          if (existing) {
+            return [{ snapshot: existing.snapshot, created: false }, state];
+          }
+          const sessions = new Map(state.sessions);
+          sessions.set(compositeKey(input.threadId, tabId), {
+            threadId: input.threadId,
+            tabId,
+            snapshot,
+            ...(input.requestId === undefined ? {} : { requestId: input.requestId }),
+          });
+          return [
+            { snapshot, created: true },
+            { ...state, sessions },
+          ];
+        },
+      );
       if (opened.created) {
         yield* PubSub.publish(eventsPubSub, {
           type: "opened",

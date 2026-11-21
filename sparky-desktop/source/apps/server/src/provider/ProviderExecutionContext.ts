@@ -1,3 +1,4 @@
+// @effect-diagnostics unsafeEffectTypeAssertion:off
 import type { AuthSessionId } from "@sparky/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

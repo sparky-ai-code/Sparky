@@ -25,6 +25,7 @@
  *
  * @module provider/builtInDrivers
  */
+import { ClaudeAgentDriver } from "./Drivers/ClaudeAgentDriver.ts";
 import { SparkyDriver } from "./Drivers/SparkyDriver.ts";
 import type { AnyProviderDriver } from "./ProviderDriver.ts";
 import type { ServerSettingsService } from "../serverSettings.ts";
@@ -36,12 +37,15 @@ import type { ProviderEventLoggers } from "./Layers/ProviderEventLoggers.ts";
  * driver. The registry layer declares `R = BuiltInDriversEnv`; the runtime
  * layer must provide every service in this union.
  */
-export type BuiltInDriversEnv =
-  | ServerSettingsService
-  | ServerConfig
-  | ProviderEventLoggers;
+export type BuiltInDriversEnv = ServerSettingsService | ServerConfig | ProviderEventLoggers;
 
-/** Only the aggregated Sparky runtime is exposed as a built-in provider. */
+/**
+ * Built-in providers: the aggregated Sparky runtime (OpenAI, Claude API and Gemini
+ * models through API keys) and Claude Code on the Claude Agent SDK, which uses a
+ * Console API key only. Claude Code is a separate provider from the Claude API
+ * models, and it never uses claude.ai subscription logins.
+ */
 export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
   SparkyDriver,
+  ClaudeAgentDriver,
 ];

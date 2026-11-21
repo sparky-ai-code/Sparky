@@ -195,15 +195,30 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
 export const layerTest = (cwd: string, baseDirOrPrefix: string | { readonly prefix: string }) =>
   Layer.effect(ServerConfig, makeTest(cwd, baseDirOrPrefix));
 
+/**
+ * Directories that may hold the bundled web client for a server bundle directory.
+ *
+ * In a packaged Windows build the server bundle is read through app.asar (Electron
+ * runs it with ELECTRON_RUN_AS_NODE), so its directory is inside the archive. The
+ * client is unpacked next to it in app.asar.unpacked, and Node cannot see it
+ * through the archive path. Try the unpacked sibling as well.
+ */
+export function bundledClientDirCandidates(bundleDir: string): ReadonlyArray<string> {
+  const unpacked = bundleDir.replace(/app\.asar(?=[\\/])/, "app.asar.unpacked");
+  return unpacked === bundleDir ? [bundleDir] : [bundleDir, unpacked];
+}
+
 export const resolveStaticDir = Effect.fn(function* () {
   const { join, resolve } = yield* Path.Path;
   const { exists } = yield* FileSystem.FileSystem;
-  const bundledClient = resolve(join(import.meta.dirname, "client"));
-  const bundledStat = yield* exists(join(bundledClient, "index.html")).pipe(
-    Effect.orElseSucceed(() => false),
-  );
-  if (bundledStat) {
-    return bundledClient;
+  for (const candidate of bundledClientDirCandidates(import.meta.dirname)) {
+    const bundledClient = resolve(join(candidate, "client"));
+    const bundledStat = yield* exists(join(bundledClient, "index.html")).pipe(
+      Effect.orElseSucceed(() => false),
+    );
+    if (bundledStat) {
+      return bundledClient;
+    }
   }
 
   const monorepoClient = resolve(join(import.meta.dirname, "../../web/dist"));

@@ -16,6 +16,8 @@ class MockWorker {
 }
 
 /** speak() waits for the model to load before posting, so let that continuation run. */
+const ASSET_BASE = "https://app.test/";
+
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe("KittenSpeaker", () => {
@@ -61,9 +63,9 @@ describe("KittenSpeaker", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("sends the selected voice and speed, and plays each returned chunk back to back", async () => {
-    const speaker = new KittenSpeaker(context, () => {});
+    const speaker = new KittenSpeaker(context, ASSET_BASE);
     const worker = workers[0]!;
-    expect(worker.sent[0]?.type).toBe("load");
+    expect(worker.sent[0]).toEqual({ type: "load", assetBase: ASSET_BASE });
     worker.emit({ type: "ready" });
     await speaker.load();
 
@@ -90,7 +92,7 @@ describe("KittenSpeaker", () => {
   });
 
   it("stops playback and drops late audio for cancelled sentences (barge-in)", async () => {
-    const speaker = new KittenSpeaker(context, () => {});
+    const speaker = new KittenSpeaker(context, ASSET_BASE);
     const worker = workers[0]!;
     worker.emit({ type: "ready" });
     await speaker.load();
@@ -110,7 +112,7 @@ describe("KittenSpeaker", () => {
   });
 
   it("reports worker errors for the sentence that failed", async () => {
-    const speaker = new KittenSpeaker(context, () => {});
+    const speaker = new KittenSpeaker(context, ASSET_BASE);
     const worker = workers[0]!;
     worker.emit({ type: "ready" });
     await speaker.load();

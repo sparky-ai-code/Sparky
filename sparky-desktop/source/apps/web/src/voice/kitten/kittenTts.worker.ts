@@ -1,14 +1,14 @@
 /*
  * Local Kitten TTS synthesis (KittenML/kitten-tts-2-nano, English, int8 ONNX).
  *
- * Text is phonemised and run through the ONNX graph here; no text or audio leaves the
- * device. The model files come from one pinned Hugging Face revision and are cached
- * by the browser. ONNX Runtime Web is loaded from a pinned jsDelivr build.
+ * Everything runs on the device, and every file is bundled into the app at build
+ * time (see scripts/fetch-voice-assets.mjs). Nothing is downloaded at runtime.
  *
- * Messages in:  { type: "load" } | { type: "speak", id, text, voice, speed }
+ * Messages in:  { type: "load", assetBase } | { type: "speak", id, text, voice, speed }
  *               { type: "cancel", below } (drops queued jobs with id < below)
- * Messages out: status | ready | chunk { id, audio, sampleRate } | done { id, skipped } | error
+ * Messages out: ready | chunk { id, audio, sampleRate } | done { id, skipped } | error
  */
+import * as ortRuntime from "onnxruntime-web";
 import { KittenLexicon } from "./kittenLexicon";
 import { EnglishFrontend } from "./kittenFrontend";
 import { parseVoicePacks, type VoicePack } from "./kittenArchive";
@@ -19,11 +19,6 @@ import {
   styleRow,
   trimChunkAudio,
 } from "./kittenSynthesis";
-
-const MODEL_REVISION = "0843ae614780b04e4260c91b601e374c4b81250d";
-const MODEL_BASE = `https://huggingface.co/KittenML/kitten-tts-2-nano/resolve/${MODEL_REVISION}/`;
-const ORT_DIST = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
-const CACHE_NAME = "sparky-kitten-tts-nano-en-r1";
 
 interface OrtTensor {
   readonly data: ArrayLike<number | bigint>;
@@ -45,7 +40,7 @@ interface SpeakJob {
 }
 
 type InMessage =
-  | { type: "load" }
+  | { type: "load"; assetBase: string }
   | { type: "speak"; id: number; text: string; voice: string; speed: number }
   | { type: "cancel"; below: number };
 
@@ -56,6 +51,7 @@ const scope = self as unknown as {
 };
 
 let ready: Promise<void> | undefined;
+let assetBase = "";
 let ort: OrtModule | undefined;
 let session: OrtSession | undefined;
 let frontend: EnglishFrontend | undefined;
@@ -64,47 +60,38 @@ let voices = new Map<string, VoicePack>();
 let cancelBelow = 0;
 let queue: Promise<void> = Promise.resolve();
 
-const status = (text: string) => scope.postMessage({ type: "status", text });
+function assetUrl(path: string): string {
+  return new URL(path, assetBase).href;
+}
 
-async function fetchCached(path: string): Promise<Uint8Array> {
-  const url = MODEL_BASE + path;
-  let cache: Cache | undefined;
-  try {
-    cache = await caches.open(CACHE_NAME);
-    const hit = await cache.match(url);
-    if (hit) return new Uint8Array(await hit.arrayBuffer());
-  } catch {
-    // Cache Storage can be unavailable in restricted renderer profiles; fetch instead.
-  }
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Kitten TTS download failed (${response.status}).`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (cache) void cache.put(url, new Response(bytes.slice())).catch(() => {});
-  return bytes;
+async function readAsset(path: string): Promise<Uint8Array> {
+  const response = await fetch(assetUrl(path));
+  if (!response.ok) throw new Error(`Kitten TTS files are missing from this install (${response.status}).`);
+  return new Uint8Array(await response.arrayBuffer());
 }
 
 async function initialize(): Promise<void> {
-  status("Preparing Kitten TTS voice…");
-  const [vocabBytes, voiceBytes, lexiconBytes] = await Promise.all([
-    fetchCached("vocab.json"),
-    fetchCached("voices_en.npz"),
-    fetchCached("g2p/cmu_misaki_us.json"),
+  const [vocabBytes, voiceBytes, lexiconBytes, modelBytes] = await Promise.all([
+    readAsset("voice/kitten/vocab.json"),
+    readAsset("voice/kitten/voices_en.npz"),
+    readAsset("voice/kitten/cmu_misaki_us.json"),
+    readAsset("voice/kitten/model.onnx"),
   ]);
   vocab = JSON.parse(new TextDecoder().decode(vocabBytes)) as Record<string, number>;
   voices = await parseVoicePacks(voiceBytes);
   frontend = new EnglishFrontend(
     new KittenLexicon(JSON.parse(new TextDecoder().decode(lexiconBytes)) as Record<string, string>),
   );
-  status("Loading Kitten TTS speech model…");
-  const modelBytes = await fetchCached("kitten_tts_2_nano_en.onnx");
-  ort = (await import(/* @vite-ignore */ `${ORT_DIST}ort.wasm.min.mjs`)) as OrtModule;
-  ort.env.wasm.wasmPaths = ORT_DIST;
-  ort.env.wasm.numThreads = scope.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
-  session = await ort.InferenceSession.create(modelBytes, { executionProviders: ["wasm"] });
+  const runtime = ortRuntime as unknown as OrtModule;
+  runtime.env.wasm.wasmPaths = assetUrl("voice/ort/");
+  runtime.env.wasm.numThreads = scope.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
+  ort = runtime;
+  session = await runtime.InferenceSession.create(modelBytes, { executionProviders: ["wasm"] });
   scope.postMessage({ type: "ready" });
 }
 
-function load(): Promise<void> {
+function load(base: string): Promise<void> {
+  assetBase = base;
   ready ??= initialize().catch((error: unknown) => {
     ready = undefined;
     throw error;
@@ -140,6 +127,10 @@ async function synthesize(job: SpeakJob): Promise<void> {
   scope.postMessage({ type: "done", id: job.id, skipped });
 }
 
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : "Kitten TTS could not run.";
+}
+
 scope.onmessage = (event: MessageEvent<InMessage>) => {
   const message = event.data;
   if (message.type === "cancel") {
@@ -147,13 +138,13 @@ scope.onmessage = (event: MessageEvent<InMessage>) => {
     return;
   }
   if (message.type === "load") {
-    load().catch((error: unknown) => scope.postMessage({ type: "error", message: errorText(error) }));
+    load(message.assetBase).catch((error: unknown) => scope.postMessage({ type: "error", message: errorText(error) }));
     return;
   }
   // Speak jobs run one at a time, in order, so sentences play back in sequence.
   const job: SpeakJob = { id: message.id, text: message.text, voice: message.voice, speed: message.speed };
   queue = queue
-    .then(() => load())
+    .then(() => load(assetBase))
     .then(() => {
       if (job.id < cancelBelow) return;
       return synthesize(job);
@@ -162,7 +153,3 @@ scope.onmessage = (event: MessageEvent<InMessage>) => {
       scope.postMessage({ type: "error", id: job.id, message: errorText(error) });
     });
 };
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : "Kitten TTS could not run.";
-}

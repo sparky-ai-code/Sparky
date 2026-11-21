@@ -1,5 +1,3 @@
-export type VoiceStatusCallback = (message: string) => void;
-
 function asError(message: unknown): Error {
   return new Error(typeof message === "string" ? message : "Speech recognition failed.");
 }
@@ -17,17 +15,14 @@ export class LocalSpeechTranscriber {
   private readonly pending = new Map<number, { resolve: (value: string) => void; reject: (error: Error) => void }>();
   private disposed = false;
 
-  constructor(onStatus: VoiceStatusCallback) {
+  /** `assetBase` is the absolute URL the app's voice files are served from. */
+  constructor(assetBase: string) {
     this.readyPromise = new Promise<void>((resolve, reject) => {
       this.resolveReady = resolve;
       this.rejectReady = reject;
     });
     this.worker.onmessage = (event: MessageEvent) => {
       const data = event.data as { type: string; id?: number; text?: string; message?: string };
-      if (data.type === "status") {
-        if (!this.disposed) onStatus(data.text || "Preparing speech recognition…");
-        return;
-      }
       if (data.type === "ready") {
         this.ready = true;
         this.resolveReady();
@@ -53,7 +48,7 @@ export class LocalSpeechTranscriber {
       for (const pending of this.pending.values()) pending.reject(error);
       this.pending.clear();
     };
-    this.worker.postMessage({ type: "load" });
+    this.worker.postMessage({ type: "load", assetBase });
   }
 
   load(): Promise<void> {

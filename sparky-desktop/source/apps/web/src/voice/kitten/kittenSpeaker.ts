@@ -6,8 +6,6 @@
  * out as it streams. `stop()` cancels everything queued or playing (barge-in).
  */
 
-export type SpeakerStatus = (message: string) => void;
-
 interface PendingJob {
   readonly resolve: () => void;
   readonly reject: (error: Error) => void;
@@ -20,7 +18,6 @@ function toError(message: unknown): Error {
 export class KittenSpeaker {
   private readonly worker: Worker;
   private readonly context: AudioContext;
-  private readonly onStatus: SpeakerStatus;
   private readonly readyPromise: Promise<void>;
   private resolveReady!: () => void;
   private rejectReady!: (error: Error) => void;
@@ -31,9 +28,9 @@ export class KittenSpeaker {
   private readonly jobs = new Map<number, PendingJob>();
   private disposed = false;
 
-  constructor(context: AudioContext, onStatus: SpeakerStatus) {
+  /** `assetBase` is the absolute URL the app's voice files are served from. */
+  constructor(context: AudioContext, assetBase: string) {
     this.context = context;
-    this.onStatus = onStatus;
     this.readyPromise = new Promise<void>((resolve, reject) => {
       this.resolveReady = resolve;
       this.rejectReady = reject;
@@ -41,11 +38,11 @@ export class KittenSpeaker {
     this.worker = new Worker(new URL("./kittenTts.worker.ts", import.meta.url), { type: "module" });
     this.worker.onmessage = (event: MessageEvent) => this.handle(event.data as WorkerMessage);
     this.worker.onerror = () => {
-      const error = new Error("Kitten TTS could not start. Check your internet connection for the first download.");
+      const error = new Error("Kitten TTS could not start.");
       if (!this.isReady) this.rejectReady(error);
       this.failAll(error);
     };
-    this.worker.postMessage({ type: "load" });
+    this.worker.postMessage({ type: "load", assetBase });
   }
 
   /** Resolves once the voice model and pronunciation data are loaded. */
@@ -98,10 +95,6 @@ export class KittenSpeaker {
 
   private handle(message: WorkerMessage): void {
     if (this.disposed) return;
-    if (message.type === "status") {
-      this.onStatus(message.text || "Preparing Kitten TTS…");
-      return;
-    }
     if (message.type === "ready") {
       this.isReady = true;
       this.resolveReady();
@@ -149,7 +142,6 @@ export class KittenSpeaker {
 }
 
 type WorkerMessage =
-  | { type: "status"; text?: string }
   | { type: "ready" }
   | { type: "chunk"; id: number; audio?: Float32Array<ArrayBuffer>; sampleRate?: number }
   | { type: "done"; id: number; skipped?: string[] }

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
@@ -8,6 +9,7 @@ import { defineConfig } from "vite-plus";
 import pkg from "./package.json" with { type: "json" };
 
 import { loadRepoEnv } from "../../scripts/lib/public-config";
+import { fetchVoiceAssets } from "./scripts/fetch-voice-assets.mjs";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
@@ -97,6 +99,13 @@ export default defineConfig(({ mode }) => {
     base: demoBuild ? "/demo/" : "/",
     plugins: [
       ...(demoBuild ? [] : [tanstackRouter()]),
+      // Speech models are bundled into the app, so fetch the pinned copies before serving or building.
+      {
+        name: "sparky-voice-assets",
+        async buildStart() {
+          await fetchVoiceAssets(fileURLToPath(new URL("./", import.meta.url)));
+        },
+      },
       react(),
       babel({
         // We need to be explicit about the parser options after moving to @vitejs/plugin-react v6.0.0

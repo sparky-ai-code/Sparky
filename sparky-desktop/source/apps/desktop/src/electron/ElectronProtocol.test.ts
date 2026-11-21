@@ -241,7 +241,6 @@ describe("ElectronProtocol", () => {
       "'wasm-unsafe-eval'",
       "https://auth.sparky.codes",
       "https://challenges.cloudflare.com",
-      "https://cdn.jsdelivr.net",
     ]);
     assert.notInclude(directives["script-src"], "'unsafe-eval'");
     assert.deepEqual(directives["connect-src"], ["'self'", "http:", "https:", "ws:", "wss:"]);

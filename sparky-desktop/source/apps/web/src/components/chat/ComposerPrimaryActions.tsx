@@ -17,6 +17,7 @@ interface PendingActionState {
 interface ComposerPrimaryActionsProps {
   compact: boolean;
   voiceActive?: boolean;
+  voiceStarting?: boolean;
   onVoiceToggle?: () => void;
   pendingAction: PendingActionState | null;
   isRunning: boolean;
@@ -58,6 +59,7 @@ const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
 export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   compact,
   voiceActive = false,
+  voiceStarting = false,
   onVoiceToggle,
   pendingAction,
   isRunning,
@@ -129,7 +131,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   }
 
   // A call stays reachable while Sparky replies, next to the stop control.
-  const renderVoiceButton = () => (
+  // While the call starts, a spinner takes the button's place.
+  const renderVoiceButton = () =>
+    voiceStarting ? (
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center sm:h-8 sm:w-8">
+        <Spinner className="size-5" />
+      </span>
+    ) : (
     <button
       type="button"
       data-voice-input-action="true"
@@ -145,7 +153,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     >
       <AudioLinesIcon className={cn("size-5", voiceActive && "animate-pulse")} aria-hidden="true" />
     </button>
-  );
+    );
 
   if (isRunning) {
     const stopButton = (

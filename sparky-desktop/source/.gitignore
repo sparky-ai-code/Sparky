@@ -41,3 +41,6 @@ sparky-dependencies-*/
 !.env.example
 ../../sparky-website/nul
 ../../sparky-website/nul
+
+# Speech models fetched at build time (apps/web/scripts/fetch-voice-assets.mjs)
+apps/web/public/voice/

@@ -1,24 +1,22 @@
-// Local, on-demand Whisper inference. Microphone samples never leave this worker.
-// The model and the pinned Transformers.js runtime are downloaded and cached by the browser.
-// Use the CDN's ESM build, which rewrites package dependencies into absolute module
-// URLs. Importing the raw dist file left "onnxruntime-common" unresolved in Electron.
-const TRANSFORMERS_URL =
-  "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm";
+// Local Whisper speech recognition (tiny.en, q8). Microphone samples never leave this worker.
+// The Transformers.js runtime and the model files are bundled into the app at build time
+// (see scripts/fetch-voice-assets.mjs). Nothing is downloaded at runtime.
+import { env, pipeline } from "@huggingface/transformers";
+
 let modelPromise;
+let assetBase = "";
 
 function model() {
   if (!modelPromise) {
     modelPromise = (async () => {
-      postMessage({ type: "status", text: "Loading local speech recognition…" });
-      const { env, pipeline } = await import(TRANSFORMERS_URL);
-      env.allowLocalModels = false;
-      env.useBrowserCache = true;
+      env.allowRemoteModels = false;
+      env.allowLocalModels = true;
+      env.useBrowserCache = false;
+      env.localModelPath = new URL("voice/models/", assetBase).href;
+      env.backends.onnx.wasm.wasmPaths = new URL("voice/ort/", assetBase).href;
       const transcriber = await pipeline("automatic-speech-recognition", "onnx-community/whisper-tiny.en", {
         device: "wasm",
         dtype: "q8",
-        progress_callback: ({ status }) => {
-          if (status === "download") postMessage({ type: "status", text: "Downloading speech recognition model…" });
-        },
       });
       postMessage({ type: "ready" });
       return transcriber;
@@ -32,6 +30,7 @@ function model() {
 
 self.onmessage = async ({ data }) => {
   try {
+    if (data.assetBase) assetBase = data.assetBase;
     const transcriber = await model();
     if (data.type !== "transcribe") return;
     // whisper-tiny.en is English-only. Transformers.js rejects explicit

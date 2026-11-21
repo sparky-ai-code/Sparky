@@ -1243,9 +1243,12 @@ function ChatViewContent(props: ChatViewProps) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [voiceSession, setVoiceSession] = useState<{ context: AudioContext; threadKey: string } | null>(null);
-  const [voiceStatus, setVoiceStatus] = useState("");
+  const [voiceStarting, setVoiceStarting] = useState(false);
   useEffect(() => {
-    if (voiceSession && voiceSession.threadKey !== routeThreadKey) setVoiceSession(null);
+    if (voiceSession && voiceSession.threadKey !== routeThreadKey) {
+      setVoiceSession(null);
+      setVoiceStarting(false);
+    }
   }, [routeThreadKey, voiceSession]);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
   const [steeredMessageIds, setSteeredMessageIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -5858,6 +5861,7 @@ function ChatViewContent(props: ChatViewProps) {
                         onVoiceToggle={() => {
                           if (voiceSession) {
                             setVoiceSession(null);
+                            setVoiceStarting(false);
                             return;
                           }
                           if (typeof AudioContext === "undefined") {
@@ -5866,11 +5870,11 @@ function ChatViewContent(props: ChatViewProps) {
                           }
                           const context = new AudioContext();
                           void context.resume().catch(() => {});
-                          setVoiceStatus("Starting voice…");
+                          setVoiceStarting(true);
                           setVoiceSession({ context, threadKey: routeThreadKey });
                         }}
                         voiceActive={voiceSession?.threadKey === routeThreadKey}
-                        voiceStatus={voiceStatus}
+                        voiceStarting={voiceStarting}
                         onInterrupt={onInterrupt}
                         onImplementPlanInNewThread={onImplementPlanInNewThread}
                         onRespondToApproval={onRespondToApproval}
@@ -6074,9 +6078,12 @@ function ChatViewContent(props: ChatViewProps) {
           voice={settings.voiceSelection}
           speed={settings.voiceSpeed}
           onSend={async (text) => Boolean(await onSend(undefined, text))}
-          onStatus={setVoiceStatus}
+          onReady={() => setVoiceStarting(false)}
           onError={(message) => toastManager.add({ type: "error", title: message })}
-          onClose={() => setVoiceSession(null)}
+          onClose={() => {
+            setVoiceSession(null);
+            setVoiceStarting(false);
+          }}
         />
       ) : null}
 

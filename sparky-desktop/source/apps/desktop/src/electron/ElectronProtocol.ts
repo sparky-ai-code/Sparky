@@ -89,8 +89,6 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "'wasm-unsafe-eval'",
     ...(neonAuthOrigin ? [neonAuthOrigin] : []),
     "https://challenges.cloudflare.com",
-    // Pinned, on-demand ONNX Runtime Web for Kitten TTS and local Whisper.
-    "https://cdn.jsdelivr.net",
   ];
 
   // The renderer connects directly to user-configured environments in addition to

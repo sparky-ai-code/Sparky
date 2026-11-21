@@ -32,7 +32,8 @@ export interface VoiceSessionProps {
   voice: string;
   speed: number;
   onSend: (transcript: string) => Promise<boolean>;
-  onStatus: (message: string) => void;
+  /** Called once the speech model and microphone are ready and listening has begun. */
+  onReady: () => void;
   onError: (message: string) => void;
   onClose: () => void;
 }
@@ -51,14 +52,14 @@ export function VoiceSession({
   voice,
   speed,
   onSend,
-  onStatus,
+  onReady,
   onError,
   onClose,
 }: VoiceSessionProps) {
   const messagesRef = useRef(messages);
   const needsAttentionRef = useRef(needsAttention);
   const onSendRef = useRef(onSend);
-  const onStatusRef = useRef(onStatus);
+  const onReadyRef = useRef(onReady);
   const onErrorRef = useRef(onError);
   const onCloseRef = useRef(onClose);
   const speakerRef = useRef<KittenSpeaker | null>(null);
@@ -68,7 +69,7 @@ export function VoiceSession({
   messagesRef.current = messages;
   needsAttentionRef.current = needsAttention;
   onSendRef.current = onSend;
-  onStatusRef.current = onStatus;
+  onReadyRef.current = onReady;
   onErrorRef.current = onError;
   onCloseRef.current = onClose;
 
@@ -85,19 +86,16 @@ export function VoiceSession({
     let transcriber: LocalSpeechTranscriber | null = null;
     const wave = new Float32Array(2048);
 
-    const report = (message: string) => {
-      if (!closed) onStatusRef.current(message);
-    };
     const fail = (error: unknown) => {
       if (closed) return;
       const message = error instanceof Error ? error.message : "Voice could not start.";
-      report(message);
       onErrorRef.current(message);
       onCloseRef.current();
     };
 
     // The speaker needs no microphone, so it starts loading immediately.
-    const speaker = new KittenSpeaker(audioContext, report);
+    const assetBase = new URL(import.meta.env.BASE_URL, window.location.href).href;
+    const speaker = new KittenSpeaker(audioContext, assetBase);
     speakerRef.current = speaker;
     const tracker = new ReadAloudTracker();
     trackerRef.current = tracker;
@@ -151,11 +149,9 @@ export function VoiceSession({
       if (closed) return;
       // Sound that never became speech (a click, an echo) is dropped.
       if (!current.confirmed || current.chunks.length === 0) {
-        report("Listening…");
         return;
       }
       transcribing = true;
-      report("Transcribing…");
       try {
         const pcm = await decodeRecordedSpeech(new Blob(current.chunks, { type: current.recorder.mimeType }));
         if (closed) return;
@@ -168,19 +164,11 @@ export function VoiceSession({
             if (closed) return false;
             // The reply already on screen was written before this turn; read only what comes next.
             tracker.ignoreExisting(messagesRef.current);
-            report("Sending…");
             return onSendRef.current(text);
           },
-          () => report("Heard you. Sending…"),
         );
         if (closed) return;
-        if (!transcript) {
-          report("Didn't catch that. Listening…");
-        } else if (!sent) {
-          fail(new Error("Sparky could not send your spoken message."));
-        } else {
-          report("Listening…");
-        }
+        if (transcript && !sent) fail(new Error("Sparky could not send your spoken message."));
       } catch (error) {
         fail(error);
       } finally {
@@ -208,7 +196,6 @@ export function VoiceSession({
           if (now - current.loudSince >= needed) {
             current.confirmed = true;
             if (current.interrupting) interruptSpeech();
-            report("Hearing you…");
           }
         }
         if (!current.confirmed && now - current.startedAt > 2_000) {
@@ -238,7 +225,6 @@ export function VoiceSession({
 
     void (async () => {
       try {
-        report("Requesting microphone access…");
         if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone access is unavailable.");
         // Only local recognition receives microphone audio. Sparky's model receives text.
         stream = await navigator.mediaDevices.getUserMedia({
@@ -255,11 +241,10 @@ export function VoiceSession({
         analyser = inputContext.createAnalyser();
         analyser.fftSize = 2048;
         source.connect(analyser);
-        transcriber = new LocalSpeechTranscriber(report);
-        void Promise.all([speaker.load(), transcriber.load()]).then(
-          () => report("Listening…"),
-          fail,
-        );
+        transcriber = new LocalSpeechTranscriber(assetBase);
+        void Promise.all([speaker.load(), transcriber.load()]).then(() => {
+          if (!closed) onReadyRef.current();
+        }, fail);
         // A timer, not requestAnimationFrame: frames stop while the window is hidden.
         timer = window.setInterval(listen, 30);
       } catch (error) {
@@ -299,10 +284,8 @@ export function VoiceSession({
     if (needsAttention) {
       attentionWasPendingRef.current = true;
       pauseRef.current?.();
-      onStatusRef.current("Review the request in chat…");
-    } else if (attentionWasPendingRef.current) {
+    } else {
       attentionWasPendingRef.current = false;
-      onStatusRef.current("Listening…");
     }
   }, [needsAttention]);
 

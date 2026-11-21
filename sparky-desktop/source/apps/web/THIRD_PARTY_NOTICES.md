@@ -32,8 +32,8 @@ SHA-256 at build time.
 Spoken replies use the English **nano** model of Kitten TTS by KittenML
 (<https://github.com/KittenML/KittenTTS>, model card
 <https://huggingface.co/KittenML/kitten-tts-2-nano>). The model weights and the
-pronunciation lexicon are downloaded on demand from a pinned revision of that model
-repository, then run on this device. The app also contains a TypeScript port of
+pronunciation lexicon are bundled into the app at build time from a pinned revision of
+that model repository, and run on this device. The app also contains a TypeScript port of
 KittenTTS's English text normalisation (`src/voice/kitten/kittenNormalize.ts`, from
 `kittentts2_tiny/frontend/tts_norm.py`) and of its English word lookup
 (`src/voice/kitten/kittenLexicon.ts`, from [misaki](https://github.com/hexgrad/misaki)).
@@ -47,7 +47,7 @@ KittenML, distributed by Carnegie Mellon University under a BSD-style license.
 
 ## ONNX Runtime Web
 
-The Kitten TTS model runs with ONNX Runtime Web 1.20.1, loaded from jsDelivr
+The Kitten TTS and Whisper models run with ONNX Runtime Web 1.22.0-dev.20250409, bundled
 (<https://github.com/microsoft/onnxruntime>). Copyright (c) Microsoft Corporation.
 Licensed under the MIT License.
 

@@ -86,15 +86,18 @@ it("restarts a wedged driver so later calls recover", async () => {
 });
 
 it("gives slow discovery tools a longer budget than the default", async () => {
+  // The default limit also covers the initialize handshake, which includes a cold
+  // Node start, so it is kept well above that to avoid flaking on slow machines.
+  // The list_apps call takes longer than the default but fits in its own budget.
   const driver = makeComputerUseDriver({
     command: process.execPath,
     args: ["-e", fakeServer],
-    requestTimeoutMs: 100,
-    toolTimeoutsMs: { list_apps: 1_000 },
+    requestTimeoutMs: 1_000,
+    toolTimeoutsMs: { list_apps: 5_000 },
   });
   try {
-    expect(await driver.callTool("list_apps", { ms: 400 })).toEqual({
-      echoed: { name: "list_apps", arguments: { ms: 400 } },
+    expect(await driver.callTool("list_apps", { ms: 1_500 })).toEqual({
+      echoed: { name: "list_apps", arguments: { ms: 1_500 } },
     });
   } finally {
     driver.close();

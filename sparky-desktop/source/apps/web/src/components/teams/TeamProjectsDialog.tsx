@@ -94,7 +94,7 @@ export function TeamProjectsDialog(props: TeamProjectsDialogProps) {
             <Input
               value={nameWithOwner}
               onChange={(event) => setNameWithOwner(event.target.value)}
-              placeholder="owner/name"
+              placeholder="owner/name or GitHub link"
               aria-label="GitHub repository"
               autoComplete="off"
               disabled={busy}

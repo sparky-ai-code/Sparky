@@ -1,4 +1,4 @@
-import type { EnvironmentId, TeamMessage } from "@sparky/contracts";
+import type { EnvironmentId, TeamMessage, TeamThread } from "@sparky/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { ChevronLeftIcon, LoaderIcon } from "../Hugeicons";
 import { useEffect, useRef, useState } from "react";
@@ -11,6 +11,8 @@ import { TeamComposer } from "./TeamComposer";
 import { TeamMessageList, teamThreadKey } from "./TeamMessageList";
 import { teamsFailureMessage } from "./teamsErrors";
 import { TEAM_CHAT_TITLE } from "./teamsLogic";
+
+const TEAM_CHAT_LOAD_STALL_MS = 15_000;
 
 interface TeamChatPageProps {
   readonly environmentId: EnvironmentId;
@@ -32,33 +34,53 @@ export function TeamChatPage(props: TeamChatPageProps) {
   const viewerQuery = useEnvironmentQuery(teamsEnvironment.listTeams({ environmentId, input: {} }));
   const viewerLogin = viewerQuery.data?.viewer ?? null;
   const createThread = useAtomCommand(teamsEnvironment.createThread, { reportFailure: false });
+  // The thread this page created itself. GitHub's label listing can lag a few seconds behind a
+  // new issue, so the created thread is used directly until the listing catches up.
+  const [createdThread, setCreatedThread] = useState<TeamThread | null>(null);
   const chatThread =
-    threadsQuery.data?.threads.find((thread) => thread.title === TEAM_CHAT_TITLE) ?? null;
+    threadsQuery.data?.threads.find((thread) => thread.title === TEAM_CHAT_TITLE) ?? createdThread;
   const threadsLoaded = threadsQuery.data !== null;
   const refreshThreads = threadsQuery.refresh;
 
-  const [error, setError] = useState<string | null>(null);
-  const creatingRef = useRef(false);
+  const [createFailure, setCreateFailure] = useState<string | null>(null);
+  const [stalled, setStalled] = useState(false);
+  // Creating the thread happens once per open. A failed attempt may be retried by reopening.
+  const createStartedRef = useRef(false);
 
   useEffect(() => {
-    if (!threadsLoaded || chatThread !== null || error !== null || creatingRef.current) {
+    if (!threadsLoaded || chatThread !== null || createStartedRef.current) {
       return;
     }
-    creatingRef.current = true;
+    createStartedRef.current = true;
     void createThread({ environmentId, input: { projectId, body: TEAM_CHAT_TITLE } }).then(
       (result) => {
-        creatingRef.current = false;
         if (AsyncResult.isSuccess(result)) {
+          setCreatedThread(result.value);
           refreshThreads();
         } else {
-          setError(teamsFailureMessage(result, "Could not open the team chat."));
+          createStartedRef.current = false;
+          setCreateFailure(teamsFailureMessage(result, "Could not open the team chat."));
         }
       },
     );
-  }, [threadsLoaded, chatThread, error, environmentId, projectId, createThread, refreshThreads]);
+  }, [threadsLoaded, chatThread, environmentId, projectId, createThread, refreshThreads]);
 
-  // A failed load shows its reason instead of spinning forever.
-  const loadError = error ?? threadsQuery.error;
+  // Without this the page would spin forever when a GitHub request never settles.
+  useEffect(() => {
+    if (chatThread !== null) {
+      setStalled(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setStalled(true), TEAM_CHAT_LOAD_STALL_MS);
+    return () => window.clearTimeout(timer);
+  }, [chatThread]);
+
+  const loadError =
+    createFailure ??
+    threadsQuery.error ??
+    (stalled
+      ? "The team chat is taking too long to open. Check that the GitHub CLI is signed in (gh auth status), then go back and open it again."
+      : null);
 
   const [draft, setDraft] = useState("");
   const [replyTo, setReplyTo] = useState<TeamMessage | null>(null);

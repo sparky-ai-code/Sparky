@@ -1,6 +1,6 @@
 import type { EnvironmentId, Team, TeamsInviteMemberResult } from "@sparky/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 
 import { UserPlusIcon } from "../Hugeicons";
 import { teamsEnvironment } from "../../state/teams";
@@ -60,8 +60,7 @@ export function InviteMemberDialog(props: InviteMemberDialogProps) {
   const trimmedLogin = login.trim();
   const canInvite = trimmedLogin.length > 0 && !busy;
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleInvite = async () => {
     if (!canInvite) {
       return;
     }
@@ -104,20 +103,25 @@ export function InviteMemberDialog(props: InviteMemberDialogProps) {
         <DialogHeader>
           <DialogTitle>Add team members</DialogTitle>
         </DialogHeader>
-        <form onSubmit={(event) => void handleSubmit(event)}>
-          <DialogPanel className="space-y-3">
-            {team.members.length > 0 ? (
-              <ul className="flex flex-wrap gap-1.5">
-                {team.members.map((member) => (
-                  <li
-                    key={member}
-                    className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
-                  >
-                    {member}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+        <DialogPanel className="space-y-3">
+          {team.members.length > 0 ? (
+            <ul className="flex flex-wrap gap-1.5">
+              {team.members.map((member) => (
+                <li
+                  key={member}
+                  className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
+                >
+                  {member}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleInvite();
+            }}
+          >
             <Input
               value={login}
               onChange={(event) => setLogin(event.target.value)}
@@ -127,17 +131,17 @@ export function InviteMemberDialog(props: InviteMemberDialogProps) {
               autoFocus
               disabled={busy}
             />
-            {error !== null ? <p className="text-xs text-destructive">{error}</p> : null}
-          </DialogPanel>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Close
-            </Button>
-            <Button type="submit" disabled={!canInvite}>
-              {busy ? "Inviting…" : "Invite"}
-            </Button>
-          </DialogFooter>
-        </form>
+          </form>
+          {error !== null ? <p className="text-xs text-destructive">{error}</p> : null}
+        </DialogPanel>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+          <Button type="button" disabled={!canInvite} onClick={() => void handleInvite()}>
+            {busy ? "Inviting…" : "Invite"}
+          </Button>
+        </DialogFooter>
       </DialogPopup>
     </Dialog>
   );

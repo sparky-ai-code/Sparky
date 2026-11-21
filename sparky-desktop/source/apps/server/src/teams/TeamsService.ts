@@ -39,6 +39,7 @@ import {
   findOwnReactionCommentId,
   parseMarker,
 } from "./TeamsCodec.ts";
+import { parseRepositoryInput } from "./TeamsRepository.ts";
 import * as TeamsStore from "./TeamsStore.ts";
 
 // ---------------------------------------------------------------------------
@@ -88,7 +89,6 @@ const decodeComment = Schema.decodeUnknownEffect(Schema.fromJsonString(GitHubCom
 // Validation and error helpers
 // ---------------------------------------------------------------------------
 
-const REPO_PATTERN = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
 const LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 const NUMERIC_ID_PATTERN = /^\d+$/;
 const TEAM_LABEL_COLOR = "5319e7";
@@ -135,13 +135,15 @@ const decodeFailure = (operation: string) => (cause: unknown) =>
   });
 
 const repoRef = (operation: string, nameWithOwner: string): Effect.Effect<RepoRef, TeamsError> => {
-  const match = REPO_PATTERN.exec(nameWithOwner.trim());
-  const owner = match?.[1];
-  const name = match?.[2];
-  return owner !== undefined && name !== undefined
-    ? Effect.succeed({ owner, name })
+  const parsed = parseRepositoryInput(nameWithOwner);
+  return parsed !== null
+    ? Effect.succeed({ owner: parsed.owner, name: parsed.name })
     : Effect.fail(
-        new TeamsError({ operation, detail: "Expected a repository in owner/name form." }),
+        new TeamsError({
+          operation,
+          detail:
+            "Enter a GitHub repository as owner/name or paste its link, like https://github.com/owner/name.",
+        }),
       );
 };
 

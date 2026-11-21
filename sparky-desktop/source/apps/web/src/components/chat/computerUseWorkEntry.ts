@@ -63,27 +63,38 @@ const asRecord = (value: unknown): Record<string, unknown> | undefined => {
     : undefined;
 };
 
-/** Finds the driver tool name ("click", "scroll", ...) inside a wrapper call's payload. */
+/**
+ * Finds the driver tool name ("click", "scroll", ...) inside a wrapper call's payload.
+ * The wrapper's own top-level `toolName` is the wrapper name, not the driver tool,
+ * so the nested arguments are checked first and wrapper names are ignored.
+ */
 export function extractComputerUseInnerToolName(toolData: unknown): string | undefined {
   const root = asRecord(toolData);
   if (!root) return undefined;
   const containers = [
-    root,
-    asRecord(root.arguments),
     asRecord(root.rawInput),
+    asRecord(root.arguments),
     asRecord(root.input),
     asRecord(root.args),
     asRecord(asRecord(root.item)?.arguments),
+    root,
   ];
   for (const container of containers) {
-    const name = container?.toolName;
-    if (typeof name === "string" && name.trim()) return name.trim();
+    const name = typeof container?.toolName === "string" ? container.toolName.trim() : "";
+    if (name && !isComputerUseWrapperTool(name)) return name;
   }
   return undefined;
 }
 
+/** Fallback label for an unknown driver tool: at most two words. */
 const humanize = (name: string): string => {
-  const words = name.replace(/[_\-.]+/gu, " ").trim();
+  const words = name
+    .replace(/[_\-.]+/gu, " ")
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(" ");
   return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : "Action";
 };
 
@@ -92,7 +103,7 @@ const humanize = (name: string): string => {
 export const KNOWN_TOOLS: Record<string, ComputerUseAction> = {
   list_apps: { label: "Browse apps", icon: "layout-grid" },
   list_windows: { label: "Find windows", icon: "panels-top-left" },
-  get_window_state: { label: "Look at window", icon: "scan-eye" },
+  get_window_state: { label: "Inspect window", icon: "scan-eye" },
   launch_app: { label: "Open app", icon: "rocket" },
   kill_app: { label: "Quit app", icon: "power" },
   bring_to_front: { label: "Bring forward", icon: "app-window" },

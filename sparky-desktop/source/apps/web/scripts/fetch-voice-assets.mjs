@@ -60,9 +60,8 @@ async function download({ url, out, sha256: expected }, outRoot) {
 
 async function copyOnnxRuntime(webRoot, outRoot) {
   const dist = join(webRoot, "node_modules", "onnxruntime-web", "dist");
-  const names = (await readdir(dist)).filter(
-    (name) => /^ort-wasm-simd-threaded.*\.(wasm|mjs)$/.test(name) && !name.includes("jsep"),
-  );
+  // The bundled ORT entry points import the jsep build by name, so it must ship too.
+  const names = (await readdir(dist)).filter((name) => /^ort-wasm-simd-threaded.*\.(wasm|mjs)$/.test(name));
   if (names.length === 0) throw new Error("onnxruntime-web WASM files were not found.");
   for (const name of names) {
     await mkdir(join(outRoot, "ort"), { recursive: true });

@@ -1,19 +1,18 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalDateInEffect:off
 /**
- * ClaudeAgentAdapter: runs Claude Code through the Claude Agent SDK and adapts it
- * to Sparky's provider adapter contract.
+ * ClaudeAgentAdapter: the Claude Code provider. Sparky is the ACP client, and the
+ * Claude ACP adapter (`claude-agent-acp` by default) runs the unmodified Claude
+ * Code harness. Sparky's tools reach Claude Code as a local MCP server, passed
+ * through ACP `session/new` and `session/resume`.
  *
  * Design notes:
- *   - One SDK `query()` runs per turn and resumes the Claude Code transcript with
- *     the persisted session id (`resumeCursor`). A follow-up in the same thread
- *     therefore continues the same conversation, including after a server restart.
- *     Per-turn queries also let each turn carry a freshly issued Sparky MCP
- *     credential, since ProviderService re-issues it on every turn.
- *   - Authentication is an Anthropic Console API key only. The adapter verifies the
- *     SDK-reported `apiKeySource` and stops the turn if it is anything else.
- *   - Sparky's tools are reached over the existing `/mcp` bridge (see
- *     `mcp/McpProviderSession.ts`), so Claude Code gets computer use, the browser,
- *     html_render boxes, plugins and thread tools.
+ *   - One adapter process runs per turn, and each turn resumes the saved ACP
+ *     session with the persisted session id. A follow-up therefore continues the
+ *     same conversation, including after a server restart. Each turn also carries a
+ *     freshly issued Sparky MCP credential, since ProviderService re-issues it per
+ *     turn.
+ *   - Sparky reads, stores, and forwards no credential. Sign-in belongs to Claude
+ *     Code. Environment variables come only from the provider instance's settings.
  *
  * @module provider/Layers/ClaudeAgentAdapter
  */
@@ -21,14 +20,14 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
-import {
-  query as sdkQuery,
-  type PermissionResult,
-  type Query,
-  type SDKMessage,
-  type SDKUserMessage,
-  type Options,
-} from "@anthropic-ai/claude-agent-sdk";
+import type {
+  ContentBlock,
+  McpServer,
+  PermissionOption,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
+  StopReason,
+} from "@agentclientprotocol/sdk";
 import {
   ApprovalRequestId,
   EventId,
@@ -45,30 +44,27 @@ import {
   type ProviderSessionStartInput,
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
-  type ModelSelection,
   type ProviderWorkspaceContext,
 } from "@sparky/contracts";
-import { getModelSelectionStringOptionValue } from "@sparky/shared/model";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
-import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
-import {
-  buildClaudeAgentOptions,
-  isAcceptedClaudeAgentApiKeySource,
-  resolveClaudeAgentApiKey,
-  type ClaudeAgentAuthMode,
-} from "../../claudeAgent/ClaudeAgentOptions.ts";
-import { CLAUDE_SIGN_IN_COMMAND } from "../../claudeAgent/ClaudeAgentAccount.ts";
-import {
-  claudeAgentRequestType,
-  makeClaudeAgentMapper,
-  type ClaudeAgentEventDraft,
-} from "../../claudeAgent/ClaudeAgentEvents.ts";
 import { SPARKY_CLAUDE_AGENT_SKILL } from "../../claudeAgent/ClaudeAgentSkill.ts";
+import { buildClaudeAcpEnvironment } from "../../claudeAcp/ClaudeAcpEnvironment.ts";
+import {
+  ClaudeAcpProcess,
+  claudeAcpLaunchFailureMessage,
+  type ClaudeAcpLaunch,
+} from "../../claudeAcp/ClaudeAcpProcess.ts";
+import {
+  claudeToolNameOf,
+  makeClaudeAcpMapper,
+  type ClaudeAcpEventDraft,
+} from "../../claudeAcp/ClaudeAcpEvents.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   ProviderAdapterRequestError,
   ProviderAdapterSessionNotFoundError,
@@ -79,24 +75,6 @@ import { currentAuthSessionId } from "../ProviderExecutionContext.ts";
 import type { ProviderAdapterShape, ProviderThreadSnapshot } from "../Services/ProviderAdapter.ts";
 
 export const CLAUDE_AGENT_PROVIDER = ProviderDriverKind.make("claudeAgent");
-
-type ClaudeAgentEffort = "low" | "medium" | "high" | "xhigh" | "max";
-const CLAUDE_AGENT_EFFORTS: ReadonlyArray<ClaudeAgentEffort> = [
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
-
-/** Sparky's reasoning-effort option, when it is one Claude Code accepts. */
-export function resolveClaudeAgentEffort(
-  modelSelection: ModelSelection | undefined,
-): ClaudeAgentEffort | undefined {
-  if (!modelSelection) return undefined;
-  const value = getModelSelectionStringOptionValue(modelSelection, "reasoningEffort");
-  return CLAUDE_AGENT_EFFORTS.find((effort) => effort === value);
-}
 
 /** Resume state the adapter stores in `resumeCursor`. Parsed only here. */
 export interface ClaudeAgentResumeCursor {
@@ -112,110 +90,43 @@ export function readClaudeAgentResumeCursor(value: unknown): ClaudeAgentResumeCu
   return sessionId.length > 0 ? { version: 1, sessionId } : undefined;
 }
 
-export type ClaudeAgentQueryFn = (input: {
-  readonly prompt: string | AsyncIterable<SDKUserMessage>;
-  readonly options: Options;
-}) => Query;
-
-/** One structured question from Claude Code's AskUserQuestion tool. */
-export interface ClaudeAgentUserQuestion {
-  readonly id: string;
-  readonly header: string;
-  readonly question: string;
-  readonly options: ReadonlyArray<{ readonly label: string; readonly description: string }>;
-  readonly multiSelect: boolean;
-}
-
-/**
- * Turn a text plus optional image blocks into the single streamed user message
- * the SDK expects when a prompt is not a plain string.
- */
-function singleUserMessage(content: ReadonlyArray<unknown>): AsyncIterable<SDKUserMessage> {
-  return (async function* () {
-    yield {
-      type: "user",
-      message: { role: "user", content },
-      parent_tool_use_id: null,
-    } as unknown as SDKUserMessage;
-  })();
-}
-
-/** Parse AskUserQuestion input into Sparky questions. Empty entries are dropped. */
-export function parseClaudeAgentUserQuestions(
-  toolInput: Record<string, unknown>,
-): ReadonlyArray<ClaudeAgentUserQuestion> {
-  const rawQuestions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
-  return rawQuestions
-    .map((raw, index): ClaudeAgentUserQuestion => {
-      const record = (raw ?? {}) as Record<string, unknown>;
-      const rawOptions = Array.isArray(record.options) ? record.options : [];
-      return {
-        id: `question-${index + 1}`,
-        header: String(record.header ?? "").trim() || `Question ${index + 1}`,
-        question: String(record.question ?? "").trim(),
-        options: rawOptions
-          .map((option) => {
-            const optionRecord = (option ?? {}) as Record<string, unknown>;
-            const label = String(optionRecord.label ?? "").trim();
-            const description = String(optionRecord.description ?? "").trim() || label;
-            return { label, description };
-          })
-          .filter((option) => option.label.length > 0),
-        multiSelect: record.multiSelect === true,
-      };
-    })
-    .filter((question) => question.question.length > 0 && question.options.length > 0);
-}
-
 export interface ClaudeAgentAdapterOptions {
   readonly instanceId: ProviderInstanceId;
-  /** Environment of the provider instance, with Models settings applied. */
-  readonly environment: NodeJS.ProcessEnv;
+  /** Adapter executable. Default `claude-agent-acp`. */
+  readonly command: string;
+  readonly args?: ReadonlyArray<string> | undefined;
+  /** Variables the user set on this provider instance. */
+  readonly instanceEnvironment?:
+    | ReadonlyArray<{ readonly name: string; readonly value: string }>
+    | undefined;
+  /** Host environment. Only the allow-listed variables reach the adapter. */
+  readonly ambientEnvironment?: NodeJS.ProcessEnv | undefined;
   readonly attachmentsDir: string;
   /** Composed Sparky instructions (personality and custom instructions). */
   readonly getCustomInstructions?: (() => Effect.Effect<string>) | undefined;
-  /** Injection point for tests. Defaults to the Agent SDK's `query`. */
-  readonly queryFn?: ClaudeAgentQueryFn | undefined;
-  /** Optional Claude Code executable override (e.g. a bundled binary). */
-  readonly pathToClaudeCodeExecutable?: string | undefined;
-  /**
-   * `claudeAccount` (default in the driver): the user's own signed-in Claude Code.
-   * `apiKey`: a Console API key from Models settings. Defaults to `apiKey` here so
-   * direct callers keep the stricter behavior.
-   */
-  readonly authMode?: ClaudeAgentAuthMode | undefined;
 }
-
-/** Credential the runtime may use for this turn, decided by the auth mode. */
-type RuntimeCredential =
-  | { readonly ok: true; readonly apiKey: string | undefined }
-  | { readonly ok: false; readonly reason: string };
 
 interface PendingApproval {
   readonly threadId: ThreadId;
   readonly turnId: TurnId;
+  readonly options: ReadonlyArray<PermissionOption>;
   readonly resolve: (decision: ProviderApprovalDecision) => void;
 }
 
-interface PendingUserInput {
-  readonly threadId: ThreadId;
+interface ActiveTurn {
   readonly turnId: TurnId;
-  readonly questions: ReadonlyArray<ClaudeAgentUserQuestion>;
-  /** Answers keyed by question id, or null when the question was abandoned. */
-  readonly resolve: (answers: Record<string, string> | null) => void;
+  completed: boolean;
+  proc: ClaudeAcpProcess | undefined;
+  acpSessionId: string | undefined;
+  cancelRequested: boolean;
 }
 
 interface ClaudeAgentSessionState {
   session: ProviderSession;
-  sessionId: string | undefined;
+  /** ACP session id from the last turn, persisted in `resumeCursor`. */
+  acpSessionId: string | undefined;
   workspaceContext: ProviderWorkspaceContext;
-  activeTurn:
-    | {
-        readonly turnId: TurnId;
-        readonly abortController: AbortController;
-        completed: boolean;
-      }
-    | undefined;
+  activeTurn: ActiveTurn | undefined;
 }
 
 const notSupported = (operation: string, detail: string) =>
@@ -225,28 +136,54 @@ const notSupported = (operation: string, detail: string) =>
     detail,
   });
 
+const SIGN_IN_MESSAGE =
+  "Claude Code is not signed in. Run `claude` in a terminal and use /login, or set ANTHROPIC_API_KEY in this provider's environment.";
+
+/** Failure text shown in the thread, with the sign-in step when that is the cause. */
+function failureMessage(command: string, error: unknown): string {
+  const launch = claudeAcpLaunchFailureMessage(command, error);
+  if (launch) return launch;
+  const message = error instanceof Error ? error.message : String(error);
+  // The ACP SDK reports an adapter error as "Internal error" with the real text in `data`.
+  const data = (error as { readonly data?: unknown } | undefined)?.data;
+  const details = typeof data === "string" ? data : data === undefined ? "" : JSON.stringify(data);
+  if (/auth|sign.?in|log.?in|credential|api key/i.test(`${message} ${details}`))
+    return SIGN_IN_MESSAGE;
+  return message;
+}
+
+/** Choose the ACP option for a Sparky decision, falling back to a cancellation. */
+export function permissionResponseFor(
+  decision: ProviderApprovalDecision,
+  options: ReadonlyArray<PermissionOption>,
+): RequestPermissionResponse {
+  const preferred: Record<ProviderApprovalDecision, ReadonlyArray<PermissionOption["kind"]>> = {
+    accept: ["allow_once", "allow_always"],
+    acceptForSession: ["allow_always", "allow_once"],
+    decline: ["reject_once", "reject_always"],
+    cancel: [],
+  };
+  for (const kind of preferred[decision]) {
+    const option = options.find((candidate) => candidate.kind === kind);
+    if (option) return { outcome: { outcome: "selected", optionId: option.optionId } };
+  }
+  return { outcome: { outcome: "cancelled" } };
+}
+
+/** The first allow option, for runtime modes that approve tools automatically. */
+export function autoApproveResponse(
+  options: ReadonlyArray<PermissionOption>,
+): RequestPermissionResponse {
+  return permissionResponseFor("accept", options);
+}
+
 export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
   Effect.gen(function* () {
     yield* Scope.Scope;
     const runtimeEvents = yield* PubSub.unbounded<ProviderRuntimeEvent>();
     const sessions = new Map<ThreadId, ClaudeAgentSessionState>();
     const pendingApprovals = new Map<string, PendingApproval>();
-    const pendingUserInputs = new Map<string, PendingUserInput>();
-    const authMode: ClaudeAgentAuthMode = options.authMode ?? "apiKey";
-    const resolveRuntimeCredential = (): RuntimeCredential => {
-      if (authMode === "claudeAccount") return { ok: true, apiKey: undefined };
-      const credential = resolveClaudeAgentApiKey(options.environment);
-      return credential.ok
-        ? { ok: true, apiKey: credential.apiKey }
-        : { ok: false, reason: credential.reason };
-    };
-    const queryFn: ClaudeAgentQueryFn =
-      options.queryFn ??
-      ((input) =>
-        sdkQuery({
-          prompt: input.prompt,
-          options: input.options,
-        }));
+    const ambient = options.ambientEnvironment ?? process.env;
 
     const stamp = (threadId: ThreadId, turnId?: TurnId) => ({
       eventId: EventId.make(NodeCrypto.randomUUID()),
@@ -257,7 +194,7 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
       ...(turnId ? { turnId } : {}),
     });
 
-    const publishDraft = (threadId: ThreadId, turnId: TurnId, draft: ClaudeAgentEventDraft) => {
+    const publishDraft = (threadId: ThreadId, turnId: TurnId, draft: ClaudeAcpEventDraft) => {
       const event = {
         ...stamp(threadId, turnId),
         type: draft.type,
@@ -283,116 +220,70 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
       return Effect.succeed(state);
     };
 
-    /**
-     * AskUserQuestion is answered by the user in Sparky, not by Claude Code's
-     * terminal. The answers go back to Claude as the tool's `answers` input, keyed
-     * by question text, which is the format Claude Code's tool expects.
-     */
-    const askUserQuestions = async (
-      threadId: ThreadId,
-      turnId: TurnId,
-      toolInput: Record<string, unknown>,
-      signal: AbortSignal,
-    ): Promise<PermissionResult> => {
-      const questions = parseClaudeAgentUserQuestions(toolInput);
-      if (questions.length === 0) {
-        return { behavior: "deny", message: "The question had no usable options." };
-      }
-      const requestId = NodeCrypto.randomUUID();
-      const answers = await new Promise<Record<string, string> | null>((resolve) => {
-        pendingUserInputs.set(requestId, { threadId, turnId, questions, resolve });
-        signal.addEventListener("abort", () => resolve(null), { once: true });
-        publishRaw({
-          ...stamp(threadId, turnId),
-          type: "user-input.requested",
-          requestId: RuntimeRequestId.make(requestId),
-          payload: { questions },
-        });
-      });
-      pendingUserInputs.delete(requestId);
-      if (!answers) {
-        return { behavior: "deny", message: "The user did not answer the question." };
-      }
-      publishRaw({
-        ...stamp(threadId, turnId),
-        type: "user-input.resolved",
-        requestId: RuntimeRequestId.make(requestId),
-        payload: { answers },
-      });
-      const answersByQuestion = Object.fromEntries(
-        questions.map((question) => [question.question, answers[question.id] ?? ""]),
-      );
-      return {
-        behavior: "allow",
-        updatedInput: { ...toolInput, answers: answersByQuestion },
-      };
-    };
+    const launchFor = (cwd: string): ClaudeAcpLaunch => ({
+      command: options.command,
+      args: options.args ?? [],
+      cwd,
+      env: buildClaudeAcpEnvironment({
+        ambient,
+        ...(options.instanceEnvironment ? { instanceOverrides: options.instanceEnvironment } : {}),
+      }),
+    });
 
     const runTurn = async (input: {
       readonly state: ClaudeAgentSessionState;
-      readonly turnId: TurnId;
-      readonly prompt: string | AsyncIterable<SDKUserMessage>;
-      readonly environment: NodeJS.ProcessEnv;
-      readonly mcp: McpProviderSession.McpProviderSessionConfig | undefined;
-      readonly instructions: string;
-      readonly runtimeMode: ProviderSession["runtimeMode"];
-      /** Console API key in `apiKey` mode; undefined when the CLI's own sign-in is used. */
-      readonly apiKey: string | undefined;
-      readonly planMode: boolean;
-      readonly effort: ClaudeAgentEffort | undefined;
+      readonly turn: ActiveTurn;
+      readonly blocks: ReadonlyArray<ContentBlock>;
+      readonly mcpServers: ReadonlyArray<McpServer>;
+      readonly cwd: string;
     }) => {
-      const { state, turnId } = input;
+      const { state, turn } = input;
       const threadId = state.session.threadId;
-      const abortController = new AbortController();
-      const turn = { turnId, abortController, completed: false };
-      state.activeTurn = turn;
-      const mapper = makeClaudeAgentMapper({ turnKey: String(turnId) });
-      const failTurn = (message: string) => {
+      const turnId = turn.turnId;
+      const mapper = makeClaudeAcpMapper({ turnKey: String(turnId) });
+
+      const finishTurn = (
+        stateValue: "completed" | "failed" | "interrupted",
+        errorMessage?: string,
+      ) => {
         if (turn.completed) return;
         turn.completed = true;
-        publishRaw({
-          ...stamp(threadId, turnId),
-          type: "runtime.error",
-          payload: { message, class: "provider_error" },
-        });
+        if (stateValue === "failed" && errorMessage) {
+          publishRaw({
+            ...stamp(threadId, turnId),
+            type: "runtime.error",
+            payload: { message: errorMessage, class: "provider_error" },
+          });
+        }
         publishRaw({
           ...stamp(threadId, turnId),
           type: "turn.completed",
-          payload: { state: "failed", errorMessage: message },
+          payload: {
+            state: stateValue,
+            ...(errorMessage ? { errorMessage } : {}),
+          },
         });
       };
 
-      const canUseTool: NonNullable<Options["canUseTool"]> = async (toolName, toolInput, ctx) => {
-        // Questions always need the user, even in full-access mode.
-        if (toolName === "AskUserQuestion") {
-          return askUserQuestions(threadId, turnId, toolInput, ctx.signal);
-        }
-        // A finished plan is a decision for the user, so ExitPlanMode always asks,
-        // even in full-access mode.
-        if (toolName === "ExitPlanMode") {
-          const plan = typeof toolInput.plan === "string" ? toolInput.plan.trim() : "";
-          if (plan.length > 0) {
-            publishRaw({
-              ...stamp(threadId, turnId),
-              type: "turn.proposed.completed",
-              payload: { planMarkdown: plan },
-            });
-          }
-        } else if (input.runtimeMode === "full-access") {
-          return { behavior: "allow", updatedInput: toolInput };
+      const onPermission = async (
+        request: RequestPermissionRequest,
+      ): Promise<RequestPermissionResponse> => {
+        const toolName =
+          mapper.toolNameFor(request.toolCall.toolCallId) ?? claudeToolNameOf(request.toolCall);
+        if (state.session.runtimeMode === "full-access") {
+          return autoApproveResponse(request.options);
         }
         const requestId = NodeCrypto.randomUUID();
         const decision = await new Promise<ProviderApprovalDecision>((resolve) => {
-          pendingApprovals.set(requestId, { threadId, turnId, resolve });
-          ctx.signal.addEventListener("abort", () => resolve("cancel"), { once: true });
+          pendingApprovals.set(requestId, { threadId, turnId, options: request.options, resolve });
           publishRaw({
             ...stamp(threadId, turnId),
             type: "request.opened",
             requestId: RuntimeRequestId.make(requestId),
             payload: {
-              requestType: claudeAgentRequestType(toolName),
-              detail: `Claude wants to use ${toolName}`,
-              args: toolInput,
+              requestType: approvalKindFor(toolName),
+              detail: request.toolCall.title ?? `Claude wants to use ${toolName}`,
+              args: request.toolCall.rawInput,
             },
           });
         });
@@ -401,112 +292,64 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
           ...stamp(threadId, turnId),
           type: "request.resolved",
           requestId: RuntimeRequestId.make(requestId),
-          payload: {
-            requestType: claudeAgentRequestType(toolName),
-            decision,
-          },
+          payload: { requestType: approvalKindFor(toolName), decision },
         });
-        if (decision === "accept" || decision === "acceptForSession") {
-          return { behavior: "allow", updatedInput: toolInput };
-        }
-        return {
-          behavior: "deny",
-          message: "Declined in Sparky.",
-          interrupt: decision === "cancel",
-        };
+        return permissionResponseFor(decision, request.options);
       };
 
-      const resume = state.sessionId;
-      const sdkOptions = buildClaudeAgentOptions({
-        cwd: state.session.cwd ?? process.cwd(),
-        model: state.session.model,
-        apiKey: input.apiKey,
-        environment: input.environment,
-        sparkyMcp: input.mcp
-          ? { endpoint: input.mcp.endpoint, authorizationHeader: input.mcp.authorizationHeader }
-          : undefined,
-        systemPromptAppend: input.instructions,
-        permissionMode: input.planMode ? "plan" : "default",
-        effort: input.effort,
-        resumeSessionId: resume,
-        abortController,
-        canUseTool,
-        ...(options.pathToClaudeCodeExecutable
-          ? { pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable }
-          : {}),
-      });
-
-      let sawInit = false;
+      let proc: ClaudeAcpProcess | undefined;
       try {
-        const stream = queryFn({ prompt: input.prompt, options: sdkOptions });
-        for await (const message of stream as AsyncIterable<SDKMessage>) {
-          if (message.type === "system" && message.subtype === "init") {
-            sawInit = true;
-            if (!isAcceptedClaudeAgentApiKeySource(message.apiKeySource, authMode)) {
-              abortController.abort();
-              failTurn(
-                authMode === "claudeAccount"
-                  ? `Claude Code is not signed in with a Claude account. Run \`${CLAUDE_SIGN_IN_COMMAND}\` in a terminal, then try again.`
-                  : "Claude Code is not using a Sparky API key. Sparky only runs Claude Code with an Anthropic Console API key.",
-              );
-              break;
+        proc = await ClaudeAcpProcess.start(launchFor(input.cwd), {
+          onUpdate: (notification) => {
+            for (const draft of mapper.map(notification.update)) {
+              publishDraft(threadId, turnId, draft);
             }
-            state.sessionId = message.session_id;
-          }
-          // Mark the turn complete before publishing its terminal event, so a
-          // follow-up sent as soon as the event arrives is not rejected as busy.
-          if (message.type === "result") {
-            turn.completed = true;
-            state.sessionId = message.session_id;
-          }
-          for (const draft of mapper.map(message)) {
-            publishDraft(threadId, turnId, draft);
-          }
-          if (message.type === "result") break;
-        }
-        if (!turn.completed) {
-          const result = mapper.result();
-          if (result) {
-            turn.completed = true;
-            if (result.sessionId) state.sessionId = result.sessionId;
-          } else if (abortController.signal.aborted) {
-            turn.completed = true;
-            publishRaw({
-              ...stamp(threadId, turnId),
-              type: "turn.completed",
-              payload: { state: "interrupted" },
-            });
-          } else {
-            failTurn(
-              sawInit
-                ? "Claude Code ended without a result."
-                : "Claude Code did not start a session.",
-            );
+          },
+          onPermission,
+        });
+        turn.proc = proc;
+        await proc.initialize();
+
+        let sessionId = state.acpSessionId;
+        if (sessionId) {
+          try {
+            await proc.resumeSession({ sessionId, cwd: input.cwd, mcpServers: input.mcpServers });
+          } catch {
+            // The stored session is gone. Start a new one; the caller already
+            // sent the conversation's instructions with the first turn.
+            sessionId = undefined;
           }
         }
+        if (!sessionId) {
+          const created = await proc.newSession({ cwd: input.cwd, mcpServers: input.mcpServers });
+          sessionId = created.sessionId;
+        }
+        state.acpSessionId = sessionId;
+        turn.acpSessionId = sessionId;
+
+        const response = await proc.prompt({ sessionId, prompt: input.blocks });
+        for (const draft of mapper.flush()) publishDraft(threadId, turnId, draft);
+        finishTurn(...turnOutcome(response.stopReason));
       } catch (error) {
-        if (abortController.signal.aborted && !turn.completed) {
-          turn.completed = true;
-          publishRaw({
-            ...stamp(threadId, turnId),
-            type: "turn.completed",
-            payload: { state: "interrupted" },
-          });
+        for (const draft of mapper.flush()) publishDraft(threadId, turnId, draft);
+        if (turn.cancelRequested) {
+          finishTurn("interrupted");
         } else {
-          failTurn(error instanceof Error ? error.message : String(error));
+          finishTurn("failed", failureMessage(options.command, error));
         }
       } finally {
+        proc?.close();
         if (state.activeTurn === turn) state.activeTurn = undefined;
         state.session = {
           ...state.session,
           status: "ready",
           activeTurnId: undefined,
           updatedAt: new Date().toISOString(),
-          ...(state.sessionId
+          ...(state.acpSessionId
             ? {
                 resumeCursor: {
                   version: 1,
-                  sessionId: state.sessionId,
+                  sessionId: state.acpSessionId,
                 } satisfies ClaudeAgentResumeCursor,
               }
             : {}),
@@ -515,12 +358,6 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
           if (pending.turnId === turnId) {
             pendingApprovals.delete(requestId);
             pending.resolve("cancel");
-          }
-        }
-        for (const [requestId, pending] of pendingUserInputs) {
-          if (pending.turnId === turnId) {
-            pendingUserInputs.delete(requestId);
-            pending.resolve(null);
           }
         }
       }
@@ -532,16 +369,6 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
 
       startSession: (input: ProviderSessionStartInput) =>
         Effect.gen(function* () {
-          const credential = resolveRuntimeCredential();
-          if (!credential.ok) {
-            return yield* Effect.fail(
-              new ProviderAdapterValidationError({
-                provider: CLAUDE_AGENT_PROVIDER,
-                operation: "startSession",
-                issue: credential.reason,
-              }),
-            );
-          }
           const workspaceContext: ProviderWorkspaceContext = input.workspaceContext ?? "project";
           const cwd =
             input.cwd ??
@@ -566,7 +393,7 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
           };
           sessions.set(input.threadId, {
             session,
-            sessionId: cursor?.sessionId,
+            acpSessionId: cursor?.sessionId,
             workspaceContext,
             activeTurn: undefined,
           });
@@ -591,18 +418,7 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
               }),
             );
           }
-          const credential = resolveRuntimeCredential();
-          if (!credential.ok) {
-            return yield* Effect.fail(
-              new ProviderAdapterValidationError({
-                provider: CLAUDE_AGENT_PROVIDER,
-                operation: "sendTurn",
-                issue: credential.reason,
-              }),
-            );
-          }
-          // Images go to Claude Code as base64 content blocks in a single streamed
-          // user message. Without attachments the prompt stays a plain string.
+          // Images go to Claude Code as ACP image blocks. A missing file fails the turn.
           const imageBlocks = yield* Effect.forEach(input.attachments ?? [], (attachment) =>
             Effect.gen(function* () {
               const path = resolveAttachmentPath({
@@ -617,18 +433,11 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
                 });
               }
               const data = NodeFS.readFileSync(path).toString("base64");
-              return {
-                type: "image",
-                source: { type: "base64", media_type: attachment.mimeType, data },
-              };
+              return { type: "image" as const, data, mimeType: attachment.mimeType };
             }),
           );
-          const promptInput: string | AsyncIterable<SDKUserMessage> =
-            imageBlocks.length === 0
-              ? prompt
-              : singleUserMessage([{ type: "text", text: prompt }, ...imageBlocks]);
           const authSessionId = yield* currentAuthSessionId;
-          const mcp =
+          const mcpSession =
             state.workspaceContext === "none"
               ? undefined
               : McpProviderSession.readMcpProviderSession(
@@ -636,15 +445,41 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
                   options.instanceId,
                   authSessionId ?? undefined,
                 );
+          const mcpServers: McpServer[] = mcpSession
+            ? [
+                {
+                  type: "http",
+                  name: "sparky",
+                  url: mcpSession.endpoint,
+                  headers: [{ name: "Authorization", value: mcpSession.authorizationHeader }],
+                },
+              ]
+            : [];
           const customInstructions = options.getCustomInstructions
             ? yield* options.getCustomInstructions()
             : "";
+          // ACP has no system prompt field, so Sparky's instructions lead the first
+          // prompt of a new ACP session. Resumed sessions already carry them.
           const instructions = [customInstructions, SPARKY_CLAUDE_AGENT_SKILL]
             .filter((part) => part.trim().length > 0)
             .join("\n\n");
-          if (input.modelSelection?.model)
+          const leading = state.acpSessionId ? "" : `${instructions}\n\n`;
+          const blocks: ContentBlock[] = [
+            { type: "text", text: `${leading}${prompt}` },
+            ...imageBlocks,
+          ];
+          if (input.modelSelection?.model) {
             state.session = { ...state.session, model: input.modelSelection.model };
+          }
           const turnId = TurnId.make(NodeCrypto.randomUUID());
+          const turn: ActiveTurn = {
+            turnId,
+            completed: false,
+            proc: undefined,
+            acpSessionId: undefined,
+            cancelRequested: false,
+          };
+          state.activeTurn = turn;
           state.session = {
             ...state.session,
             status: "running",
@@ -659,21 +494,16 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
           // The turn runs in the background; the RPC returns once it has started.
           void runTurn({
             state,
-            turnId,
-            prompt: promptInput,
-            environment: options.environment,
-            mcp,
-            instructions,
-            runtimeMode: state.session.runtimeMode,
-            apiKey: credential.apiKey,
-            planMode: input.interactionMode === "plan",
-            effort: resolveClaudeAgentEffort(input.modelSelection),
+            turn,
+            blocks,
+            mcpServers,
+            cwd: state.session.cwd ?? process.cwd(),
           });
           return {
             threadId: input.threadId,
             turnId,
-            resumeCursor: state.sessionId
-              ? ({ version: 1, sessionId: state.sessionId } satisfies ClaudeAgentResumeCursor)
+            resumeCursor: state.acpSessionId
+              ? ({ version: 1, sessionId: state.acpSessionId } satisfies ClaudeAgentResumeCursor)
               : undefined,
           } satisfies ProviderTurnStartResult;
         }),
@@ -681,7 +511,12 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
       interruptTurn: (threadId) =>
         Effect.gen(function* () {
           const state = yield* requireSession(threadId);
-          state.activeTurn?.abortController.abort();
+          const turn = state.activeTurn;
+          if (!turn || turn.completed) return;
+          turn.cancelRequested = true;
+          if (turn.proc && turn.acpSessionId) {
+            yield* Effect.promise(() => turn.proc!.cancel(turn.acpSessionId!));
+          }
         }),
 
       respondToRequest: (threadId, requestId: ApprovalRequestId, decision) =>
@@ -696,56 +531,35 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
           pending.resolve(decision);
         }),
 
-      respondToUserInput: (threadId, requestId, answers: ProviderUserInputAnswers) =>
+      respondToUserInput: (
+        threadId: ThreadId,
+        _requestId: ApprovalRequestId,
+        _answers: ProviderUserInputAnswers,
+      ) =>
         Effect.gen(function* () {
           yield* requireSession(threadId);
-          const pending = pendingUserInputs.get(String(requestId));
-          if (!pending || pending.threadId !== threadId) {
-            return yield* Effect.fail(
-              notSupported("respondToUserInput", `No pending question ${String(requestId)}.`),
-            );
-          }
-          const normalized: Record<string, string> = {};
-          for (const question of pending.questions) {
-            const value = answers[question.id];
-            const text = Array.isArray(value)
-              ? value
-                  .map((item) => String(item).trim())
-                  .filter((item) => item.length > 0)
-                  .join(", ")
-              : typeof value === "string"
-                ? value.trim()
-                : "";
-            if (text.length === 0) {
-              return yield* Effect.fail(
-                new ProviderAdapterValidationError({
-                  provider: CLAUDE_AGENT_PROVIDER,
-                  operation: "respondToUserInput",
-                  issue: `Answer the question "${question.header}" before continuing.`,
-                }),
-              );
-            }
-            normalized[question.id] = text;
-          }
-          pending.resolve(normalized);
+          return yield* Effect.fail(
+            notSupported(
+              "respondToUserInput",
+              "Claude Code's structured questions are not available through the ACP adapter yet.",
+            ),
+          );
         }),
 
       stopSession: (threadId) =>
         Effect.gen(function* () {
           const state = sessions.get(threadId);
           if (!state) return;
-          state.activeTurn?.abortController.abort();
+          const turn = state.activeTurn;
+          if (turn) {
+            turn.cancelRequested = true;
+            turn.proc?.close();
+          }
           sessions.delete(threadId);
           for (const [requestId, pending] of pendingApprovals) {
             if (pending.threadId === threadId) {
               pendingApprovals.delete(requestId);
               pending.resolve("cancel");
-            }
-          }
-          for (const [requestId, pending] of pendingUserInputs) {
-            if (pending.threadId === threadId) {
-              pendingUserInputs.delete(requestId);
-              pending.resolve(null);
             }
           }
         }),
@@ -770,15 +584,17 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
 
       stopAll: () =>
         Effect.sync(() => {
-          for (const state of sessions.values()) state.activeTurn?.abortController.abort();
+          for (const state of sessions.values()) {
+            const turn = state.activeTurn;
+            if (turn) {
+              turn.cancelRequested = true;
+              turn.proc?.close();
+            }
+          }
           sessions.clear();
           for (const [requestId, pending] of pendingApprovals) {
             pendingApprovals.delete(requestId);
             pending.resolve("cancel");
-          }
-          for (const [requestId, pending] of pendingUserInputs) {
-            pendingUserInputs.delete(requestId);
-            pending.resolve(null);
           }
         }),
 
@@ -788,6 +604,52 @@ export const makeClaudeAgentAdapter = (options: ClaudeAgentAdapterOptions) =>
 
     return adapter;
   });
+
+/** Map an ACP stop reason to the turn outcome Sparky records. */
+export function turnOutcome(
+  stopReason: StopReason,
+): ["completed" | "failed" | "interrupted", string | undefined] {
+  switch (stopReason) {
+    case "end_turn":
+      return ["completed", undefined];
+    case "cancelled":
+      return ["interrupted", undefined];
+    case "refusal":
+      return ["failed", "Claude declined this request."];
+    case "max_tokens":
+      return ["failed", "Claude reached its output limit."];
+    case "max_turn_requests":
+      return ["failed", "Claude reached its turn limit."];
+    default:
+      return ["failed", `Claude stopped unexpectedly (${String(stopReason)}).`];
+  }
+}
+
+/** Sparky approval kind for a Claude Code tool name. */
+export function approvalKindFor(
+  toolName: string,
+):
+  | "command_execution_approval"
+  | "file_change_approval"
+  | "file_read_approval"
+  | "dynamic_tool_call" {
+  switch (toolName) {
+    case "Bash":
+      return "command_execution_approval";
+    case "Edit":
+    case "MultiEdit":
+    case "Write":
+    case "NotebookEdit":
+      return "file_change_approval";
+    case "Read":
+    case "Glob":
+    case "Grep":
+    case "LS":
+      return "file_read_approval";
+    default:
+      return "dynamic_tool_call";
+  }
+}
 
 function projectFreeCwd(attachmentsDir: string, threadId: ThreadId): string {
   return NodePath.join(attachmentsDir, "claude-agent", "projectless", String(threadId));

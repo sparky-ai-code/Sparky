@@ -1,15 +1,12 @@
-// @effect-diagnostics nodeBuiltinImport:off globalDate:off globalDateInEffect:off
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off globalDateInEffect:off globalTimers:off
 /**
- * ClaudeAgentDriver: the "Claude Code" provider. It runs Claude Code through the
- * Claude Agent SDK and is separate from Sparky's aggregated Claude API models.
+ * ClaudeAgentDriver: the "Claude Code" provider. Sparky is an ACP client, and the
+ * Claude ACP adapter runs the unmodified Claude Code harness. The adapter command is
+ * configurable, so a user can point it at their own install.
  *
- * Two sign-in modes, neither of which handles a credential in Sparky:
- *   - `claudeAccount` (default): the user's own Claude Code is signed in with
- *     `claude auth login`, which runs Anthropic's own sign-in flow. Sparky detects
- *     that sign-in and the plan, then runs that same Claude Code.
- *   - `apiKey`: a Claude Console API key, read from this instance's environment or
- *     from Sparky's Models settings.
- * See `claudeAgent/ClaudeAgentOptions.ts` for the environment rules.
+ * Sign-in belongs to Claude Code. The user runs `claude` and `/login` on their
+ * machine, or sets an API key in this instance's environment. Sparky reads, stores,
+ * and forwards no credential.
  *
  * @module provider/Drivers/ClaudeAgentDriver
  */
@@ -23,7 +20,7 @@ import {
   type ServerProvider,
   type ServerProviderModel,
 } from "@sparky/contracts";
-import { query as sdkQuery, type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { SessionNotification } from "@agentclientprotocol/sdk";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
@@ -31,21 +28,17 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import packageJson from "../../../package.json" with { type: "json" };
+import { buildClaudeAcpEnvironment } from "../../claudeAcp/ClaudeAcpEnvironment.ts";
 import {
-  probeClaudeAccount,
-  type ClaudeAccountStatus,
-} from "../../claudeAgent/ClaudeAgentAccount.ts";
-import {
-  buildClaudeAgentOptions,
-  resolveClaudeAgentApiKey,
-  type ClaudeAgentAuthMode,
-} from "../../claudeAgent/ClaudeAgentOptions.ts";
+  ClaudeAcpProcess,
+  probeClaudeAcp,
+  type ClaudeAcpProbe,
+} from "../../claudeAcp/ClaudeAcpProcess.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import type * as TextGeneration from "../../textGeneration/TextGeneration.ts";
 import { sanitizeThreadTitle } from "../../textGeneration/TextGenerationUtils.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
-import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -55,10 +48,9 @@ import { makeClaudeAgentAdapter } from "../Layers/ClaudeAgentAdapter.ts";
 import { COMPUTER_USE_SKILL } from "./computerUseSkill.ts";
 
 const DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
-/** Sparky's own Anthropic key lives on the Sparky instance's Models settings. */
-const SPARKY_DRIVER_KIND = "sparky";
+export const DEFAULT_CLAUDE_ACP_COMMAND = "claude-agent-acp";
 
-/** Claude models offered by the Claude Code runtime. */
+/** Claude models offered by the Claude Code runtime. ACP session options may refine this. */
 export const CLAUDE_CODE_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "claude-sonnet-5",
@@ -73,29 +65,18 @@ export const CLAUDE_CODE_MODELS: ReadonlyArray<ServerProviderModel> = [
 ];
 
 const ClaudeAgentSettings = Schema.Struct({
-  binaryPath: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  /** `claudeAccount` uses the user's own sign-in. `apiKey` uses a Console key. */
-  authMode: Schema.Literals(["claudeAccount", "apiKey"]).pipe(
-    Schema.withDecodingDefault(Effect.succeed("claudeAccount" as const)),
+  /** The ACP adapter executable. Set a full path to use a specific install. */
+  command: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CLAUDE_ACP_COMMAND)),
   ),
+  args: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 type ClaudeAgentSettings = typeof ClaudeAgentSettings.Type;
 
-/**
- * Find the Anthropic key. Order: this instance's environment (merged with the
- * process environment), then the Sparky instance's Models environment.
- */
-export function findClaudeAgentApiKey(input: {
-  readonly processEnvironment: NodeJS.ProcessEnv;
-  readonly sparkyEnvironments: ReadonlyArray<ProviderInstanceEnvironment | undefined>;
-}): string | undefined {
-  const own = resolveClaudeAgentApiKey(input.processEnvironment);
-  if (own.ok) return own.apiKey;
-  for (const environment of input.sparkyEnvironments) {
-    const value = environment?.find((variable) => variable.name === "ANTHROPIC_API_KEY")?.value;
-    if (value && value.trim().length > 0) return value.trim();
-  }
-  return undefined;
+/** Command the instance runs. An empty value falls back to the default adapter. */
+export function resolveClaudeAcpCommand(command: string | undefined): string {
+  const trimmed = command?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : DEFAULT_CLAUDE_ACP_COMMAND;
 }
 
 export function makeClaudeAgentSnapshot(input: {
@@ -104,10 +85,9 @@ export function makeClaudeAgentSnapshot(input: {
   readonly accentColor?: string | undefined;
   readonly enabled: boolean;
   readonly continuationKey: string;
-  readonly authMode: ClaudeAgentAuthMode;
-  readonly hasApiKey: boolean;
-  /** Result of the sign-in probe. Undefined while it is still running. */
-  readonly account?: ClaudeAccountStatus | undefined;
+  /** Result of the adapter probe. Undefined while it is still running. */
+  readonly probe?: ClaudeAcpProbe | undefined;
+  readonly command: string;
 }): ServerProvider {
   const base = {
     instanceId: input.instanceId,
@@ -118,7 +98,6 @@ export function makeClaudeAgentSnapshot(input: {
     showInteractionModeToggle: true,
     requiresNewThreadForModelChange: false,
     enabled: input.enabled,
-    installed: true,
     version: packageJson.version,
     checkedAt: new Date().toISOString(),
     availability: "available",
@@ -127,53 +106,45 @@ export function makeClaudeAgentSnapshot(input: {
     skills: [],
   } as const;
 
-  if (input.authMode === "apiKey") {
-    const hasKey = input.hasApiKey;
+  if (!input.enabled) {
     return {
       ...base,
-      status: !input.enabled ? "disabled" : hasKey ? "ready" : "warning",
-      auth: {
-        status: hasKey ? "authenticated" : "unauthenticated",
-        type: "apiKey",
-        label: hasKey ? "Anthropic API key connected" : "Add an Anthropic API key",
-      },
-      ...(hasKey
-        ? {}
-        : {
-            message:
-              "Claude Code needs an Anthropic API key (ANTHROPIC_API_KEY) in Models settings, or switch to your Claude account.",
-          }),
+      status: "disabled",
+      installed: false,
+      auth: { status: "unknown", type: "oauth", label: "Claude Code" },
     } satisfies ServerProvider;
   }
-
-  // claudeAccount: the user's own Claude Code sign-in and plan.
-  const account = input.account;
-  if (account === undefined) {
+  if (input.probe === undefined) {
     return {
       ...base,
-      status: !input.enabled ? "disabled" : "warning",
-      auth: { status: "unknown", type: "oauth", label: "Checking Claude Code sign-in" },
-      message: "Checking your Claude Code sign-in…",
+      status: "warning",
+      installed: false,
+      auth: { status: "unknown", type: "oauth", label: "Checking Claude Code" },
+      message: "Checking the Claude ACP adapter…",
     } satisfies ServerProvider;
   }
-  if (!account.signedIn) {
+  if (!input.probe.ok) {
     return {
       ...base,
-      status: !input.enabled ? "disabled" : "warning",
-      auth: { status: "unauthenticated", type: "oauth", label: "Sign in with Claude" },
-      message: account.reason ?? "Claude Code is not signed in.",
+      status: "error",
+      installed: false,
+      auth: { status: "unknown", type: "oauth", label: "Claude Code" },
+      message: input.probe.reason,
     } satisfies ServerProvider;
   }
-  const label = account.plan ? `Claude ${account.plan} subscription` : "Claude account";
+  // The adapter runs. Sign-in is checked by Claude Code when a turn starts, so this
+  // status does not claim the account is signed in.
   return {
     ...base,
-    status: !input.enabled ? "disabled" : "ready",
+    status: "ready",
+    installed: true,
     auth: {
-      status: "authenticated",
+      status: "unknown",
       type: "oauth",
-      label,
-      ...(account.email ? { email: account.email } : {}),
+      label: "Signed in through Claude Code",
     },
+    message:
+      "Sign in by running `claude` in a terminal and using /login, or set ANTHROPIC_API_KEY in this provider's environment.",
   } satisfies ServerProvider;
 }
 
@@ -189,80 +160,66 @@ function parseJsonObject(value: string): Record<string, unknown> | null {
   }
 }
 
-/** One-shot, tool-free Claude Code call used for metadata generation. */
-async function runClaudeTextGeneration(input: {
-  readonly apiKey: string | undefined;
-  readonly environment: NodeJS.ProcessEnv;
+/**
+ * One-shot, tool-free call for metadata generation. It runs a fresh ACP session and
+ * collects the assistant's text. The adapter starts with no MCP servers, and no
+ * Sparky tools are granted.
+ */
+async function runClaudeAcpTextGeneration(input: {
+  readonly command: string;
+  readonly environment: Readonly<Record<string, string>>;
   readonly cwd: string;
-  readonly model: string;
   readonly prompt: string;
-  readonly systemPrompt?: string | undefined;
-  readonly pathToClaudeCodeExecutable?: string | undefined;
 }): Promise<string> {
-  const abortController = new AbortController();
-  const options = {
-    ...buildClaudeAgentOptions({
-      cwd: input.cwd,
-      model: input.model,
-      apiKey: input.apiKey,
-      environment: input.environment,
-      sparkyMcp: undefined,
-      systemPromptAppend: input.systemPrompt ?? "",
-      permissionMode: "default",
-      resumeSessionId: undefined,
-      abortController,
-      canUseTool: async () => ({ behavior: "deny", message: "Text generation uses no tools." }),
-      ...(input.pathToClaudeCodeExecutable
-        ? { pathToClaudeCodeExecutable: input.pathToClaudeCodeExecutable }
-        : {}),
-    }),
-    tools: [] as string[],
-    maxTurns: 1,
-  };
-  const stream = sdkQuery({ prompt: input.prompt, options });
-  let final: SDKResultMessage | undefined;
-  for await (const message of stream) {
-    if (message.type === "result") {
-      final = message;
-      break;
+  let text = "";
+  const proc = await ClaudeAcpProcess.start(
+    { command: input.command, args: [], cwd: input.cwd, env: input.environment },
+    {
+      onUpdate: (notification: SessionNotification) => {
+        const update = notification.update;
+        if (update.sessionUpdate === "agent_message_chunk" && update.content.type === "text") {
+          text += update.content.text;
+        }
+      },
+      onPermission: async () => ({ outcome: { outcome: "cancelled" } }),
+    },
+  );
+  try {
+    await proc.initialize();
+    const session = await proc.newSession({ cwd: input.cwd, mcpServers: [] });
+    const response = await proc.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: "text", text: input.prompt }],
+    });
+    if (response.stopReason !== "end_turn") {
+      throw new Error(`Claude Code text generation stopped: ${response.stopReason}`);
     }
+    return text;
+  } finally {
+    proc.close();
   }
-  if (!final) throw new Error("Claude Code returned no result.");
-  if (final.subtype !== "success" || final.is_error) {
-    throw new Error(`Claude Code text generation failed: ${final.subtype}`);
-  }
-  return final.result;
 }
 
 function makeClaudeAgentTextGeneration(input: {
-  readonly authMode: ClaudeAgentAuthMode;
-  readonly apiKey: string | undefined;
-  readonly environment: NodeJS.ProcessEnv;
-  readonly pathToClaudeCodeExecutable: string | undefined;
+  readonly command: string;
+  readonly environment: Readonly<Record<string, string>>;
 }): TextGeneration.TextGeneration["Service"] {
   const run = (
     operation: string,
     cwd: string,
-    modelSelection: ModelSelection,
+    _modelSelection: ModelSelection,
     prompt: string,
     workspaceContext: ProviderWorkspaceContext = "project",
     systemPrompt?: string,
   ) =>
     Effect.tryPromise({
-      try: () => {
-        if (input.authMode === "apiKey" && !input.apiKey) {
-          throw new Error("Add an Anthropic API key to use Claude Code.");
-        }
-        return runClaudeTextGeneration({
-          apiKey: input.authMode === "apiKey" ? input.apiKey : undefined,
+      try: () =>
+        runClaudeAcpTextGeneration({
+          command: input.command,
           environment: input.environment,
           cwd: workspaceContext === "none" ? process.cwd() : cwd,
-          model: modelSelection.model,
-          prompt,
-          systemPrompt,
-          pathToClaudeCodeExecutable: input.pathToClaudeCodeExecutable,
-        });
-      },
+          prompt: systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt,
+        }),
       catch: (cause) =>
         new TextGenerationError({
           operation,
@@ -354,36 +311,26 @@ export const ClaudeAgentDriver: ProviderDriver<
     supportsMultipleInstances: false,
   },
   configSchema: ClaudeAgentSettings,
-  defaultConfig: () => ({ binaryPath: "", authMode: "claudeAccount" }),
+  defaultConfig: () => ({ command: DEFAULT_CLAUDE_ACP_COMMAND, args: [] }),
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsService;
       const serverConfig = yield* ServerConfig;
-      const processEnvironment = { ...mergeProviderInstanceEnvironment(environment) };
-      const sparkyEnvironments = yield* serverSettings.getSettings.pipe(
-        Effect.map((settings) =>
-          Object.values(settings.providerInstances ?? {})
-            .filter((entry) => entry.driver === SPARKY_DRIVER_KIND)
-            .map((entry) => entry.environment),
-        ),
-        Effect.orElseSucceed(() => [] as ReadonlyArray<ProviderInstanceEnvironment | undefined>),
-      );
-      const authMode: ClaudeAgentAuthMode = config.authMode;
-      const apiKey = findClaudeAgentApiKey({ processEnvironment, sparkyEnvironments });
-      // The user's own Claude Code binary, when they configured one. Otherwise the
-      // SDK's bundled binary, which reads the same stored sign-in.
-      const claudeBinary = config.binaryPath.trim() || undefined;
+      const command = resolveClaudeAcpCommand(config.command);
+      const args = [...config.args];
       const resolvedDisplayName = displayName ?? "Claude Code";
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
         instanceId,
       });
-      // In claudeAccount mode no key is put in the environment. The adapter
-      // passes it only in apiKey mode.
-      const runtimeEnvironment: NodeJS.ProcessEnv =
-        authMode === "apiKey" && apiKey
-          ? { ...processEnvironment, ANTHROPIC_API_KEY: apiKey }
-          : processEnvironment;
+      const instanceOverrides = (environment ?? []).map((variable) => ({
+        name: variable.name,
+        value: variable.value,
+      }));
+      const launchEnvironment = buildClaudeAcpEnvironment({
+        ambient: process.env,
+        instanceOverrides,
+      });
 
       const snapshotInput = {
         instanceId,
@@ -391,38 +338,35 @@ export const ClaudeAgentDriver: ProviderDriver<
         ...(accentColor ? { accentColor } : {}),
         enabled,
         continuationKey: continuationIdentity.continuationKey,
-        authMode,
-        hasApiKey: apiKey !== undefined,
+        command,
       } as const;
 
       const snapshotRef = yield* Ref.make(makeClaudeAgentSnapshot(snapshotInput));
       const snapshotChanges = yield* PubSub.sliding<ServerProvider>(1);
       const refreshSnapshot = Effect.gen(function* () {
-        // The probe reads the sign-in with no model request. Refresh re-runs it.
-        const account =
-          authMode === "claudeAccount"
-            ? yield* Effect.promise(() =>
-                probeClaudeAccount({
-                  environment: runtimeEnvironment,
-                  cwd: process.cwd(),
-                  pathToClaudeCodeExecutable: claudeBinary,
-                }),
-              )
-            : undefined;
-        const snapshot = makeClaudeAgentSnapshot({ ...snapshotInput, account });
+        // The probe starts the adapter and runs `initialize`. It sends no model
+        // request and reads no credential.
+        const probe = enabled
+          ? yield* Effect.promise(() =>
+              probeClaudeAcp({
+                launch: { command, args, cwd: process.cwd(), env: launchEnvironment },
+              }),
+            )
+          : undefined;
+        const snapshot = makeClaudeAgentSnapshot({ ...snapshotInput, probe });
         yield* Ref.set(snapshotRef, snapshot);
         yield* PubSub.publish(snapshotChanges, snapshot);
         return snapshot;
       });
-      // Check the sign-in in the background so the server starts without waiting.
+      // Probe in the background so server startup does not wait on the adapter.
       yield* refreshSnapshot.pipe(Effect.ignoreCause({ log: true }), Effect.forkScoped);
 
       const adapter = yield* makeClaudeAgentAdapter({
         instanceId,
-        environment: runtimeEnvironment,
+        command,
+        args,
+        instanceEnvironment: instanceOverrides,
         attachmentsDir: serverConfig.attachmentsDir,
-        authMode,
-        pathToClaudeCodeExecutable: claudeBinary,
         getCustomInstructions: () =>
           serverSettings.getSettings.pipe(
             Effect.map((settings) => {
@@ -460,10 +404,8 @@ export const ClaudeAgentDriver: ProviderDriver<
         },
         adapter,
         textGeneration: makeClaudeAgentTextGeneration({
-          authMode,
-          apiKey,
-          environment: runtimeEnvironment,
-          pathToClaudeCodeExecutable: claudeBinary,
+          command,
+          environment: launchEnvironment,
         }),
       } satisfies ProviderInstance;
     }),

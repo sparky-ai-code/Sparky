@@ -1,6 +1,6 @@
 import type { EnvironmentId, Team, TeamMessage, TeamThread } from "@sparky/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { ArrowLeftIcon, LoaderCircleIcon } from "lucide-react";
+import { ArrowLeftIcon, FolderIcon, LoaderCircleIcon, UserPlusIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
@@ -11,18 +11,13 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { InviteMemberDialog } from "./InviteMemberDialog";
 import { TeamComposer } from "./TeamComposer";
 import { TeamMessageList, teamThreadKey } from "./TeamMessageList";
-import { TeamProjectsPanel } from "./TeamProjectsPanel";
+import { TeamProjectsDialog } from "./TeamProjectsDialog";
 import { TeamThreadList } from "./TeamThreadList";
 import { teamsFailureMessage } from "./teamsErrors";
-import {
-  mergeById,
-  pickDefaultTeam,
-  SUGGESTED_TEAM_PROMPTS,
-  formatRelativeTime,
-  teamsViewMode,
-} from "./teamsLogic";
+import { mergeById, pickDefaultTeam, SUGGESTED_TEAM_PROMPTS, teamsViewMode } from "./teamsLogic";
 import { useTeamPolling } from "./useTeamPolling";
 
 const THREAD_POLL_INTERVAL_MS = 15_000;
@@ -50,6 +45,7 @@ export function TeamsPage() {
     const timer = window.setTimeout(() => setTeamsLoadStalled(true), TEAMS_LOAD_STALL_MS);
     return () => window.clearTimeout(timer);
   }, [teamsData]);
+
   const teams = teamsData?.teams ?? EMPTY_TEAMS;
   const viewerLogin = teamsData?.viewer ?? null;
   const refreshTeams = teamsQuery.refresh;
@@ -78,8 +74,7 @@ export function TeamsPage() {
   } else if (teamsData === null && teamsQuery.isPending) {
     body = teamsLoadStalled ? (
       <p className="p-6 text-sm text-muted-foreground">
-        Teams is taking too long to respond. Check that the GitHub CLI (<code>gh</code>) is
-        installed and signed in with <code>gh auth status</code>, then reload.
+        Teams isn't responding. Check <code>gh auth status</code>, then reload.
       </p>
     ) : (
       <div className="flex flex-1 items-center justify-center py-20">
@@ -91,30 +86,21 @@ export function TeamsPage() {
   } else if (mode === "empty") {
     body = (
       <div className="flex flex-1 items-center justify-center p-4">
-        <CreateTeamCard
-          title="Create your first team"
-          description="A team is a group of GitHub accounts that share projects and chat about them."
-          onCreate={handleCreateTeam}
-        />
+        <CreateTeamCard title="Create a team" onCreate={handleCreateTeam} />
       </div>
     );
   } else if (activeTeam === null) {
     body = (
       <div className="flex flex-col gap-4 px-4 py-4 sm:px-6">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           {teams.map((team) => (
             <button
               key={team.id}
               type="button"
               onClick={() => setOpenTeamId(team.id)}
-              className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-accent"
+              className="min-w-0 truncate rounded-lg border border-border bg-card px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent"
             >
-              <span className="truncate text-sm font-semibold text-foreground">{team.name}</span>
-              <span className="text-xs text-muted-foreground">
-                {team.projects.length} project{team.projects.length === 1 ? "" : "s"} ·{" "}
-                {team.members.length} member{team.members.length === 1 ? "" : "s"} · created{" "}
-                {formatRelativeTime(team.createdAt)}
-              </span>
+              {team.name}
             </button>
           ))}
         </div>
@@ -127,54 +113,26 @@ export function TeamsPage() {
         key={activeTeam.id}
         environmentId={environmentId}
         team={activeTeam}
+        teams={teams}
         viewerLogin={viewerLogin}
+        showBack={mode === "list"}
+        onBack={() => setOpenTeamId(null)}
+        onSwitchTeam={setOpenTeamId}
         onTeamsChanged={refreshTeams}
       />
     );
   }
 
+  // The workspace draws its own top bar. Other states get a plain title.
+  const showTitleBar = activeTeam === null;
+
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-x-hidden overflow-y-auto">
-      <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3 sm:px-6">
-        {mode === "list" && activeTeam !== null ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Back to teams"
-            onClick={() => setOpenTeamId(null)}
-          >
-            <ArrowLeftIcon />
-          </Button>
-        ) : null}
-        <h1 className="text-base font-semibold text-foreground">Teams</h1>
-        {activeTeam !== null ? (
-          <span className="min-w-0 truncate text-sm text-muted-foreground">{activeTeam.name}</span>
-        ) : null}
-        {teams.length > 1 && activeTeam !== null ? (
-          <div className="ml-auto w-44 max-w-full">
-            <Select
-              value={activeTeam.id}
-              onValueChange={(value) => {
-                if (typeof value === "string") {
-                  setOpenTeamId(value);
-                }
-              }}
-            >
-              <SelectTrigger size="sm" aria-label="Switch team" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent matchTriggerWidth>
-                {teams.map((team) => (
-                  <SelectItem key={team.id} value={team.id}>
-                    {team.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        ) : null}
-      </header>
+      {showTitleBar ? (
+        <header className="flex items-center gap-2 border-b border-border px-4 py-3 sm:px-6">
+          <h1 className="text-base font-semibold text-foreground">Teams</h1>
+        </header>
+      ) : null}
       {body}
     </div>
   );
@@ -182,13 +140,12 @@ export function TeamsPage() {
 
 interface CreateTeamCardProps {
   readonly title: string;
-  readonly description?: string;
   readonly compact?: boolean;
   readonly onCreate: (name: string) => Promise<string | null>;
 }
 
 function CreateTeamCard(props: CreateTeamCardProps) {
-  const { title, description, compact = false, onCreate } = props;
+  const { title, compact = false, onCreate } = props;
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -215,15 +172,10 @@ function CreateTeamCard(props: CreateTeamCardProps) {
       onSubmit={(event) => void handleSubmit(event)}
       className={cn(
         "flex w-full flex-col gap-3 rounded-lg border border-border bg-card p-5",
-        compact ? "max-w-none" : "max-w-md",
+        compact ? "max-w-none" : "max-w-sm",
       )}
     >
-      <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-        {description !== undefined ? (
-          <p className="text-xs text-muted-foreground">{description}</p>
-        ) : null}
-      </div>
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
       <div className="flex gap-2">
         <Input
           value={name}
@@ -246,20 +198,35 @@ function CreateTeamCard(props: CreateTeamCardProps) {
 interface TeamWorkspaceProps {
   readonly environmentId: EnvironmentId;
   readonly team: Team;
+  readonly teams: readonly Team[];
   readonly viewerLogin: string | null;
+  readonly showBack: boolean;
+  readonly onBack: () => void;
+  readonly onSwitchTeam: (teamId: string) => void;
   readonly onTeamsChanged: () => void;
 }
 
-/** One open team: composer on top, then threads and messages, then projects. */
+/** One open team: top bar, composer, prompts, then threads beside messages. */
 function TeamWorkspace(props: TeamWorkspaceProps) {
-  const { environmentId, team, viewerLogin, onTeamsChanged } = props;
+  const {
+    environmentId,
+    team,
+    teams,
+    viewerLogin,
+    showBack,
+    onBack,
+    onSwitchTeam,
+    onTeamsChanged,
+  } = props;
 
   const [projectChoice, setProjectChoice] = useState<string | null>(null);
   const projectId =
     team.projects.find((project) => project.id === projectChoice)?.id ??
     team.projects[0]?.id ??
     null;
-  const project = team.projects.find((entry) => entry.id === projectId) ?? null;
+
+  const [projectsOpen, setProjectsOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const [threadId, setThreadId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<TeamMessage | null>(null);
@@ -349,10 +316,58 @@ function TeamWorkspace(props: TeamWorkspaceProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 sm:px-6">
+      <div className="flex flex-wrap items-center gap-2">
+        {showBack ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Back to teams"
+            onClick={onBack}
+          >
+            <ArrowLeftIcon />
+          </Button>
+        ) : null}
+        {teams.length > 1 && !showBack ? (
+          <div className="w-48 max-w-full">
+            <Select
+              value={team.id}
+              onValueChange={(value) => {
+                if (typeof value === "string") {
+                  onSwitchTeam(value);
+                }
+              }}
+            >
+              <SelectTrigger size="sm" aria-label="Switch team" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent matchTriggerWidth>
+                {teams.map((entry) => (
+                  <SelectItem key={entry.id} value={entry.id}>
+                    {entry.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <h1 className="min-w-0 truncate text-base font-semibold text-foreground">{team.name}</h1>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => setProjectsOpen(true)}>
+            <FolderIcon />
+            Projects
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => setInviteOpen(true)}>
+            <UserPlusIcon />
+            Invite
+          </Button>
+        </div>
+      </div>
+
       <TeamComposer
         environmentId={environmentId}
         projectId={projectId}
-        projectName={project?.nameWithOwner ?? null}
         threadId={threadId}
         replyTo={replyTo}
         draft={draft}
@@ -361,6 +376,7 @@ function TeamWorkspace(props: TeamWorkspaceProps) {
         onClearReply={() => setReplyTo(null)}
         onThreadCreated={handleThreadCreated}
         onMessagePosted={handleMessagePosted}
+        onOpenProjects={() => setProjectsOpen(true)}
       />
 
       {projectId !== null ? (
@@ -404,16 +420,27 @@ function TeamWorkspace(props: TeamWorkspaceProps) {
               onReply={handleReply}
             />
           ) : (
-            <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
-              {projectId === null
-                ? "Add a team project to start chatting."
-                : "Pick a thread, or start one with the composer above."}
+            <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+              {projectId === null ? "No project yet." : "Select a thread."}
             </div>
           )}
         </section>
       </div>
 
-      <TeamProjectsPanel environmentId={environmentId} team={team} onChanged={onTeamsChanged} />
+      <TeamProjectsDialog
+        open={projectsOpen}
+        onOpenChange={setProjectsOpen}
+        environmentId={environmentId}
+        team={team}
+        onChanged={onTeamsChanged}
+      />
+      <InviteMemberDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        environmentId={environmentId}
+        team={team}
+        onInvited={onTeamsChanged}
+      />
     </div>
   );
 }

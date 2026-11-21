@@ -7,7 +7,6 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import {
   Dialog,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogPanel,
@@ -86,13 +85,22 @@ export function InviteMemberDialog(props: InviteMemberDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Invite a GitHub account</DialogTitle>
-          <DialogDescription>
-            The account gets collaborator access to every project in {team.name}.
-          </DialogDescription>
+          <DialogTitle>Invite</DialogTitle>
         </DialogHeader>
         <form onSubmit={(event) => void handleSubmit(event)}>
           <DialogPanel className="space-y-3">
+            {team.members.length > 0 ? (
+              <ul className="flex flex-wrap gap-1.5">
+                {team.members.map((member) => (
+                  <li
+                    key={member}
+                    className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
+                  >
+                    {member}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             <Input
               value={login}
               onChange={(event) => setLogin(event.target.value)}

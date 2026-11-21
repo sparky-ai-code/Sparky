@@ -11,7 +11,6 @@ import { teamsFailureMessage } from "./teamsErrors";
 interface TeamComposerProps {
   readonly environmentId: EnvironmentId;
   readonly projectId: string | null;
-  readonly projectName: string | null;
   /** Selected thread. Null means the next send starts a new thread. */
   readonly threadId: string | null;
   readonly replyTo: TeamMessage | null;
@@ -22,6 +21,7 @@ interface TeamComposerProps {
   readonly onClearReply: () => void;
   readonly onThreadCreated: (thread: TeamThread) => void;
   readonly onMessagePosted: () => void;
+  readonly onOpenProjects: () => void;
 }
 
 function firstLine(body: string): string {
@@ -37,7 +37,6 @@ export function TeamComposer(props: TeamComposerProps) {
   const {
     environmentId,
     projectId,
-    projectName,
     threadId,
     replyTo,
     draft,
@@ -46,6 +45,7 @@ export function TeamComposer(props: TeamComposerProps) {
     onClearReply,
     onThreadCreated,
     onMessagePosted,
+    onOpenProjects,
   } = props;
 
   const postMessage = useAtomCommand(teamsEnvironment.postMessage, { reportFailure: false });
@@ -72,8 +72,11 @@ export function TeamComposer(props: TeamComposerProps) {
 
   if (projectId === null) {
     return (
-      <div className="rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
-        Add a team project to start chatting
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
+        <span>No project yet.</span>
+        <Button type="button" size="sm" variant="outline" onClick={onOpenProjects}>
+          Add project
+        </Button>
       </div>
     );
   }
@@ -164,11 +167,6 @@ export function TeamComposer(props: TeamComposerProps) {
           {sending ? <LoaderCircleIcon className="animate-spin" /> : <SendIcon />}
         </Button>
       </div>
-      {projectName !== null ? (
-        <p className="px-2 pt-1 text-[11px] text-muted-foreground">
-          {threadId !== null ? "Replying in" : "Starts a new thread in"} {projectName}
-        </p>
-      ) : null}
       {error !== null ? <p className="px-2 pt-1 text-xs text-destructive">{error}</p> : null}
     </div>
   );

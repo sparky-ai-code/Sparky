@@ -42,7 +42,7 @@ export function TeamThreadList(props: TeamThreadListProps) {
 
   return (
     <div className="flex min-h-0 flex-col gap-2 p-2">
-      {projects.length > 1 ? (
+      {projects.length > 0 ? (
         <Select
           value={projectId}
           onValueChange={(value) => {
@@ -64,10 +64,6 @@ export function TeamThreadList(props: TeamThreadListProps) {
         </Select>
       ) : null}
 
-      <div className="px-1 text-[10px] font-medium tracking-wider text-muted-foreground/60">
-        THREADS
-      </div>
-
       {error !== null ? <p className="px-1 text-xs text-destructive">{error}</p> : null}
 
       {loading ? (
@@ -75,9 +71,7 @@ export function TeamThreadList(props: TeamThreadListProps) {
           <LoaderCircleIcon className="size-4 animate-spin text-muted-foreground" />
         </div>
       ) : sortedThreads.length === 0 ? (
-        <p className="px-1 py-6 text-center text-xs text-muted-foreground">
-          No threads yet. Start one with the composer above.
-        </p>
+        <p className="px-1 py-6 text-center text-xs text-muted-foreground">No threads yet.</p>
       ) : (
         <ul className="flex max-h-[46vh] flex-col gap-0.5 overflow-y-auto overflow-x-hidden lg:max-h-[460px]">
           {sortedThreads.map((thread) => {
@@ -122,9 +116,6 @@ export function TeamThreadList(props: TeamThreadListProps) {
           })}
         </ul>
       )}
-      <p className="px-1 text-[10px] text-muted-foreground/60">
-        Unread counts are per viewer and cover threads opened in this session.
-      </p>
     </div>
   );
 }

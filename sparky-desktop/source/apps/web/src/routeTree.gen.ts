@@ -16,6 +16,7 @@ import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
+import { Route as SettingsVoiceRouteImport } from './routes/settings.voice'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsPluginsRouteImport } from './routes/settings.plugins'
 import { Route as SettingsPersonalizeRouteImport } from './routes/settings.personalize'
@@ -25,8 +26,8 @@ import { Route as SettingsMcpRouteImport } from './routes/settings.mcp'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsInstructionsRouteImport } from './routes/settings.instructions'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
-import { Route as SettingsComputerUseRouteImport } from './routes/settings.computer-use'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
+import { Route as SettingsComputerUseRouteImport } from './routes/settings.computer-use'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
 import { Route as SettingsAnalyticsRouteImport } from './routes/settings.analytics'
@@ -66,6 +67,11 @@ const ChatIndexRoute = ChatIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ChatRoute,
+} as any)
+const SettingsVoiceRoute = SettingsVoiceRouteImport.update({
+  id: '/voice',
+  path: '/voice',
+  getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
   id: '/source-control',
@@ -112,14 +118,14 @@ const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
   path: '/general',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsComputerUseRoute = SettingsComputerUseRouteImport.update({
-  id: '/computer-use',
-  path: '/computer-use',
-  getParentRoute: () => SettingsRoute,
-} as any)
 const SettingsDiagnosticsRoute = SettingsDiagnosticsRouteImport.update({
   id: '/diagnostics',
   path: '/diagnostics',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsComputerUseRoute = SettingsComputerUseRouteImport.update({
+  id: '/computer-use',
+  path: '/computer-use',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsArchivedRoute = SettingsArchivedRouteImport.update({
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/settings/personalize': typeof SettingsPersonalizeRoute
   '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/voice': typeof SettingsVoiceRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
 }
@@ -193,6 +200,7 @@ export interface FileRoutesByTo {
   '/settings/personalize': typeof SettingsPersonalizeRoute
   '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/voice': typeof SettingsVoiceRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -219,6 +227,7 @@ export interface FileRoutesById {
   '/settings/personalize': typeof SettingsPersonalizeRoute
   '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/voice': typeof SettingsVoiceRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -246,6 +255,7 @@ export interface FileRouteTypes {
     | '/settings/personalize'
     | '/settings/plugins'
     | '/settings/source-control'
+    | '/settings/voice'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
   fileRoutesByTo: FileRoutesByTo
@@ -269,6 +279,7 @@ export interface FileRouteTypes {
     | '/settings/personalize'
     | '/settings/plugins'
     | '/settings/source-control'
+    | '/settings/voice'
     | '/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
@@ -294,6 +305,7 @@ export interface FileRouteTypes {
     | '/settings/personalize'
     | '/settings/plugins'
     | '/settings/source-control'
+    | '/settings/voice'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
@@ -359,6 +371,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatIndexRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/settings/voice': {
+      id: '/settings/voice'
+      path: '/voice'
+      fullPath: '/settings/voice'
+      preLoaderRoute: typeof SettingsVoiceRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/source-control': {
       id: '/settings/source-control'
       path: '/source-control'
@@ -422,18 +441,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsGeneralRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/settings/computer-use': {
-      id: '/settings/computer-use'
-      path: '/computer-use'
-      fullPath: '/settings/computer-use'
-      preLoaderRoute: typeof SettingsComputerUseRouteImport
-      parentRoute: typeof SettingsRoute
-    }
     '/settings/diagnostics': {
       id: '/settings/diagnostics'
       path: '/diagnostics'
       fullPath: '/settings/diagnostics'
       preLoaderRoute: typeof SettingsDiagnosticsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/computer-use': {
+      id: '/settings/computer-use'
+      path: '/computer-use'
+      fullPath: '/settings/computer-use'
+      preLoaderRoute: typeof SettingsComputerUseRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/archived': {
@@ -503,6 +522,7 @@ interface SettingsRouteChildren {
   SettingsPersonalizeRoute: typeof SettingsPersonalizeRoute
   SettingsPluginsRoute: typeof SettingsPluginsRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
+  SettingsVoiceRoute: typeof SettingsVoiceRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
@@ -520,6 +540,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsPersonalizeRoute: SettingsPersonalizeRoute,
   SettingsPluginsRoute: SettingsPluginsRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
+  SettingsVoiceRoute: SettingsVoiceRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(

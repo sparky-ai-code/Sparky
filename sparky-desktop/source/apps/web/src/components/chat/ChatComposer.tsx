@@ -368,6 +368,9 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
+  voiceActive: boolean;
+  voiceStarting: boolean;
+  onVoiceToggle: () => void;
   activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
   activeThreadProviderDisplayName: string | null;
   isPreparingWorktree: boolean;
@@ -403,6 +406,9 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
       ) : null}
       <ComposerPrimaryActions
         compact={props.compact}
+        voiceActive={props.voiceActive}
+        voiceStarting={props.voiceStarting}
+        onVoiceToggle={props.onVoiceToggle}
         pendingAction={props.pendingAction}
         isRunning={props.isRunning}
         showPlanFollowUpPrompt={props.showPlanFollowUpPrompt}
@@ -517,6 +523,9 @@ export interface ChatComposerProps {
   composerElementContextsRef: React.RefObject<ElementContextDraft[]>;
   composerRef: React.RefObject<ChatComposerHandle | null>;
   onSend: (e?: { preventDefault: () => void }) => void;
+  onVoiceToggle: () => void;
+  voiceActive: boolean;
+  voiceStarting: boolean;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
@@ -599,6 +608,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerTerminalContextsRef,
     composerElementContextsRef,
     onSend,
+    onVoiceToggle,
+    voiceActive,
+    voiceStarting,
     onInterrupt,
     onImplementPlanInNewThread,
     onRespondToApproval,
@@ -899,6 +911,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       prompt,
     ],
   );
+
+  useEffect(() => {
+    if (voiceActive && composerSendState.hasSendableContent) onVoiceToggle();
+  }, [voiceActive, composerSendState.hasSendableContent, onVoiceToggle]);
 
   const activeComposerTrigger = composerTrigger;
   const composerTriggerKind = activeComposerTrigger?.kind ?? null;
@@ -2521,6 +2537,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 />
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
+                  voiceActive={voiceActive}
+                  voiceStarting={voiceStarting}
+                  onVoiceToggle={onVoiceToggle}
                   activeContextWindow={null}
                   activeThreadProviderDisplayName={null}
                   pendingAction={pendingPrimaryAction}

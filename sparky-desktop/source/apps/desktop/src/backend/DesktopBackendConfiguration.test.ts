@@ -143,6 +143,8 @@ describe("DesktopBackendConfiguration", () => {
           first.env.SPARKY_BINARY_PATH,
           environment.path.join(environment.resourcesPath, "sparky", "sparky"),
         );
+        // Cua Driver is only bundled into packaged Windows builds.
+        assert.isUndefined(first.env.SPARKY_CUA_DRIVER_PATH);
         assert.isUndefined(first.env.T3CODE_PORT);
         assert.isUndefined(first.env.T3CODE_MODE);
         assert.isUndefined(first.env.T3CODE_DESKTOP_LAN_HOST);
@@ -158,6 +160,38 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(second.bootstrap.desktopBootstrapToken, first.bootstrap.desktopBootstrapToken);
       }),
     ),
+  );
+
+  it.effect("resolvePrimary points packaged Windows builds at the bundled Cua Driver", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-desktop-backend-config-test-",
+      });
+      yield* Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const start = yield* configuration.resolvePrimary;
+        assert.equal(
+          start.env.SPARKY_CUA_DRIVER_PATH,
+          environment.path.join(environment.resourcesPath, "cua-driver", "cua-driver.exe"),
+        );
+      }).pipe(
+        Effect.provide(
+          DesktopBackendConfiguration.layer.pipe(
+            Layer.provideMerge(serverExposureLayer),
+            Layer.provideMerge(DesktopAppSettings.layerTest()),
+            Layer.provideMerge(DesktopWslEnvironment.layerTest()),
+            Layer.provideMerge(
+              makeEnvironmentLayer(baseDir, {
+                platform: "win32",
+                resourcesPath: "/opt/sparky/resources",
+              }),
+            ),
+          ),
+        ),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
   it.effect("resolveWsl reuses the primary's bootstrap token", () =>

@@ -13,6 +13,7 @@ packages/*/dist
 .env.local
 build/
 .logs/
+.cache/
 release/
 release-mock/
 .t3

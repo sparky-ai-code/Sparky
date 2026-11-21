@@ -2,14 +2,18 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   BuildCommandFailedError,
+  CuaDriverBinaryMissingError,
+  resolveBundledCuaDriver,
   createStageWorkspaceConfig,
   createStagePatchedDependencies,
   createBuildConfig,
@@ -540,6 +544,63 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
+  it.effect("bundles the Cua Driver resource folder into Windows builds only", () =>
+    Effect.gen(function* () {
+      const win = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "1.2.3",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.deepInclude(win.extraResources, {
+        from: "apps/desktop/resources/cua-driver",
+        to: "cua-driver",
+      });
+
+      const mac = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.notInclude(
+        (mac.extraResources as ReadonlyArray<{ readonly to: string }>).map((entry) => entry.to),
+        "cua-driver",
+      );
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
+  it.effect("uses an explicit Cua Driver override directory and rejects a missing one", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const repoRoot = yield* fs.makeTempDirectoryScoped({ prefix: "cua-driver-override-" });
+      const driverDir = path.resolve(repoRoot, "custom");
+      yield* fs.makeDirectory(driverDir, { recursive: true });
+      yield* fs.writeFileString(path.join(driverDir, "cua-driver.exe"), "");
+
+      const resolved = yield* resolveBundledCuaDriver({
+        repoRoot,
+        arch: "x64",
+        overridePath: "custom",
+      });
+      assert.equal(resolved, driverDir);
+
+      const missing = yield* resolveBundledCuaDriver({
+        repoRoot,
+        arch: "x64",
+        overridePath: "missing",
+      }).pipe(Effect.flip);
+      assert.instanceOf(missing, CuaDriverBinaryMissingError);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it("promotes target fff binaries to direct staged dependencies", () => {
     assert.deepStrictEqual(resolveFffNativeDependencies("mac", "arm64", "0.9.4"), {
       "@ff-labs/fff-bin-darwin-arm64": "0.9.4",
@@ -627,6 +688,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         mockUpdates: Option.none(),
         mockUpdateServerPort: Option.none(),
         wslPrebuild: Option.none(),
+        cuaDriver: Option.none(),
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
@@ -665,6 +727,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         mockUpdates: Option.some(false),
         mockUpdateServerPort: Option.none(),
         wslPrebuild: Option.none(),
+        cuaDriver: Option.none(),
       }).pipe(
         Effect.provide(
           ConfigProvider.layer(

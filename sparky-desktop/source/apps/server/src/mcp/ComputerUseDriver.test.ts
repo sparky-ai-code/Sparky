@@ -43,7 +43,9 @@ it("lists and calls tools over one long-lived stdio process", async () => {
 it("reports a clear error when the driver binary is missing", async () => {
   const driver = makeComputerUseDriver({ command: "definitely-not-a-real-cua-driver" });
   try {
-    await expect(driver.listTools()).rejects.toThrow(/Could not start computer-use driver/);
+    await expect(driver.listTools()).rejects.toThrow(
+      /Could not start computer-use driver: Cua Driver is missing \('definitely-not-a-real-cua-driver' was not found\)/,
+    );
   } finally {
     driver.close();
   }

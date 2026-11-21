@@ -342,6 +342,14 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
     const backendExposure = yield* serverExposure.backendConfig;
     const sparkyExecutable = environment.platform === "win32" ? "sparky.exe" : "sparky";
     const configuredSparkyBinaryPath = process.env.SPARKY_BINARY_PATH?.trim();
+    // The Windows installer bundles Cua Driver beside the Sparky runtime, so a
+    // packaged build points the server at it. An explicit SPARKY_CUA_DRIVER_PATH wins.
+    const configuredCuaDriverPath = process.env.SPARKY_CUA_DRIVER_PATH?.trim();
+    const bundledCuaDriverPath =
+      environment.isPackaged && environment.platform === "win32"
+        ? environment.path.join(environment.resourcesPath, "cua-driver", "cua-driver.exe")
+        : undefined;
+    const cuaDriverPath = configuredCuaDriverPath || bundledCuaDriverPath;
 
     const bootstrap = {
       mode: "desktop" as const,
@@ -374,6 +382,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
                 "release",
                 sparkyExecutable,
               )),
+        ...(cuaDriverPath ? { SPARKY_CUA_DRIVER_PATH: cuaDriverPath } : {}),
       },
       // Primary wants process.env (PATH, dev-runner's T3CODE_HOME, etc.).
       extendEnv: true,

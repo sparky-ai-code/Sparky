@@ -142,11 +142,16 @@ export function makeComputerUseDriver(options: ComputerUseDriverOptions): Comput
       ready = undefined;
       failAll(error);
     };
-    proc.once("error", (cause) =>
+    proc.once("error", (cause) => {
+      const missing = (cause as NodeJS.ErrnoException).code === "ENOENT";
       onGone(
-        new Error(`Could not start computer-use driver '${options.command}': ${cause.message}`),
-      ),
-    );
+        new Error(
+          missing
+            ? `Could not start computer-use driver: Cua Driver is missing ('${options.command}' was not found). Reinstall Sparky to restore the bundled Cua Driver, or set SPARKY_CUA_DRIVER_PATH to an installed cua-driver.exe.`
+            : `Could not start computer-use driver '${options.command}': ${cause.message}`,
+        ),
+      );
+    });
     proc.once("exit", () => onGone(new Error("Computer-use driver exited.")));
     return request("initialize", {
       protocolVersion: "2025-03-26",

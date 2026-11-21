@@ -14,6 +14,14 @@ import {
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
+import {
+  CUA_DRIVER_EXECUTABLE_NAME,
+  CUA_DRIVER_RS_VERSION,
+  getCuaDriverWindowsAsset,
+  isExpectedCuaDriverArchive,
+  sha256Hex,
+  type CuaDriverWindowsArch,
+} from "./lib/cua-driver.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
@@ -29,6 +37,12 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Command, Flag } from "effect/unstable/cli";
+import {
+  FetchHttpClient,
+  HttpClient,
+  HttpClientRequest,
+  HttpClientResponse,
+} from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
@@ -122,6 +136,7 @@ interface BuildCliInput {
   readonly mockUpdates: Option.Option<boolean>;
   readonly mockUpdateServerPort: Option.Option<number>;
   readonly wslPrebuild: Option.Option<string>;
+  readonly cuaDriver: Option.Option<string>;
 }
 
 function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
@@ -398,6 +413,42 @@ export class WslNodePtyManifestReadError extends Schema.TaggedErrorClass<WslNode
   }
 }
 
+export class CuaDriverDownloadError extends Schema.TaggedErrorClass<CuaDriverDownloadError>()(
+  "CuaDriverDownloadError",
+  {
+    url: Schema.String,
+    reason: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Could not download Cua Driver from ${this.url}: ${this.reason}`;
+  }
+}
+
+export class CuaDriverChecksumMismatchError extends Schema.TaggedErrorClass<CuaDriverChecksumMismatchError>()(
+  "CuaDriverChecksumMismatchError",
+  {
+    fileName: Schema.String,
+    expectedSha256: Schema.String,
+    actualSha256: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Cua Driver archive ${this.fileName} failed its SHA-256 check (expected ${this.expectedSha256}, got ${this.actualSha256}). Refusing to bundle it.`;
+  }
+}
+
+export class CuaDriverBinaryMissingError extends Schema.TaggedErrorClass<CuaDriverBinaryMissingError>()(
+  "CuaDriverBinaryMissingError",
+  {
+    binaryPath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Cua Driver binary not found at ${this.binaryPath}. The Windows installer bundles it, so the build cannot continue without it.`;
+  }
+}
+
 export class LinuxIconResizeError extends Schema.TaggedErrorClass<LinuxIconResizeError>()(
   "LinuxIconResizeError",
   {
@@ -556,6 +607,7 @@ interface ResolvedBuildOptions {
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
   readonly wslPrebuild: string | undefined;
+  readonly cuaDriver: string | undefined;
 }
 
 interface StagePackageJson {
@@ -920,6 +972,9 @@ const BuildEnvConfig = Config.all({
   // into the staged node-pty so the WSL backend ships a ready binary and never
   // compiles on the user's machine.
   wslPrebuild: Config.string("T3CODE_DESKTOP_WSL_PREBUILD").pipe(Config.option),
+  // Path to a Cua Driver binary (cua-driver.exe) to bundle instead of the pinned
+  // release download. For offline builds and for testing a locally built driver.
+  cuaDriver: Config.string("T3CODE_DESKTOP_CUA_DRIVER").pipe(Config.option),
 });
 
 const MockUpdateServerPortSchema = Schema.NumberFromString.check(
@@ -1005,6 +1060,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
 
   const wslPrebuild =
     Option.getOrUndefined(input.wslPrebuild) ?? Option.getOrUndefined(env.wslPrebuild);
+  const cuaDriver = Option.getOrUndefined(input.cuaDriver) ?? Option.getOrUndefined(env.cuaDriver);
 
   return {
     platform,
@@ -1019,6 +1075,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdates,
     mockUpdateServerPort,
     wslPrebuild,
+    cuaDriver,
   } satisfies ResolvedBuildOptions;
 });
 
@@ -1411,7 +1468,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     extraResources: [
       { from: "apps/desktop/resources/sparky", to: "sparky" },
       ...(platform === "win"
-        ? [{ from: "apps/desktop/resources/icon.ico", to: "icon.ico" }]
+        ? [
+            { from: "apps/desktop/resources/cua-driver", to: "cua-driver" },
+            { from: "apps/desktop/resources/icon.ico", to: "icon.ico" },
+          ]
         : []),
     ],
   };
@@ -1584,6 +1644,104 @@ const stageWslNodePtyPrebuild = Effect.fn("stageWslNodePtyPrebuild")(function* (
   );
 });
 
+// Returns the directory to bundle into the Windows installer: the one holding
+// cua-driver.exe together with the companion DLLs and helper executables the
+// driver loads at runtime. An explicit override directory wins; otherwise the
+// pinned release zip is downloaded into a cache, checked against its SHA-256,
+// and extracted. Every failure stops the build so an installer can never ship
+// without the driver.
+export const resolveBundledCuaDriver = Effect.fn("resolveBundledCuaDriver")(function* (input: {
+  readonly repoRoot: string;
+  readonly arch: CuaDriverWindowsArch;
+  readonly overridePath: string | undefined;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+
+  if (input.overridePath !== undefined) {
+    const directory = path.resolve(input.repoRoot, input.overridePath);
+    const binaryPath = path.join(directory, CUA_DRIVER_EXECUTABLE_NAME);
+    if (!(yield* fs.exists(binaryPath))) {
+      return yield* new CuaDriverBinaryMissingError({ binaryPath });
+    }
+    return directory;
+  }
+
+  const asset = getCuaDriverWindowsAsset(input.arch);
+  const cacheDir = path.join(
+    input.repoRoot,
+    ".cache",
+    "cua-driver",
+    CUA_DRIVER_RS_VERSION,
+    input.arch,
+  );
+  const archivePath = path.join(cacheDir, asset.fileName);
+  const extractDir = path.join(cacheDir, "extracted");
+  yield* fs.makeDirectory(cacheDir, { recursive: true });
+
+  const hasVerifiedArchive =
+    (yield* fs.exists(archivePath)) &&
+    isExpectedCuaDriverArchive(yield* fs.readFile(archivePath), asset.sha256);
+  if (!hasVerifiedArchive) {
+    yield* Effect.log(
+      `[desktop-artifact] Downloading Cua Driver ${CUA_DRIVER_RS_VERSION} (${input.arch})...`,
+    );
+    const bytes = yield* Effect.gen(function* () {
+      const httpClient = yield* HttpClient.HttpClient;
+      const response = yield* httpClient
+        .execute(HttpClientRequest.get(asset.downloadUrl))
+        .pipe(Effect.flatMap(HttpClientResponse.filterStatusOk));
+      return new Uint8Array(yield* response.arrayBuffer);
+    }).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.mapError(
+        (cause) =>
+          new CuaDriverDownloadError({
+            url: asset.downloadUrl,
+            reason: cause instanceof Error ? cause.message : String(cause),
+          }),
+      ),
+    );
+    const actualSha256 = sha256Hex(bytes);
+    if (actualSha256 !== asset.sha256) {
+      return yield* new CuaDriverChecksumMismatchError({
+        fileName: asset.fileName,
+        expectedSha256: asset.sha256,
+        actualSha256,
+      });
+    }
+    yield* fs.writeFile(archivePath, bytes);
+  }
+
+  yield* fs.remove(extractDir, { recursive: true, force: true });
+  yield* fs.makeDirectory(extractDir, { recursive: true });
+  // Windows 10+ ships bsdtar in System32, which extracts zip archives. Call it by
+  // absolute path so a GNU tar earlier on PATH (such as Git's usr/bin) is not used.
+  const tarCommand =
+    process.platform === "win32"
+      ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+      : "tar";
+  yield* runCommand(ChildProcess.make(tarCommand, ["-xf", archivePath, "-C", extractDir]), {
+    label: "tar -xf <cua-driver archive>",
+    verbose: false,
+  });
+
+  // The archive holds cua-driver.exe at its root or inside one versioned folder.
+  const entries = yield* fs.readDirectory(extractDir);
+  const candidates = [
+    path.join(extractDir, CUA_DRIVER_EXECUTABLE_NAME),
+    ...entries.map((entry) => path.join(extractDir, entry, CUA_DRIVER_EXECUTABLE_NAME)),
+  ];
+  for (const candidate of candidates) {
+    if (yield* fs.exists(candidate)) {
+      return path.dirname(candidate);
+    }
+  }
+  return yield* new CuaDriverBinaryMissingError({
+    binaryPath: path.join(extractDir, CUA_DRIVER_EXECUTABLE_NAME),
+  });
+});
+
 const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   options: ResolvedBuildOptions,
 ) {
@@ -1725,6 +1883,13 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     const stagedSparkyDir = path.join(stageResourcesDir, "sparky");
     yield* fs.makeDirectory(stagedSparkyDir, { recursive: true });
     yield* fs.copyFile(sparkyBinary, path.join(stagedSparkyDir, "sparky.exe"));
+
+    const cuaDriverDir = yield* resolveBundledCuaDriver({
+      repoRoot,
+      arch: options.arch === "arm64" ? "arm64" : "x64",
+      overridePath: options.cuaDriver,
+    });
+    yield* fs.copy(cuaDriverDir, path.join(stageResourcesDir, "cua-driver"));
   } else if (options.platform === "mac") {
     const rustTarget = options.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
     const targetedBinary = path.resolve(
@@ -2049,6 +2214,12 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   wslPrebuild: Flag.string("wsl-prebuild").pipe(
     Flag.withDescription(
       "Path to a prebuilt Linux node-pty (pty.node) for the target arch, staged for the WSL backend (env: T3CODE_DESKTOP_WSL_PREBUILD).",
+    ),
+    Flag.optional,
+  ),
+  cuaDriver: Flag.string("cua-driver").pipe(
+    Flag.withDescription(
+      "Path to a Cua Driver cua-driver.exe to bundle in place of the pinned release download (env: T3CODE_DESKTOP_CUA_DRIVER).",
     ),
     Flag.optional,
   ),

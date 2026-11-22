@@ -112,11 +112,13 @@ export function shouldShowInlineVoiceAction(input: {
 }
 
 /**
- * Normal speech can have RMS under 0.024 on noise-suppressed microphones.
- * Use a low floor with modest adaptation to the ambient noise level instead.
+ * Speech must be clearly louder than the room's own noise. The threshold follows the
+ * measured noise floor with no low cap: a fixed ceiling let steady noise such as a
+ * laptop fan count as speech, so the call never went quiet and nothing was transcribed.
+ * The floor sits at 0.0035 so a silent room still needs real sound to start a turn.
  */
 export function speechThreshold(noiseFloorRms: number): number {
-  return Math.max(0.0035, Math.min(0.025, noiseFloorRms * 2.8));
+  return Math.max(0.0035, Math.min(0.3, noiseFloorRms * 2.8));
 }
 
 /**

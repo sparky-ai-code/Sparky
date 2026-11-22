@@ -82,6 +82,7 @@ export function VoiceSession({
     let capture: Capture | null = null;
     let transcribing = false;
     let noiseFloor = 0.001;
+    let listenStartedAt = 0;
     let loudFrames = 0;
     let transcriber: LocalSpeechTranscriber | null = null;
     const wave = new Float32Array(2048);
@@ -209,7 +210,11 @@ export function VoiceSession({
         return;
       }
       if (transcribing || needsAttentionRef.current) return;
-      if (!talking) noiseFloor = noiseFloor * 0.98 + rms * 0.02;
+      // Learn the room's noise before any turn can start: fast for the first two seconds,
+      // then slowly, so steady noise such as a fan is already in the floor.
+      const learning = now - listenStartedAt < 2_000;
+      if (!talking) noiseFloor = learning ? noiseFloor * 0.9 + rms * 0.1 : noiseFloor * 0.98 + rms * 0.02;
+      if (learning) return;
       const threshold = talking ? bargeInThreshold(noiseFloor) : speechThreshold(noiseFloor);
       loudFrames = rms > threshold ? loudFrames + 1 : 0;
       if (loudFrames >= 2) {
@@ -246,6 +251,7 @@ export function VoiceSession({
           if (!closed) onReadyRef.current();
         }, fail);
         // A timer, not requestAnimationFrame: frames stop while the window is hidden.
+        listenStartedAt = performance.now();
         timer = window.setInterval(listen, 30);
       } catch (error) {
         fail(error);

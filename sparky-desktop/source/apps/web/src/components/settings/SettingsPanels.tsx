@@ -109,6 +109,17 @@ const THEME_OPTIONS = [
   },
 ] as const;
 
+const SIDEBAR_LAYOUT_OPTIONS = [
+  {
+    value: "vertical",
+    label: "Vertical",
+  },
+  {
+    value: "horizontal",
+    label: "Horizontal",
+  },
+] as const;
+
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
   "12-hour": "12-hour",
@@ -485,6 +496,7 @@ export function GeneralSettingsPanel() {
   const sidebarThreadsGroupedByProject = useClientSettings(
     (clientSettings) => clientSettings.sidebarThreadsGroupedByProject,
   );
+  const sidebarLayout = useClientSettings((clientSettings) => clientSettings.sidebarLayout);
   const updateClientSettings = useUpdateClientSettings();
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
@@ -585,6 +597,35 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Group threads by project"
             />
+          }
+        />
+
+        <SettingsRow
+          title="Sidebar buttons"
+          description="Stack New chat, Schedule and Search vertically with labels, or show them as a compact icon row directly above your threads."
+          control={
+            <Select
+              value={sidebarLayout}
+              onValueChange={(value) => {
+                if (value === "vertical" || value === "horizontal") {
+                  updateClientSettings({ sidebarLayout: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Sidebar buttons layout">
+                <SelectValue>
+                  {SIDEBAR_LAYOUT_OPTIONS.find((option) => option.value === sidebarLayout)?.label ??
+                    "Vertical"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {SIDEBAR_LAYOUT_OPTIONS.map((option) => (
+                  <SelectItem hideIndicator key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
 

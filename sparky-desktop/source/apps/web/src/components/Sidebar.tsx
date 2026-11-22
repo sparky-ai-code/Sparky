@@ -3527,6 +3527,92 @@ interface SidebarProjectsContentProps {
   projectsLength: number;
 }
 
+const SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS =
+  "inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0";
+
+interface SidebarIconActionsProps {
+  readonly isSchedulesActive: boolean;
+  readonly newThreadShortcutLabel: string | null;
+  readonly commandPaletteShortcutLabel: string | null;
+  readonly onNewChat: () => void;
+  readonly onSchedulesClick: () => void;
+}
+
+// Icon-only counterpart of the New chat / Schedule / Search rows used by the
+// "horizontal" sidebar layout. Labels move into tooltips and aria-labels.
+const SidebarIconActions = memo(function SidebarIconActions(props: SidebarIconActionsProps) {
+  const {
+    isSchedulesActive,
+    newThreadShortcutLabel,
+    commandPaletteShortcutLabel,
+    onNewChat,
+    onSchedulesClick,
+  } = props;
+
+  return (
+    <div className="flex items-center gap-1" data-testid="sidebar-icon-actions">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Create new chat"
+              data-testid="sidebar-new-chat-trigger"
+              className={SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS}
+              onClick={onNewChat}
+            />
+          }
+        >
+          <SquarePenIcon className="size-4" />
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">
+          New chat{newThreadShortcutLabel ? ` (${newThreadShortcutLabel})` : null}
+        </TooltipPopup>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Open scheduled tasks"
+              aria-current={isSchedulesActive ? "page" : undefined}
+              data-testid="sidebar-schedules-trigger"
+              className={cn(
+                SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS,
+                isSchedulesActive && "bg-accent text-foreground",
+              )}
+              onClick={onSchedulesClick}
+            />
+          }
+        >
+          <CalendarClockIcon className="size-4" />
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">Schedule</TooltipPopup>
+      </Tooltip>
+      <Tooltip>
+        {/* The dialog trigger is wrapped so the tooltip never has to merge props into it. */}
+        <TooltipTrigger render={<span className="inline-flex" />}>
+          <CommandDialogTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Search"
+                data-testid="command-palette-trigger"
+                className={SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS}
+              />
+            }
+          >
+            <SearchIcon className="size-4" />
+          </CommandDialogTrigger>
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">
+          Search{commandPaletteShortcutLabel ? ` (${commandPaletteShortcutLabel})` : null}
+        </TooltipPopup>
+      </Tooltip>
+    </div>
+  );
+});
+
 const SidebarProjectsContent = memo(function SidebarProjectsContent(
   props: SidebarProjectsContentProps,
 ) {
@@ -3577,6 +3663,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
   const sidebarThreadsGroupedByProject = useClientSettings(
     (settings) => settings.sidebarThreadsGroupedByProject,
   );
+  const sidebarLayout = useClientSettings((settings) => settings.sidebarLayout);
   const handleSchedulesClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -3612,57 +3699,67 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
   return (
     <SidebarContent className="gap-0">
       <SidebarGroup className="px-2 pt-2 pb-1">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size="sm"
-              className="gap-2 bg-transparent px-2 py-1.5 font-medium text-muted-foreground/80 outline-none hover:bg-white/5 hover:text-foreground focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
-              data-testid="sidebar-new-chat-trigger"
-              aria-label="Create new chat"
-              onClick={handleNewChat}
-            >
-              <SquarePenIcon className="size-3.5" />
-              <span className="flex-1 truncate text-left text-xs">New chat</span>
-              {newThreadShortcutLabel ? (
-                <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">
-                  {newThreadShortcutLabel}
-                </Kbd>
-              ) : null}
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size="sm"
-              isActive={pathname === "/schedules"}
-              className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
-              data-testid="sidebar-schedules-trigger"
-              aria-label="Open scheduled tasks"
-              onClick={handleSchedulesClick}
-            >
-              <CalendarClockIcon className="size-3.5 text-muted-foreground/70" />
-              <span className="flex-1 truncate text-left text-xs">Schedule</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <CommandDialogTrigger
-              render={
-                <SidebarMenuButton
-                  size="sm"
-                  className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
-                  data-testid="command-palette-trigger"
-                />
-              }
-            >
-              <SearchIcon className="size-3.5 text-muted-foreground/70" />
-              <span className="flex-1 truncate text-left text-xs">Search</span>
-              {commandPaletteShortcutLabel ? (
-                <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">
-                  {commandPaletteShortcutLabel}
-                </Kbd>
-              ) : null}
-            </CommandDialogTrigger>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        {sidebarLayout === "horizontal" ? (
+          <SidebarIconActions
+            isSchedulesActive={pathname === "/schedules"}
+            newThreadShortcutLabel={newThreadShortcutLabel}
+            commandPaletteShortcutLabel={commandPaletteShortcutLabel}
+            onNewChat={handleNewChat}
+            onSchedulesClick={handleSchedulesClick}
+          />
+        ) : (
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                size="sm"
+                className="gap-2 bg-transparent px-2 py-1.5 font-medium text-muted-foreground/80 outline-none hover:bg-white/5 hover:text-foreground focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                data-testid="sidebar-new-chat-trigger"
+                aria-label="Create new chat"
+                onClick={handleNewChat}
+              >
+                <SquarePenIcon className="size-3.5" />
+                <span className="flex-1 truncate text-left text-xs">New chat</span>
+                {newThreadShortcutLabel ? (
+                  <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">
+                    {newThreadShortcutLabel}
+                  </Kbd>
+                ) : null}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                size="sm"
+                isActive={pathname === "/schedules"}
+                className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
+                data-testid="sidebar-schedules-trigger"
+                aria-label="Open scheduled tasks"
+                onClick={handleSchedulesClick}
+              >
+                <CalendarClockIcon className="size-3.5 text-muted-foreground/70" />
+                <span className="flex-1 truncate text-left text-xs">Schedule</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <CommandDialogTrigger
+                render={
+                  <SidebarMenuButton
+                    size="sm"
+                    className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
+                    data-testid="command-palette-trigger"
+                  />
+                }
+              >
+                <SearchIcon className="size-3.5 text-muted-foreground/70" />
+                <span className="flex-1 truncate text-left text-xs">Search</span>
+                {commandPaletteShortcutLabel ? (
+                  <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">
+                    {commandPaletteShortcutLabel}
+                  </Kbd>
+                ) : null}
+              </CommandDialogTrigger>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        )}
       </SidebarGroup>
       {showArm64IntelBuildWarning && arm64IntelBuildWarningDescription ? (
         <SidebarGroup className="px-2 pt-2 pb-0">

@@ -29,6 +29,12 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
+// "vertical": labeled New chat / Schedule / Search rows.
+// "horizontal": icon-only buttons in one row, with the thread list directly below.
+export const SidebarLayout = Schema.Literals(["vertical", "horizontal"]);
+export type SidebarLayout = typeof SidebarLayout.Type;
+export const DEFAULT_SIDEBAR_LAYOUT: SidebarLayout = "vertical";
+
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
   "repository_path",
@@ -115,6 +121,9 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   sidebarThreadsGroupedByProject: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  sidebarLayout: SidebarLayout.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_LAYOUT)),
   ),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
@@ -712,6 +721,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   sidebarThreadsGroupedByProject: Schema.optionalKey(Schema.Boolean),
+  sidebarLayout: Schema.optionalKey(SidebarLayout),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   streamingTextAnimation: Schema.optionalKey(StreamingTextAnimation),
   pullRequestReviewModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),

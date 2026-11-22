@@ -3551,10 +3551,7 @@ const SidebarIconActions = memo(function SidebarIconActions(props: SidebarIconAc
   } = props;
 
   return (
-    <div
-      className="flex items-center justify-center gap-1"
-      data-testid={SIDEBAR_ICON_ACTIONS_TESTID}
-    >
+    <div className="flex items-center gap-1" data-testid={SIDEBAR_ICON_ACTIONS_TESTID}>
       <Tooltip>
         <TooltipTrigger
           render={

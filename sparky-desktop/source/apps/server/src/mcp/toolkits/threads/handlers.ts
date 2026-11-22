@@ -19,7 +19,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
-import { getMcpInputSchema } from "./toolInputSchema.ts";
+import { getMcpInputSchema } from "../../toolInputSchema.ts";
 
 import { GitWorkflowService } from "../../../git/GitWorkflowService.ts";
 import { ProviderRegistry } from "../../../provider/Services/ProviderRegistry.ts";

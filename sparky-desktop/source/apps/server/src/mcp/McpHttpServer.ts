@@ -8,6 +8,7 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import type * as Types from "effect/Types";
 import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
+import { getMcpInputSchema } from "./toolInputSchema.ts";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -142,7 +143,7 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
     tool: new McpSchema.Tool({
       name: tool.name,
       description: Tool.getDescription(tool),
-      inputSchema: Tool.getJsonSchema(tool),
+      inputSchema: getMcpInputSchema(tool),
       annotations: {
         ...Context.getOption(tool.annotations, Tool.Title).pipe(
           Option.map((title) => ({ title })),
@@ -237,7 +238,7 @@ const registerPullRequestReview = Effect.fn("McpHttpServer.registerPullRequestRe
       tool: new McpSchema.Tool({
         name: tool.name,
         description: Tool.getDescription(tool),
-        inputSchema: Tool.getJsonSchema(tool),
+        inputSchema: getMcpInputSchema(tool),
         annotations: {
           ...Context.getOption(tool.annotations, Tool.Title).pipe(
             Option.map((title) => ({ title })),

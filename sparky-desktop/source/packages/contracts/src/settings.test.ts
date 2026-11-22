@@ -64,8 +64,8 @@ describe("ClientSettings sidebar grouping", () => {
 });
 
 describe("ClientSettings sidebar layout", () => {
-  it("defaults to the vertical layout", () => {
-    expect(decodeClientSettings({}).sidebarLayout).toBe("vertical");
+  it("defaults to the focused (horizontal) layout", () => {
+    expect(decodeClientSettings({}).sidebarLayout).toBe("horizontal");
   });
 
   it("accepts horizontal layout patches and rejects unknown layouts", () => {

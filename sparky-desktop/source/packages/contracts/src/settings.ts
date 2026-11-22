@@ -33,7 +33,7 @@ export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "update
 // "horizontal": icon-only buttons in one row, with the thread list directly below.
 export const SidebarLayout = Schema.Literals(["vertical", "horizontal"]);
 export type SidebarLayout = typeof SidebarLayout.Type;
-export const DEFAULT_SIDEBAR_LAYOUT: SidebarLayout = "vertical";
+export const DEFAULT_SIDEBAR_LAYOUT: SidebarLayout = "horizontal";
 
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",

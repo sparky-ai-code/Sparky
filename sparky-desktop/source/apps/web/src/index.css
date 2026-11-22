@@ -1306,3 +1306,191 @@ label:has(> select#reasoning-effort) select {
   opacity: 0.3;
   pointer-events: none;
 }
+
+/* Horizontal sidebar row: hover motion for its five icons (sidebar/SidebarRowIcons.tsx).
+   Animations run only while the button is hovered, and never when the user prefers reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .sidebar-row-icon-write,
+  .sidebar-row-icon-hour,
+  .sidebar-row-icon-minute,
+  .sidebar-row-icon-ripple,
+  .sidebar-row-icon-scan,
+  .sidebar-row-icon-knob,
+  .sidebar-row-icon-pop {
+    transform-box: view-box;
+  }
+
+  /* New chat: the pencil scribbles back and forth along its own diagonal. */
+  .sidebar-row-action:hover .sidebar-row-icon-write {
+    transform-origin: 6px 10px;
+    animation: sidebar-row-write 0.9s ease-in-out infinite;
+  }
+
+  /* Pull requests: the branch draws from the source node to the target, the arrowhead
+     lands last, and the target node pops in. Plays once per hover. */
+  .sidebar-row-action:hover .sidebar-row-icon-draw {
+    animation: sidebar-row-draw 0.6s ease-out forwards;
+  }
+  .sidebar-row-action:hover .sidebar-row-icon-arrow {
+    animation: sidebar-row-arrive 0.25s ease-out 0.5s both;
+  }
+  .sidebar-row-action:hover .sidebar-row-icon-pop {
+    transform-origin: 12px 12px;
+    animation: sidebar-row-pop 0.35s cubic-bezier(0.3, 1.5, 0.5, 1) 0.25s both;
+  }
+
+  /* Plugins: the puzzle knob lifts out of the piece and settles back, on a steady loop. */
+  .sidebar-row-action:hover .sidebar-row-icon-knob {
+    animation: sidebar-row-knob 1s ease-in-out infinite;
+  }
+
+  /* Schedule: the minute hand ticks in steps; the hour hand drifts around slowly. */
+  .sidebar-row-action:hover .sidebar-row-icon-minute {
+    transform-origin: 8px 8px;
+    animation: sidebar-row-tick 1s steps(1, end) infinite;
+  }
+  .sidebar-row-action:hover .sidebar-row-icon-hour {
+    transform-origin: 8px 8px;
+    animation: sidebar-row-spin 12s linear infinite;
+  }
+
+  /* Search: a ripple expands from the lens and a scan line sweeps inside it. */
+  .sidebar-row-action:hover .sidebar-row-icon-ripple {
+    transform-origin: 7.25px 7.25px;
+    animation: sidebar-row-ripple 1.4s ease-out infinite;
+  }
+  .sidebar-row-action:hover .sidebar-row-icon-scan {
+    animation: sidebar-row-scan 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes sidebar-row-write {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  30% {
+    transform: translate(-1px, 1px) rotate(-6deg);
+  }
+  60% {
+    transform: translate(0.6px, -0.6px) rotate(4deg);
+  }
+  85% {
+    transform: translate(-0.4px, 0.4px) rotate(-2deg);
+  }
+}
+
+@keyframes sidebar-row-draw {
+  from {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes sidebar-row-arrive {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sidebar-row-pop {
+  from {
+    transform: scale(0.3);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes sidebar-row-knob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1.5px);
+  }
+}
+
+@keyframes sidebar-row-tick {
+  0% {
+    transform: rotate(0deg);
+  }
+  8.33% {
+    transform: rotate(30deg);
+  }
+  16.66% {
+    transform: rotate(60deg);
+  }
+  25% {
+    transform: rotate(90deg);
+  }
+  33.33% {
+    transform: rotate(120deg);
+  }
+  41.66% {
+    transform: rotate(150deg);
+  }
+  50% {
+    transform: rotate(180deg);
+  }
+  58.33% {
+    transform: rotate(210deg);
+  }
+  66.66% {
+    transform: rotate(240deg);
+  }
+  75% {
+    transform: rotate(270deg);
+  }
+  83.33% {
+    transform: rotate(300deg);
+  }
+  91.66% {
+    transform: rotate(330deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sidebar-row-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sidebar-row-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@keyframes sidebar-row-scan {
+  0%,
+  100% {
+    transform: translateY(-2px);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(2px);
+  }
+}

@@ -1,6 +1,7 @@
 {
   "name": "sparky-analytics",
   "private": true,
+  "license": "MIT",
   "version": "1.0.0",
   "scripts": {
     "check": "tsc --noEmit",

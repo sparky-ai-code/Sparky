@@ -29,6 +29,12 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
+// "vertical": labeled New chat / Schedule / Search rows.
+// "horizontal": icon-only buttons in one row, with the thread list directly below.
+export const SidebarLayout = Schema.Literals(["vertical", "horizontal"]);
+export type SidebarLayout = typeof SidebarLayout.Type;
+export const DEFAULT_SIDEBAR_LAYOUT: SidebarLayout = "horizontal";
+
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
   "repository_path",
@@ -115,6 +121,9 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   sidebarThreadsGroupedByProject: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  sidebarLayout: SidebarLayout.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_LAYOUT)),
   ),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
@@ -456,8 +465,16 @@ export const McpServerConfig = Schema.Struct({
 });
 export type McpServerConfig = typeof McpServerConfig.Type;
 
+export const ComputerUseSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  customInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  cursorThemeId: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("cua.default"))),
+});
+export type ComputerUseSettings = typeof ComputerUseSettings.Type;
+
 export const ServerSettings = Schema.Struct({
   mcpServers: Schema.Array(McpServerConfig).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  computerUse: ComputerUseSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   customInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   sparkyPersonality: SparkyPersonality.pipe(
     Schema.withDecodingDefault(Effect.succeed("coding" as const)),
@@ -570,6 +587,12 @@ const ModelSelectionPatch = Schema.Struct({
   options: Schema.optionalKey(ProviderOptionSelections),
 });
 
+const ComputerUseSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  customInstructions: Schema.optionalKey(TrimmedString),
+  cursorThemeId: Schema.optionalKey(TrimmedString),
+});
+
 const CodexSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
@@ -621,6 +644,7 @@ const CheckpointSettingsPatch = Schema.Struct({
 
 export const ServerSettingsPatch = Schema.Struct({
   mcpServers: Schema.optionalKey(Schema.Array(McpServerConfig)),
+  computerUse: Schema.optionalKey(ComputerUseSettingsPatch),
   // Server settings
   customInstructions: Schema.optionalKey(TrimmedString),
   sparkyPersonality: Schema.optionalKey(SparkyPersonality),
@@ -698,6 +722,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   sidebarThreadsGroupedByProject: Schema.optionalKey(Schema.Boolean),
+  sidebarLayout: Schema.optionalKey(SidebarLayout),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   streamingTextAnimation: Schema.optionalKey(StreamingTextAnimation),
   pullRequestReviewModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),

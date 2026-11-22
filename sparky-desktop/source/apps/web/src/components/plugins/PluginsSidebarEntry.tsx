@@ -1,42 +1,29 @@
-import { PlugZapIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
+import { useClientSettings } from "~/hooks/useSettings";
+import {
+  findOrCreateSidebarEntryHost,
+  SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS,
+} from "../sidebar/sidebarEntryHost";
+import { SidebarPluginsIcon } from "../sidebar/SidebarRowIcons";
 import { SidebarMenuButton, useSidebar } from "../ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const HOST_ATTRIBUTE = "data-plugins-sidebar-host";
-
-function findOrCreateHost(): HTMLElement | null {
-  const scheduleTrigger = document.querySelector<HTMLElement>(
-    '[data-testid="sidebar-schedules-trigger"]',
-  );
-  const scheduleItem = scheduleTrigger?.closest<HTMLElement>('[data-slot="sidebar-menu-item"]');
-  const menu = scheduleItem?.parentElement;
-  if (!scheduleItem || !menu) return null;
-
-  const existing = menu.querySelector<HTMLElement>(`[${HOST_ATTRIBUTE}]`);
-  if (existing) return existing;
-
-  const host = document.createElement("li");
-  host.setAttribute(HOST_ATTRIBUTE, "");
-  host.setAttribute("data-slot", "sidebar-menu-item");
-  host.setAttribute("data-sidebar", "menu-item");
-  host.className = scheduleItem.className;
-  menu.insertBefore(host, scheduleItem);
-  return host;
-}
 
 export function PluginsSidebarEntry() {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { isMobile, setOpenMobile } = useSidebar();
+  const horizontal = useClientSettings((settings) => settings.sidebarLayout) === "horizontal";
   const [host, setHost] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     let currentHost: HTMLElement | null = null;
     const attach = () => {
-      const nextHost = findOrCreateHost();
+      const nextHost = findOrCreateSidebarEntryHost({ hostAttribute: HOST_ATTRIBUTE, horizontal });
       if (nextHost === currentHost) return;
       currentHost = nextHost;
       setHost(nextHost);
@@ -47,8 +34,9 @@ export function PluginsSidebarEntry() {
     return () => {
       observer.disconnect();
       currentHost?.remove();
+      setHost(null);
     };
-  }, []);
+  }, [horizontal]);
 
   const handleClick = useCallback(() => {
     if (isMobile) setOpenMobile(false);
@@ -57,16 +45,39 @@ export function PluginsSidebarEntry() {
 
   if (!host) return null;
 
+  if (horizontal) {
+    return createPortal(
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Open plugins"
+              aria-current={pathname === "/plugins" ? "page" : undefined}
+              data-testid="sidebar-plugins-trigger"
+              className={SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS}
+              onClick={handleClick}
+            />
+          }
+        >
+          <SidebarPluginsIcon className="size-4" />
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">Plugins</TooltipPopup>
+      </Tooltip>,
+      host,
+    );
+  }
+
   return createPortal(
     <SidebarMenuButton
       size="sm"
       isActive={pathname === "/plugins"}
-      className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
+      className="sidebar-row-action gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
       data-testid="sidebar-plugins-trigger"
       aria-label="Open plugins"
       onClick={handleClick}
     >
-      <PlugZapIcon className="size-3.5 text-muted-foreground/70" />
+      <SidebarPluginsIcon className="size-3.5 text-muted-foreground/70" />
       <span className="flex-1 truncate text-left text-xs">Plugins</span>
     </SidebarMenuButton>,
     host,

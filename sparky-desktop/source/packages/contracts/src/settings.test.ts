@@ -63,6 +63,19 @@ describe("ClientSettings sidebar grouping", () => {
   });
 });
 
+describe("ClientSettings sidebar layout", () => {
+  it("defaults to the focused (horizontal) layout", () => {
+    expect(decodeClientSettings({}).sidebarLayout).toBe("horizontal");
+  });
+
+  it("accepts horizontal layout patches and rejects unknown layouts", () => {
+    expect(decodeClientSettingsPatch({ sidebarLayout: "horizontal" }).sidebarLayout).toBe(
+      "horizontal",
+    );
+    expect(() => decodeClientSettingsPatch({ sidebarLayout: "grid" })).toThrow();
+  });
+});
+
 describe("ClientSettings streaming text animation", () => {
   it("defaults legacy settings to fade and lift", () => {
     expect(decodeClientSettings({}).streamingTextAnimation).toBe("lift");
@@ -280,5 +293,33 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.addProjectBaseDirectory).toBe("~/Development");
     expect(encoded.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
+  });
+});
+
+describe("ServerSettings computer use", () => {
+  it("defaults computer use to disabled with safe instructions and cursor theme values", () => {
+    expect(decodeServerSettings({}).computerUse).toEqual({
+      enabled: false,
+      customInstructions: "",
+      cursorThemeId: "cua.default",
+    });
+  });
+
+  it("accepts nested computer-use setting patches and trims text values", () => {
+    expect(
+      decodeServerSettingsPatch({
+        computerUse: {
+          enabled: true,
+          customInstructions: "  Ask before submitting forms.  ",
+          cursorThemeId: "  custom.cursor  ",
+        },
+      }),
+    ).toEqual({
+      computerUse: {
+        enabled: true,
+        customInstructions: "Ask before submitting forms.",
+        cursorThemeId: "custom.cursor",
+      },
+    });
   });
 });

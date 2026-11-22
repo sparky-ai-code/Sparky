@@ -35,6 +35,7 @@ const clientSettings: ClientSettings = {
   sidebarThreadSortOrder: "created_at",
   sidebarThreadPreviewCount: 6,
   sidebarThreadsGroupedByProject: false,
+  sidebarLayout: "horizontal",
   streamingTextAnimation: "lift",
   timestampFormat: "24-hour",
   modelSelectorStyle: "menu",

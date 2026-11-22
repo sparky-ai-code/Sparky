@@ -17,6 +17,7 @@ import {
   deriveWorkLogEntries,
   findLatestProposedPlan,
   findSidebarProposedPlan,
+  formatDuration,
   hasActionableProposedPlan,
   isLatestTurnSettled,
   workEntryIndicatesToolFailure,
@@ -1882,6 +1883,20 @@ describe("derivePhase", () => {
     expect(
       derivePhase(makeTestSession()),
     ).toBe("ready");
+  });
+});
+
+describe("formatDuration", () => {
+  it("starts at zero and never displays milliseconds or fractional seconds", () => {
+    expect(formatDuration(0)).toBe("0s");
+    expect(formatDuration(999)).toBe("0s");
+    expect(formatDuration(1_000)).toBe("1s");
+    expect(formatDuration(1_999)).toBe("1s");
+  });
+
+  it("formats longer durations using whole seconds", () => {
+    expect(formatDuration(60_999)).toBe("1m");
+    expect(formatDuration(61_999)).toBe("1m 1s");
   });
 });
 

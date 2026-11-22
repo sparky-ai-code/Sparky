@@ -8,12 +8,14 @@ import {
   BrainIcon,
   GaugeIcon,
   KeyboardIcon,
+  MousePointer2Icon,
   PlugZapIcon,
   SearchIcon,
   Settings2Icon,
 } from "lucide-react";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 
+import { isElectron } from "../../env";
 import { McpIcon } from "./McpIcon";
 import {
   SidebarContent,
@@ -29,6 +31,7 @@ import {
 
 export type SettingsSectionPath =
   | "/settings/general"
+  | "/settings/computer-use"
   | "/settings/personalize"
   | "/settings/appearance"
   | "/settings/keybindings"
@@ -46,6 +49,12 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   icon: ComponentType<{ className?: string }>;
 }> = [
   { label: "General", section: "Your workspace", to: "/settings/general", icon: Settings2Icon },
+  {
+    label: "Computer use",
+    section: "Your workspace",
+    to: "/settings/computer-use",
+    icon: MousePointer2Icon,
+  },
   {
     label: "Personalize",
     section: "Your workspace",
@@ -79,8 +88,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const canGoBack = useCanGoBack();
   const { isMobile, setOpenMobile } = useSidebar();
   const [search, setSearch] = useState("");
-  const filteredItems = SETTINGS_NAV_ITEMS.filter((item) =>
-    item.label.toLowerCase().includes(search.trim().toLowerCase()),
+  const filteredItems = SETTINGS_NAV_ITEMS.filter(
+    (item) =>
+      (isElectron || item.to !== "/settings/computer-use") &&
+      item.label.toLowerCase().includes(search.trim().toLowerCase()),
   );
   const handleSectionClick = useCallback(
     (to: SettingsSectionPath) => {

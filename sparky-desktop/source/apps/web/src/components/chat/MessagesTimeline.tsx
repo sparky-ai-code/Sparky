@@ -20,6 +20,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
+  type ComponentType,
 } from "react";
 import { flushSync } from "react-dom";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
@@ -74,8 +75,43 @@ import {
   WrenchIcon,
   XIcon,
   ZapIcon,
+  ActivityIcon,
+  AppWindowIcon,
+  ArrowDownUpIcon,
+  BugIcon,
+  CommandIcon,
+  CrosshairIcon,
+  DownloadIcon,
+  HistoryIcon,
+  LayoutGridIcon,
+  ListTreeIcon,
+  LogOutIcon,
+  MenuIcon,
+  MonitorIcon,
+  MouseIcon,
+  MousePointerIcon,
+  MousePointer2Icon,
+  MoveIcon,
+  PaletteIcon,
+  PanelsTopLeftIcon,
+  PowerIcon,
+  RadioIcon,
+  RefreshCwIcon,
+  RocketIcon,
+  RouteIcon,
+  ScanEyeIcon,
+  SettingsIcon,
+  ShieldCheckIcon,
+  SlidersHorizontalIcon,
+  SquareIcon,
+  TextCursorInputIcon,
+  ToggleRightIcon,
+  TypeIcon,
+  VideoIcon,
+  ZoomInIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
+import { type ComputerUseIconName, resolveComputerUseAction } from "./computerUseWorkEntry";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
@@ -86,6 +122,7 @@ import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
+  parseAgentThreadAttribution,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
@@ -903,9 +940,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const ctx = use(TimelineRowCtx);
   const userImages = row.message.attachments ?? [];
   const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
+  const agentAttribution = parseAgentThreadAttribution(row.message.text);
   const terminalContexts = ctx.workspaceContextEnabled ? displayedUserMessage.contexts : [];
   const previewAnnotations: ParsedPreviewAnnotation[] = [];
-  let visibleText = displayedUserMessage.visibleText;
+  let visibleText = agentAttribution?.message ?? displayedUserMessage.visibleText;
   if (ctx.workspaceContextEnabled) {
     while (true) {
       const extracted = extractTrailingPreviewAnnotation(visibleText);
@@ -935,6 +973,16 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         </div>
       ) : null}
       <div className="relative max-w-[80%] rounded-2xl border border-border bg-secondary p-3">
+        {agentAttribution ? (
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+            <MessagesSquareIcon className="size-3.5" aria-hidden="true" />
+            <span>Sparky from another chat</span>
+            <span aria-hidden="true">·</span>
+            <span className="max-w-[15rem] truncate" title={agentAttribution.threadId}>
+              {agentAttribution.threadId}
+            </span>
+          </div>
+        ) : null}
         {regularImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
             {regularImages.map((image: NonNullable<TimelineMessage["attachments"]>[number]) => (
@@ -1993,9 +2041,51 @@ type WorkEntryIconName =
   | "trash-2"
   | "wrench"
   | "x"
-  | "zap";
+  | "zap"
+  | ComputerUseIconName;
+
+const COMPUTER_USE_ICON_COMPONENTS: Partial<
+  Record<ComputerUseIconName, ComponentType<{ className?: string; "aria-hidden"?: boolean }>>
+> = {
+  "mouse-pointer-2": MousePointer2Icon,
+  "mouse-pointer": MousePointerIcon,
+  mouse: MouseIcon,
+  menu: MenuIcon,
+  move: MoveIcon,
+  type: TypeIcon,
+  command: CommandIcon,
+  "text-cursor-input": TextCursorInputIcon,
+  "arrow-down-up": ArrowDownUpIcon,
+  "layout-grid": LayoutGridIcon,
+  "panels-top-left": PanelsTopLeftIcon,
+  "scan-eye": ScanEyeIcon,
+  rocket: RocketIcon,
+  power: PowerIcon,
+  bug: BugIcon,
+  "app-window": AppWindowIcon,
+  monitor: MonitorIcon,
+  crosshair: CrosshairIcon,
+  "toggle-right": ToggleRightIcon,
+  route: RouteIcon,
+  palette: PaletteIcon,
+  "shield-check": ShieldCheckIcon,
+  activity: ActivityIcon,
+  "sliders-horizontal": SlidersHorizontalIcon,
+  settings: SettingsIcon,
+  "list-tree": ListTreeIcon,
+  "zoom-in": ZoomInIcon,
+  video: VideoIcon,
+  square: SquareIcon,
+  radio: RadioIcon,
+  history: HistoryIcon,
+  download: DownloadIcon,
+  "log-out": LogOutIcon,
+  "refresh-cw": RefreshCwIcon,
+};
 
 function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; className: string }) {
+  const ComputerUseIcon = COMPUTER_USE_ICON_COMPONENTS[name as ComputerUseIconName];
+  if (ComputerUseIcon) return <ComputerUseIcon className={className} aria-hidden />;
   switch (name) {
     case "bot":
       return <BotIcon className={className} aria-hidden />;
@@ -2083,6 +2173,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <XIcon className={className} aria-hidden />;
     case "zap":
       return <ZapIcon className={className} aria-hidden />;
+    default:
+      return null;
   }
 }
 
@@ -2480,6 +2572,8 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
+  const computerUseAction = resolveComputerUseAction(workEntry.toolName, workEntry.toolData);
+  if (computerUseAction) return computerUseAction.icon;
   const toolIconName = resolveWorkEntryToolIconName(workEntry.toolName);
   if (toolIconName) return toolIconName;
   if (workEntry.requestKind === "command") return "terminal";
@@ -2533,6 +2627,8 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  const computerUseAction = resolveComputerUseAction(workEntry.toolName, workEntry.toolData);
+  if (computerUseAction) return computerUseAction.label;
   switch (workEntry.toolName?.trim().toLowerCase()) {
     case "sparky_threads_list":
       return "List threads";

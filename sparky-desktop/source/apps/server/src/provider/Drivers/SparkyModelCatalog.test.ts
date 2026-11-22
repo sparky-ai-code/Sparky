@@ -187,7 +187,7 @@ describe("discoverSparkyModels", () => {
       return jsonResponse({
         models: [
           {
-            slug: "gpt-6.1-sol",
+            slug: "gpt-6.2-sol",
             display_name: "GPT Live",
             visibility: "list",
             context_window: 272_000,
@@ -202,6 +202,7 @@ describe("discoverSparkyModels", () => {
               { effort: "ultra", description: "Codex-only delegation" },
             ],
           },
+          { slug: "gpt-6.2-astra", display_name: "Astra Live", visibility: "list" },
           { slug: "old-retired-model", visibility: "hidden" },
         ],
       });
@@ -212,6 +213,8 @@ describe("discoverSparkyModels", () => {
         SPARKY_CODEX_HOME: authDirectory,
       });
       expect(models.map((model) => model.id)).toEqual([
+        "gpt-6.2-sol",
+        "gpt-6.2-astra",
         "gpt-6.1-sol",
         "gpt-6.1-terra",
         "gpt-6-astra",
@@ -221,11 +224,12 @@ describe("discoverSparkyModels", () => {
         "gpt-5.6-terra",
         "gpt-5.6-luna",
       ]);
+      expect(models[1]).toMatchObject({ name: "GPT-6.2 Astra" });
       expect(models.find((model) => model.id === "gpt-6.1-terra")).toMatchObject({
         name: "GPT-6.1 Terra",
       });
       expect(models[0]).toMatchObject({
-        name: "GPT-6.1 Sol",
+        name: "GPT-6.2 Sol",
         reasoningSupported: true,
         reasoningEfforts: [
           { id: "low", description: "Fast" },
@@ -284,6 +288,8 @@ describe("discoverSparkyModels", () => {
         SPARKY_CODEX_HOME: authDirectory,
       });
       expect(models.map((model) => model.id)).toEqual([
+        "gpt-6.2-sol",
+        "gpt-6.2-astra",
         "gpt-6.1-sol",
         "gpt-6.1-terra",
         "gpt-6-astra",

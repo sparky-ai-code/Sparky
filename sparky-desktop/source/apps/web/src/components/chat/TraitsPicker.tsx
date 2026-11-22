@@ -16,7 +16,7 @@ import {
 } from "@sparky/shared/model";
 import { memo, useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { VariantProps } from "class-variance-authority";
-import { CheckIcon, ChevronDownIcon, ZapIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ZapIcon } from "../Hugeicons";
 import { Button, buttonVariants } from "../ui/button";
 import {
   Menu,

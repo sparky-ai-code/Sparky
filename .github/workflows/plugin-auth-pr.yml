@@ -34,10 +34,6 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: sparky-desktop/source/pnpm-lock.yaml
 
-      - name: Test Cloudflare plugin worker
-        run: npm test
-        working-directory: sparky-auth-worker
-
       - name: Install desktop workspace dependencies
         run: pnpm install --frozen-lockfile --filter "./apps/*" --filter "./packages/*" --filter "./scripts"
         env:

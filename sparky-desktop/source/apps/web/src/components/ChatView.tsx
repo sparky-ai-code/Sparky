@@ -44,6 +44,7 @@ import { nextTerminalId, resolveTerminalSessionLabel } from "@sparky/shared/term
 import { Debouncer } from "@tanstack/react-pacer";
 import { useAtomValue } from "@effect/atom-react";
 import {
+  type ComponentProps,
   lazy,
   memo,
   Suspense,
@@ -97,6 +98,7 @@ import {
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
 import { useUiStateStore } from "../uiStateStore";
+import { useOptimisticThreadActivity } from "../optimisticThreadActivity";
 import {
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
@@ -139,7 +141,6 @@ import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import PlanSidebar from "./PlanSidebar";
-import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { ChevronDownIcon, WifiOffIcon } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
@@ -357,6 +358,16 @@ const PreviewPanel = lazy(() =>
 );
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
+// The terminal drawer pulls in xterm, which is only needed once a terminal is open.
+// Loading it lazily keeps xterm out of the initial chat bundle.
+const LazyThreadTerminalDrawer = lazy(() => import("./ThreadTerminalDrawer"));
+function ThreadTerminalDrawer(props: ComponentProps<typeof LazyThreadTerminalDrawer>) {
+  return (
+    <Suspense fallback={null}>
+      <LazyThreadTerminalDrawer {...props} />
+    </Suspense>
+  );
+}
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   "input",
@@ -1289,6 +1300,7 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
+  const stopRequestedDuringDispatchRef = useRef(false);
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   useLayoutEffect(() => {
@@ -3532,37 +3544,39 @@ function ChatViewContent(props: ChatViewProps) {
         }
       }
 
+      // Runtime mode and interaction mode are independent fields, so send both
+      // in parallel instead of paying one serialized command round trip each
+      // before the turn can start. The model update above stays first.
+      const modeUpdates: Array<Promise<AtomCommandResult<void, unknown>>> = [];
       if (input.runtimeMode !== serverThread.runtimeMode) {
-        result = mapAtomCommandResult(
-          await setThreadRuntimeMode({
+        modeUpdates.push(
+          setThreadRuntimeMode({
             environmentId,
             input: {
               threadId: input.threadId,
               runtimeMode: input.runtimeMode,
               createdAt: input.createdAt,
             },
-          }),
-          () => undefined,
+          }).then((modeResult) => mapAtomCommandResult(modeResult, () => undefined)),
         );
-        if (result._tag === "Failure") {
-          return result;
-        }
       }
-
       if (input.interactionMode !== serverThread.interactionMode) {
-        result = mapAtomCommandResult(
-          await setThreadInteractionMode({
+        modeUpdates.push(
+          setThreadInteractionMode({
             environmentId,
             input: {
               threadId: input.threadId,
               interactionMode: input.interactionMode,
               createdAt: input.createdAt,
             },
-          }),
-          () => undefined,
+          }).then((modeResult) => mapAtomCommandResult(modeResult, () => undefined)),
         );
       }
-      return result;
+      if (modeUpdates.length === 0) {
+        return result;
+      }
+      const modeResults = await Promise.all(modeUpdates);
+      return modeResults.find((modeResult) => modeResult._tag === "Failure") ?? result;
     },
     [
       environmentId,
@@ -4459,6 +4473,9 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     sendInFlightRef.current = true;
+    // Start local working state before transitions or backend work so the timer
+    // begins as soon as the user submits, including while creating a worktree.
+    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
     if (isDraftHeroState && activeThreadKey) {
       let resolveDockStarted: (() => void) | undefined;
       const dockStarted = new Promise<void>((resolve) => {
@@ -4474,7 +4491,6 @@ function ChatViewContent(props: ChatViewProps) {
       void dockTransition.catch(() => resolveDockStarted?.());
       await dockStarted;
     }
-    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
@@ -4539,6 +4555,12 @@ function ChatViewContent(props: ChatViewProps) {
       messageId: messageIdForSend,
     });
     optimisticUserMessageThreadIdsRef.current.set(messageIdForSend, threadIdForSend);
+    useOptimisticThreadActivity
+      .getState()
+      .markThreadMessage(
+        scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
+        messageCreatedAt,
+      );
     setOptimisticUserMessages((existing) => [
       ...existing,
       {
@@ -4686,6 +4708,20 @@ function ChatViewContent(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        if (stopRequestedDuringDispatchRef.current) {
+          stopRequestedDuringDispatchRef.current = false;
+          const interruptResult = await interruptThreadTurn({
+            environmentId,
+            input: buildThreadTurnInterruptInput(activeThread),
+          });
+          if (interruptResult._tag === "Failure" && !isAtomCommandInterrupted(interruptResult)) {
+            const error = squashAtomCommandFailure(interruptResult);
+            setThreadError(
+              activeThread.id,
+              error instanceof Error ? error.message : "Failed to interrupt the current turn.",
+            );
+          }
+        }
       }
     }
 
@@ -4736,6 +4772,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     sendInFlightRef.current = false;
     if (!turnStartSucceeded) {
+      stopRequestedDuringDispatchRef.current = false;
       setDockedDraftHeroThreadKey((currentThreadKey) =>
         currentThreadKey === activeThreadKey ? null : currentThreadKey,
       );
@@ -4745,6 +4782,13 @@ function ChatViewContent(props: ChatViewProps) {
 
   const onInterrupt = async () => {
     if (!activeThread) return;
+    if (isSendBusy && phase !== "running") {
+      // The send request may still be starting the server turn. Remember the
+      // user's stop request and issue the real interrupt as soon as it is
+      // accepted, rather than losing the click to a not-yet-running backend.
+      stopRequestedDuringDispatchRef.current = true;
+      return;
+    }
     const result = await interruptThreadTurn({
       environmentId,
       input: buildThreadTurnInterruptInput(activeThread),

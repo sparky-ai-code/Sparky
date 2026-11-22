@@ -1,4 +1,4 @@
-import { MousePointerClick, X } from "lucide-react";
+import { MousePointerClickIcon as MousePointerClick, XIcon as X } from "../Hugeicons";
 
 import {
   COMPOSER_INLINE_CHIP_CLASS_NAME,

@@ -109,6 +109,18 @@ const THEME_OPTIONS = [
   },
 ] as const;
 
+// Stored values stay "vertical" (Full) and "horizontal" (Focused).
+const SIDEBAR_LAYOUT_OPTIONS = [
+  {
+    value: "vertical",
+    label: "Full",
+  },
+  {
+    value: "horizontal",
+    label: "Focused",
+  },
+] as const;
+
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
   "12-hour": "12-hour",
@@ -485,6 +497,7 @@ export function GeneralSettingsPanel() {
   const sidebarThreadsGroupedByProject = useClientSettings(
     (clientSettings) => clientSettings.sidebarThreadsGroupedByProject,
   );
+  const sidebarLayout = useClientSettings((clientSettings) => clientSettings.sidebarLayout);
   const updateClientSettings = useUpdateClientSettings();
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
@@ -585,6 +598,35 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Group threads by project"
             />
+          }
+        />
+
+        <SettingsRow
+          title="Sidebar layout"
+          description="Full lists every action with labels at the top. Focused keeps New chat at the top and moves the other actions to icons beside Settings."
+          control={
+            <Select
+              value={sidebarLayout}
+              onValueChange={(value) => {
+                if (value === "vertical" || value === "horizontal") {
+                  updateClientSettings({ sidebarLayout: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Sidebar layout">
+                <SelectValue>
+                  {SIDEBAR_LAYOUT_OPTIONS.find((option) => option.value === sidebarLayout)?.label ??
+                    "Full"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {SIDEBAR_LAYOUT_OPTIONS.map((option) => (
+                  <SelectItem hideIndicator key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
 

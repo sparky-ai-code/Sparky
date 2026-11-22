@@ -1442,7 +1442,7 @@ export function PullRequestsPage() {
                         key={pr.number}
                         type="button"
                         className={cn(
-                          "flex min-w-0 flex-1 items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors",
+                          "flex h-[104px] w-full shrink-0 min-w-0 items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors",
                           selected
                             ? "bg-muted text-foreground"
                             : "hover:bg-muted/50 hover:text-foreground",

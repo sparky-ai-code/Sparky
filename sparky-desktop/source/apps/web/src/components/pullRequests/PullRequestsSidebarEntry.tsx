@@ -8,6 +8,7 @@ import {
   findOrCreateSidebarEntryHost,
   SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS,
 } from "../sidebar/sidebarEntryHost";
+import { SidebarPullRequestsIcon } from "../sidebar/SidebarRowIcons";
 import { SidebarMenuButton, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -62,7 +63,7 @@ export function PullRequestsSidebarEntry() {
             />
           }
         >
-          <GitPullRequestIcon className="size-4" />
+          <SidebarPullRequestsIcon className="size-4" />
         </TooltipTrigger>
         <TooltipPopup side="bottom">Pull requests</TooltipPopup>
       </Tooltip>,

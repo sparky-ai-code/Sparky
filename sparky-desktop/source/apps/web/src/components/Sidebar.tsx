@@ -247,6 +247,11 @@ import {
   SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS,
   SIDEBAR_ICON_ACTIONS_TESTID,
 } from "./sidebar/sidebarEntryHost";
+import {
+  SidebarNewChatIcon,
+  SidebarScheduleIcon,
+  SidebarSearchIcon,
+} from "./sidebar/SidebarRowIcons";
 import { getModelProviderPresentation } from "./chat/providerIconUtils";
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
@@ -3564,7 +3569,7 @@ const SidebarIconActions = memo(function SidebarIconActions(props: SidebarIconAc
             />
           }
         >
-          <SquarePenIcon className="size-4" />
+          <SidebarNewChatIcon className="size-4" />
         </TooltipTrigger>
         <TooltipPopup side="bottom">
           New chat{newThreadShortcutLabel ? ` (${newThreadShortcutLabel})` : null}
@@ -3586,7 +3591,7 @@ const SidebarIconActions = memo(function SidebarIconActions(props: SidebarIconAc
             />
           }
         >
-          <CalendarClockIcon className="size-4" />
+          <SidebarScheduleIcon className="size-4" />
         </TooltipTrigger>
         <TooltipPopup side="bottom">Schedule</TooltipPopup>
       </Tooltip>
@@ -3603,7 +3608,7 @@ const SidebarIconActions = memo(function SidebarIconActions(props: SidebarIconAc
               />
             }
           >
-            <SearchIcon className="size-4" />
+            <SidebarSearchIcon className="size-4" />
           </CommandDialogTrigger>
         </TooltipTrigger>
         <TooltipPopup side="bottom">

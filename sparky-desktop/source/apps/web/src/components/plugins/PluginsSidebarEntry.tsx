@@ -8,6 +8,7 @@ import {
   findOrCreateSidebarEntryHost,
   SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS,
 } from "../sidebar/sidebarEntryHost";
+import { SidebarPluginsIcon } from "../sidebar/SidebarRowIcons";
 import { SidebarMenuButton, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -60,7 +61,7 @@ export function PluginsSidebarEntry() {
             />
           }
         >
-          <PlugZapIcon className="size-4" />
+          <SidebarPluginsIcon className="size-4" />
         </TooltipTrigger>
         <TooltipPopup side="bottom">Plugins</TooltipPopup>
       </Tooltip>,

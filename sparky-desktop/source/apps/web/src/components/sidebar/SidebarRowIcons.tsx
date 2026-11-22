@@ -51,12 +51,10 @@ export function SidebarPullRequestsIcon(props: RowIconProps) {
 export function SidebarPluginsIcon(props: RowIconProps) {
   return (
     <RowIcon {...props}>
-      <g className="sidebar-row-icon-plug">
-        <path d="M6 2.5v2.75" />
-        <path d="M10 2.5v2.75" />
-        <path d="M4.25 5.25h7.5v2a3.75 3.75 0 0 1-7.5 0z" />
-        <path d="M8 11v2.5" />
-      </g>
+      <path d="M6 2.5v2.75" />
+      <path d="M10 2.5v2.75" />
+      <path d="M4.25 5.25h7.5v2a3.75 3.75 0 0 1-7.5 0z" />
+      <path className="sidebar-row-icon-current" pathLength={1} d="M8 11v2.5" />
     </RowIcon>
   );
 }

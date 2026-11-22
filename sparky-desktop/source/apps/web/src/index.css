@@ -1311,7 +1311,6 @@ label:has(> select#reasoning-effort) select {
    Animations run only while the button is hovered, and never when the user prefers reduced motion. */
 @media (prefers-reduced-motion: no-preference) {
   .sidebar-row-icon-write,
-  .sidebar-row-icon-plug,
   .sidebar-row-icon-hour,
   .sidebar-row-icon-minute,
   .sidebar-row-icon-ripple,
@@ -1339,9 +1338,9 @@ label:has(> select#reasoning-effort) select {
     animation: sidebar-row-pop 0.35s cubic-bezier(0.3, 1.5, 0.5, 1) 0.25s both;
   }
 
-  /* Plugins: the plug slides straight down into its socket and stops. Plays once per hover. */
-  .sidebar-row-action:hover .sidebar-row-icon-plug {
-    animation: sidebar-row-plug-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  /* Plugins: power flows down the cable in a steady loop while hovered. */
+  .sidebar-row-action:hover .sidebar-row-icon-current {
+    animation: sidebar-row-current 0.6s linear infinite;
   }
 
   /* Schedule: the minute hand ticks in steps; the hour hand drifts around slowly. */
@@ -1409,14 +1408,14 @@ label:has(> select#reasoning-effort) select {
   }
 }
 
-@keyframes sidebar-row-plug-in {
+@keyframes sidebar-row-current {
   from {
-    transform: translateY(-3px);
-    opacity: 0.3;
+    stroke-dasharray: 0.25 0.25;
+    stroke-dashoffset: 0;
   }
   to {
-    transform: translateY(0);
-    opacity: 1;
+    stroke-dasharray: 0.25 0.25;
+    stroke-dashoffset: -0.5;
   }
 }
 

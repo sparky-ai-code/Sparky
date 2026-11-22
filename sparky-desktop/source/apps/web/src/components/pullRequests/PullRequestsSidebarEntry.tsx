@@ -3,40 +3,27 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
+import { useClientSettings } from "~/hooks/useSettings";
+import {
+  findOrCreateSidebarEntryHost,
+  SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS,
+} from "../sidebar/sidebarEntryHost";
 import { SidebarMenuButton, useSidebar } from "../ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const HOST_ATTRIBUTE = "data-code-review-sidebar-host";
-
-function findOrCreateHost(): HTMLElement | null {
-  const scheduleTrigger = document.querySelector<HTMLElement>(
-    '[data-testid="sidebar-schedules-trigger"]',
-  );
-  const scheduleItem = scheduleTrigger?.closest<HTMLElement>('[data-slot="sidebar-menu-item"]');
-  const menu = scheduleItem?.parentElement;
-  if (!scheduleItem || !menu) return null;
-
-  const existing = menu.querySelector<HTMLElement>(`[${HOST_ATTRIBUTE}]`);
-  if (existing) return existing;
-
-  const host = document.createElement("li");
-  host.setAttribute(HOST_ATTRIBUTE, "");
-  host.setAttribute("data-slot", "sidebar-menu-item");
-  host.setAttribute("data-sidebar", "menu-item");
-  host.className = scheduleItem.className;
-  menu.insertBefore(host, scheduleItem);
-  return host;
-}
 
 export function PullRequestsSidebarEntry() {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { isMobile, setOpenMobile } = useSidebar();
+  const horizontal = useClientSettings((settings) => settings.sidebarLayout) === "horizontal";
   const [host, setHost] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     let currentHost: HTMLElement | null = null;
     const attach = () => {
-      const nextHost = findOrCreateHost();
+      const nextHost = findOrCreateSidebarEntryHost({ hostAttribute: HOST_ATTRIBUTE, horizontal });
       if (nextHost === currentHost) return;
       currentHost = nextHost;
       setHost(nextHost);
@@ -49,8 +36,9 @@ export function PullRequestsSidebarEntry() {
     return () => {
       observer.disconnect();
       currentHost?.remove();
+      setHost(null);
     };
-  }, []);
+  }, [horizontal]);
 
   const handleClick = useCallback(() => {
     if (isMobile) setOpenMobile(false);
@@ -58,6 +46,29 @@ export function PullRequestsSidebarEntry() {
   }, [isMobile, navigate, setOpenMobile]);
 
   if (!host) return null;
+
+  if (horizontal) {
+    return createPortal(
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Open code reviews"
+              aria-current={pathname === "/pull-requests" ? "page" : undefined}
+              data-testid="sidebar-pull-requests-trigger"
+              className={SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS}
+              onClick={handleClick}
+            />
+          }
+        >
+          <GitPullRequestIcon className="size-4" />
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">Pull requests</TooltipPopup>
+      </Tooltip>,
+      host,
+    );
+  }
 
   return createPortal(
     <SidebarMenuButton

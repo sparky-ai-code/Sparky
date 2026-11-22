@@ -243,6 +243,10 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { SidebarProviderUpdatePill } from "./sidebar/SidebarProviderUpdatePill";
+import {
+  SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS,
+  SIDEBAR_ICON_ACTIONS_TESTID,
+} from "./sidebar/sidebarEntryHost";
 import { getModelProviderPresentation } from "./chat/providerIconUtils";
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
@@ -3527,9 +3531,6 @@ interface SidebarProjectsContentProps {
   projectsLength: number;
 }
 
-const SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS =
-  "inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0";
-
 interface SidebarIconActionsProps {
   readonly isSchedulesActive: boolean;
   readonly newThreadShortcutLabel: string | null;
@@ -3550,7 +3551,10 @@ const SidebarIconActions = memo(function SidebarIconActions(props: SidebarIconAc
   } = props;
 
   return (
-    <div className="flex items-center gap-1" data-testid="sidebar-icon-actions">
+    <div
+      className="flex items-center justify-center gap-1"
+      data-testid={SIDEBAR_ICON_ACTIONS_TESTID}
+    >
       <Tooltip>
         <TooltipTrigger
           render={

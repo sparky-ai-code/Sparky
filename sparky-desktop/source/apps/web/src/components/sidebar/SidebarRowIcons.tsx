@@ -51,6 +51,7 @@ export function SidebarPullRequestsIcon(props: RowIconProps) {
 export function SidebarPluginsIcon(props: RowIconProps) {
   return (
     <RowIcon {...props}>
+      <circle className="sidebar-row-icon-halo" cx="8" cy="8" r="4" strokeWidth={1} />
       <path d="M6 2.5v2.75" />
       <path d="M10 2.5v2.75" />
       <path d="M4.25 5.25h7.5v2a3.75 3.75 0 0 1-7.5 0z" />

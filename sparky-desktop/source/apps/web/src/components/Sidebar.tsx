@@ -1,7 +1,6 @@
 import {
   ArchiveIcon,
   ArrowUpDownIcon,
-  CalendarClockIcon,
   CheckIcon,
   ChevronRightIcon,
   CloudIcon,
@@ -13,7 +12,6 @@ import {
   LoaderIcon,
   PlusIcon,
   PinIcon,
-  SearchIcon,
   SettingsIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -3697,79 +3695,64 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
   return (
     <SidebarContent className="gap-0">
       <SidebarGroup className="px-2 pt-2 pb-1">
-        {sidebarLayout === "horizontal" ? (
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                size="sm"
-                className="sidebar-row-action gap-2 rounded-xl border border-border/70 bg-card px-2.5 py-2 font-medium text-foreground shadow-xs hover:bg-accent focus-visible:ring-0"
-                data-testid="sidebar-new-chat-trigger"
-                aria-label="Create new chat"
-                onClick={handleNewChat}
-              >
-                <SidebarNewChatIcon className="size-3.5" />
-                <span className="flex-1 truncate text-left text-xs">New chat</span>
-                {newThreadShortcutLabel ? (
-                  <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">
-                    {newThreadShortcutLabel}
-                  </Kbd>
-                ) : null}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        ) : (
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                size="sm"
-                className="gap-2 bg-transparent px-2 py-1.5 font-medium text-muted-foreground/80 outline-none hover:bg-white/5 hover:text-foreground focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
-                data-testid="sidebar-new-chat-trigger"
-                aria-label="Create new chat"
-                onClick={handleNewChat}
-              >
-                <SquarePenIcon className="size-3.5" />
-                <span className="flex-1 truncate text-left text-xs">New chat</span>
-                {newThreadShortcutLabel ? (
-                  <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">
-                    {newThreadShortcutLabel}
-                  </Kbd>
-                ) : null}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                size="sm"
-                isActive={pathname === "/schedules"}
-                className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
-                data-testid="sidebar-schedules-trigger"
-                aria-label="Open scheduled tasks"
-                onClick={handleSchedulesClick}
-              >
-                <CalendarClockIcon className="size-3.5 text-muted-foreground/70" />
-                <span className="flex-1 truncate text-left text-xs">Schedule</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <CommandDialogTrigger
-                render={
-                  <SidebarMenuButton
-                    size="sm"
-                    className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
-                    data-testid="command-palette-trigger"
-                  />
-                }
-              >
-                <SearchIcon className="size-3.5 text-muted-foreground/70" />
-                <span className="flex-1 truncate text-left text-xs">Search</span>
-                {commandPaletteShortcutLabel ? (
-                  <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">
-                    {commandPaletteShortcutLabel}
-                  </Kbd>
-                ) : null}
-              </CommandDialogTrigger>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        )}
+        {/* New chat looks the same in both layouts. Schedule and Search move to the
+            footer in Focused; the Pull requests and Plugins entries portal in above
+            Schedule in both layouts. */}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              size="sm"
+              className="sidebar-row-action gap-2 bg-transparent px-2 py-1.5 font-medium text-muted-foreground/80 outline-none hover:bg-white/5 hover:text-foreground focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              data-testid="sidebar-new-chat-trigger"
+              aria-label="Create new chat"
+              onClick={handleNewChat}
+            >
+              <SidebarNewChatIcon className="size-3.5" />
+              <span className="flex-1 truncate text-left text-xs">New chat</span>
+              {newThreadShortcutLabel ? (
+                <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">
+                  {newThreadShortcutLabel}
+                </Kbd>
+              ) : null}
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          {sidebarLayout === "horizontal" ? null : (
+            <>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  size="sm"
+                  isActive={pathname === "/schedules"}
+                  className="sidebar-row-action gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
+                  data-testid="sidebar-schedules-trigger"
+                  aria-label="Open scheduled tasks"
+                  onClick={handleSchedulesClick}
+                >
+                  <SidebarScheduleIcon className="size-3.5 text-muted-foreground/70" />
+                  <span className="flex-1 truncate text-left text-xs">Schedule</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <CommandDialogTrigger
+                  render={
+                    <SidebarMenuButton
+                      size="sm"
+                      className="sidebar-row-action gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
+                      data-testid="command-palette-trigger"
+                    />
+                  }
+                >
+                  <SidebarSearchIcon className="size-3.5 text-muted-foreground/70" />
+                  <span className="flex-1 truncate text-left text-xs">Search</span>
+                  {commandPaletteShortcutLabel ? (
+                    <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">
+                      {commandPaletteShortcutLabel}
+                    </Kbd>
+                  ) : null}
+                </CommandDialogTrigger>
+              </SidebarMenuItem>
+            </>
+          )}
+        </SidebarMenu>
       </SidebarGroup>
       {showArm64IntelBuildWarning && arm64IntelBuildWarningDescription ? (
         <SidebarGroup className="px-2 pt-2 pb-0">

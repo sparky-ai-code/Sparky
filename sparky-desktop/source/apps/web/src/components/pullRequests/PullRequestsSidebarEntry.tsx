@@ -1,4 +1,3 @@
-import { GitPullRequestIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -75,12 +74,12 @@ export function PullRequestsSidebarEntry() {
     <SidebarMenuButton
       size="sm"
       isActive={pathname === "/pull-requests"}
-      className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
+      className="sidebar-row-action gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
       data-testid="sidebar-pull-requests-trigger"
       aria-label="Open code reviews"
       onClick={handleClick}
     >
-      <GitPullRequestIcon className="size-3.5 text-muted-foreground/70" />
+      <SidebarPullRequestsIcon className="size-3.5 text-muted-foreground/70" />
       <span className="flex-1 truncate text-left text-xs">Pull requests</span>
     </SidebarMenuButton>,
     host,

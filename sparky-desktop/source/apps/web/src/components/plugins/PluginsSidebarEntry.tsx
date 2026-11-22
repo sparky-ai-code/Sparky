@@ -1,4 +1,3 @@
-import { PlugZapIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -73,12 +72,12 @@ export function PluginsSidebarEntry() {
     <SidebarMenuButton
       size="sm"
       isActive={pathname === "/plugins"}
-      className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
+      className="sidebar-row-action gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-0"
       data-testid="sidebar-plugins-trigger"
       aria-label="Open plugins"
       onClick={handleClick}
     >
-      <PlugZapIcon className="size-3.5 text-muted-foreground/70" />
+      <SidebarPluginsIcon className="size-3.5 text-muted-foreground/70" />
       <span className="flex-1 truncate text-left text-xs">Plugins</span>
     </SidebarMenuButton>,
     host,

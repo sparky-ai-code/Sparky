@@ -603,7 +603,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           title="Sidebar layout"
-          description="Full lists every action with labels at the top. Focused keeps New chat as a card at the top and moves the other actions to icons beside Settings."
+          description="Full lists every action with labels at the top. Focused keeps New chat at the top and moves the other actions to icons beside Settings."
           control={
             <Select
               value={sidebarLayout}

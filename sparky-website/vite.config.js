@@ -121,7 +121,7 @@ const pageSeo = {
     title: "Sparky Blog - News and notes",
     description: "News, product introductions and notes from the Sparky team and Sparky Lab.",
   },
-  "blog/can-by-sparky-lab.html": {
+  "blog/can.html": {
     title: "Introducing Can by Sparky Lab - Sparky Blog",
     description:
       "Can by Sparky Lab is a fully virtual sandbox for AI agents: its own filesystem, processes, ports and browser, with zero npm dependencies.",

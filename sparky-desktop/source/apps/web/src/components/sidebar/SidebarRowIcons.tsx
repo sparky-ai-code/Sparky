@@ -54,7 +54,14 @@ export function SidebarPluginsIcon(props: RowIconProps) {
       <path d="M6 2.5v2.75" />
       <path d="M10 2.5v2.75" />
       <path d="M4.25 5.25h7.5v2a3.75 3.75 0 0 1-7.5 0z" />
-      <path className="sidebar-row-icon-current" pathLength={1} d="M8 11v2.5" />
+      <path className="sidebar-row-icon-cable" d="M8 11v2.5" />
+      <path
+        className="sidebar-row-icon-flow"
+        pathLength={1}
+        strokeWidth={2.25}
+        strokeLinecap="butt"
+        d="M8 11v2.5"
+      />
     </RowIcon>
   );
 }

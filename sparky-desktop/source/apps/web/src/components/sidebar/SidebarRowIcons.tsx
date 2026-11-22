@@ -28,7 +28,7 @@ export function SidebarNewChatIcon(props: RowIconProps) {
   return (
     <RowIcon {...props}>
       <path d="M8.25 2.75H5A2.25 2.25 0 0 0 2.75 5v6A2.25 2.25 0 0 0 5 13.25h6A2.25 2.25 0 0 0 13.25 11V7.75" />
-      <path d="M11.1 2.9a1.5 1.5 0 0 1 2.1 2.1L8.9 9.3 6.1 10l.7-2.8z" />
+      <path className="sidebar-row-icon-write" d="M11.1 2.9a1.5 1.5 0 0 1 2.1 2.1L8.9 9.3 6.1 10l.7-2.8z" />
     </RowIcon>
   );
 }
@@ -39,10 +39,10 @@ export function SidebarPullRequestsIcon(props: RowIconProps) {
     <RowIcon {...props}>
       <circle cx="4" cy="3.5" r="1.5" />
       <circle cx="4" cy="12.5" r="1.5" />
-      <circle cx="12" cy="12.5" r="1.5" />
+      <circle className="sidebar-row-icon-pulse" cx="12" cy="12.5" r="1.5" />
       <path d="M4 5v6" />
       <path d="M12 11V6.25A2.25 2.25 0 0 0 9.75 4H8" />
-      <path d="M9.5 2.5 8 4l1.5 1.5" />
+      <path className="sidebar-row-icon-nudge" d="M9.5 2.5 8 4l1.5 1.5" />
     </RowIcon>
   );
 }
@@ -51,10 +51,12 @@ export function SidebarPullRequestsIcon(props: RowIconProps) {
 export function SidebarPluginsIcon(props: RowIconProps) {
   return (
     <RowIcon {...props}>
-      <path d="M6 2.5v2.75" />
-      <path d="M10 2.5v2.75" />
-      <path d="M4.25 5.25h7.5v2a3.75 3.75 0 0 1-7.5 0z" />
-      <path d="M8 11v2.5" />
+      <g className="sidebar-row-icon-plug">
+        <path d="M6 2.5v2.75" />
+        <path d="M10 2.5v2.75" />
+        <path d="M4.25 5.25h7.5v2a3.75 3.75 0 0 1-7.5 0z" />
+        <path d="M8 11v2.5" />
+      </g>
     </RowIcon>
   );
 }
@@ -64,7 +66,8 @@ export function SidebarScheduleIcon(props: RowIconProps) {
   return (
     <RowIcon {...props}>
       <circle cx="8" cy="8" r="5.5" />
-      <path d="M8 5.25V8l1.75 1.25" />
+      <path className="sidebar-row-icon-minute" d="M8 8V5.25" />
+      <path className="sidebar-row-icon-hour" d="M8 8l1.75 1.25" />
     </RowIcon>
   );
 }
@@ -73,7 +76,9 @@ export function SidebarScheduleIcon(props: RowIconProps) {
 export function SidebarSearchIcon(props: RowIconProps) {
   return (
     <RowIcon {...props}>
+      <circle className="sidebar-row-icon-ripple" cx="7.25" cy="7.25" r="2" strokeWidth={1} />
       <circle cx="7.25" cy="7.25" r="4.25" />
+      <path className="sidebar-row-icon-scan" d="M5.5 7.25H9" strokeWidth={1} />
       <path d="m10.5 10.5 3 3" />
     </RowIcon>
   );

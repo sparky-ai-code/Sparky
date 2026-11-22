@@ -1306,3 +1306,188 @@ label:has(> select#reasoning-effort) select {
   opacity: 0.3;
   pointer-events: none;
 }
+
+/* Horizontal sidebar row: hover motion for its five icons (sidebar/SidebarRowIcons.tsx).
+   Animations run only while the button is hovered, and never when the user prefers reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .sidebar-row-icon-write,
+  .sidebar-row-icon-nudge,
+  .sidebar-row-icon-plug,
+  .sidebar-row-icon-hour,
+  .sidebar-row-icon-minute,
+  .sidebar-row-icon-ripple,
+  .sidebar-row-icon-scan,
+  .sidebar-row-icon-pulse {
+    transform-box: view-box;
+  }
+
+  /* New chat: the pencil scribbles back and forth along its own diagonal. */
+  .sidebar-row-action:hover .sidebar-row-icon-write {
+    transform-origin: 6px 10px;
+    animation: sidebar-row-write 0.9s ease-in-out infinite;
+  }
+
+  /* Pull requests: the branch arrowhead nudges and the target node breathes. */
+  .sidebar-row-action:hover .sidebar-row-icon-nudge {
+    animation: sidebar-row-nudge 1.1s ease-in-out infinite;
+  }
+  .sidebar-row-action:hover .sidebar-row-icon-pulse {
+    transform-origin: 12px 12px;
+    animation: sidebar-row-pulse 1.1s ease-in-out infinite;
+  }
+
+  /* Plugins: the plug drops into its socket, bounces once, then holds. */
+  .sidebar-row-action:hover .sidebar-row-icon-plug {
+    animation: sidebar-row-plug-in 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+  }
+
+  /* Schedule: the minute hand ticks in steps; the hour hand drifts around slowly. */
+  .sidebar-row-action:hover .sidebar-row-icon-minute {
+    transform-origin: 8px 8px;
+    animation: sidebar-row-tick 1s steps(1, end) infinite;
+  }
+  .sidebar-row-action:hover .sidebar-row-icon-hour {
+    transform-origin: 8px 8px;
+    animation: sidebar-row-spin 12s linear infinite;
+  }
+
+  /* Search: a ripple expands from the lens and a scan line sweeps inside it. */
+  .sidebar-row-action:hover .sidebar-row-icon-ripple {
+    transform-origin: 7.25px 7.25px;
+    animation: sidebar-row-ripple 1.4s ease-out infinite;
+  }
+  .sidebar-row-action:hover .sidebar-row-icon-scan {
+    animation: sidebar-row-scan 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes sidebar-row-write {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  30% {
+    transform: translate(-1px, 1px) rotate(-6deg);
+  }
+  60% {
+    transform: translate(0.6px, -0.6px) rotate(4deg);
+  }
+  85% {
+    transform: translate(-0.4px, 0.4px) rotate(-2deg);
+  }
+}
+
+@keyframes sidebar-row-nudge {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-1px, 0);
+  }
+}
+
+@keyframes sidebar-row-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.18);
+  }
+}
+
+@keyframes sidebar-row-plug-in {
+  0% {
+    transform: translateY(-3px);
+    opacity: 0.25;
+  }
+  45% {
+    transform: translateY(0.75px);
+    opacity: 1;
+  }
+  60% {
+    transform: translateY(-0.4px);
+  }
+  75%,
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes sidebar-row-tick {
+  0% {
+    transform: rotate(0deg);
+  }
+  8.33% {
+    transform: rotate(30deg);
+  }
+  16.66% {
+    transform: rotate(60deg);
+  }
+  25% {
+    transform: rotate(90deg);
+  }
+  33.33% {
+    transform: rotate(120deg);
+  }
+  41.66% {
+    transform: rotate(150deg);
+  }
+  50% {
+    transform: rotate(180deg);
+  }
+  58.33% {
+    transform: rotate(210deg);
+  }
+  66.66% {
+    transform: rotate(240deg);
+  }
+  75% {
+    transform: rotate(270deg);
+  }
+  83.33% {
+    transform: rotate(300deg);
+  }
+  91.66% {
+    transform: rotate(330deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sidebar-row-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sidebar-row-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@keyframes sidebar-row-scan {
+  0%,
+  100% {
+    transform: translateY(-2px);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(2px);
+  }
+}

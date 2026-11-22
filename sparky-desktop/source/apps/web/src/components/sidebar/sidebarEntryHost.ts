@@ -6,8 +6,9 @@ export const SIDEBAR_ICON_ACTIONS_TESTID = "sidebar-icon-actions";
 
 // Icon-only buttons in the horizontal row. The active state (bg-accent/text-foreground)
 // is applied per button; hover uses a softer tint so the icons stay the focus.
+// `sidebar-row-action` is the hover hook for the icon motion in index.css.
 export const SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS =
-  "inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 outline-none transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent/60 hover:text-foreground active:scale-[0.94] focus-visible:ring-0 focus-visible:ring-offset-0";
+  "sidebar-row-action inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 outline-none transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent/60 hover:text-foreground active:scale-[0.94] focus-visible:ring-0 focus-visible:ring-offset-0";
 
 export function findOrCreateSidebarEntryHost(input: {
   readonly hostAttribute: string;

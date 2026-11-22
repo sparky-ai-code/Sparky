@@ -47,22 +47,12 @@ export function SidebarPullRequestsIcon(props: RowIconProps) {
   );
 }
 
-// Plug with two prongs and a cable.
+// Puzzle piece: the piece body with one knob on top, which lifts out on hover.
 export function SidebarPluginsIcon(props: RowIconProps) {
   return (
     <RowIcon {...props}>
-      <circle className="sidebar-row-icon-halo" cx="8" cy="8" r="4" strokeWidth={1} />
-      <path d="M6 2.5v2.75" />
-      <path d="M10 2.5v2.75" />
-      <path d="M4.25 5.25h7.5v2a3.75 3.75 0 0 1-7.5 0z" />
-      <path className="sidebar-row-icon-cable" d="M8 11v2.5" />
-      <path
-        className="sidebar-row-icon-flow"
-        pathLength={1}
-        strokeWidth={2.25}
-        strokeLinecap="butt"
-        d="M8 11v2.5"
-      />
+      <path d="M6 5.5H3V13h10V5.5h-3" />
+      <path className="sidebar-row-icon-knob" d="M6 5.5a2 2 0 0 1 4 0" />
     </RowIcon>
   );
 }

@@ -109,14 +109,15 @@ const THEME_OPTIONS = [
   },
 ] as const;
 
+// Stored values stay "vertical" (Full) and "horizontal" (Focused).
 const SIDEBAR_LAYOUT_OPTIONS = [
   {
     value: "vertical",
-    label: "Vertical",
+    label: "Full",
   },
   {
     value: "horizontal",
-    label: "Horizontal",
+    label: "Focused",
   },
 ] as const;
 
@@ -601,8 +602,8 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
-          title="Sidebar buttons"
-          description="Stack New chat, Schedule and Search vertically with labels, or show them as a compact icon row directly above your threads."
+          title="Sidebar layout"
+          description="Full lists every action with labels at the top. Focused keeps New chat as a card at the top and moves the other actions to icons beside Settings."
           control={
             <Select
               value={sidebarLayout}
@@ -612,10 +613,10 @@ export function GeneralSettingsPanel() {
                 }
               }}
             >
-              <SelectTrigger className="w-full sm:w-40" aria-label="Sidebar buttons layout">
+              <SelectTrigger className="w-full sm:w-40" aria-label="Sidebar layout">
                 <SelectValue>
                   {SIDEBAR_LAYOUT_OPTIONS.find((option) => option.value === sidebarLayout)?.label ??
-                    "Vertical"}
+                    "Full"}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>

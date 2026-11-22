@@ -252,6 +252,7 @@ import {
   SidebarScheduleIcon,
   SidebarSearchIcon,
 } from "./sidebar/SidebarRowIcons";
+
 import { getModelProviderPresentation } from "./chat/providerIconUtils";
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
@@ -2976,14 +2977,24 @@ function SparkyWordmark() {
   return <span className="truncate text-sm font-semibold tracking-tight">Sparky</span>;
 }
 
-const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+const SidebarChromeFooter = memo(function SidebarChromeFooter(props: {
+  readonly commandPaletteShortcutLabel: string | null;
+}) {
   const navigate = useNavigate();
+  const pathname = useLocation({ select: (loc) => loc.pathname });
   const { isMobile, setOpenMobile } = useSidebar();
+  const sidebarLayout = useClientSettings((settings) => settings.sidebarLayout);
   const handleSettingsClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
     }
     void navigate({ to: "/settings" });
+  }, [isMobile, navigate, setOpenMobile]);
+  const handleSchedulesClick = useCallback(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+    void navigate({ to: "/schedules" });
   }, [isMobile, navigate, setOpenMobile]);
 
   return (
@@ -3001,6 +3012,13 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
               <SettingsIcon className="size-3.5" />
               <span className="text-xs">Settings</span>
             </SidebarMenuButton>
+            {sidebarLayout === "horizontal" ? (
+              <SidebarIconActions
+                isSchedulesActive={pathname === "/schedules"}
+                commandPaletteShortcutLabel={props.commandPaletteShortcutLabel}
+                onSchedulesClick={handleSchedulesClick}
+              />
+            ) : null}
             <SidebarUpdatePill />
           </div>
         </SidebarMenuItem>
@@ -3538,43 +3556,17 @@ interface SidebarProjectsContentProps {
 
 interface SidebarIconActionsProps {
   readonly isSchedulesActive: boolean;
-  readonly newThreadShortcutLabel: string | null;
   readonly commandPaletteShortcutLabel: string | null;
-  readonly onNewChat: () => void;
   readonly onSchedulesClick: () => void;
 }
 
-// Icon-only counterpart of the New chat / Schedule / Search rows used by the
-// "horizontal" sidebar layout. Labels move into tooltips and aria-labels.
+// Icon-only actions for the "focused" layout. They sit in the footer beside
+// Settings; Pull requests and Plugins portal in just before Schedule.
 const SidebarIconActions = memo(function SidebarIconActions(props: SidebarIconActionsProps) {
-  const {
-    isSchedulesActive,
-    newThreadShortcutLabel,
-    commandPaletteShortcutLabel,
-    onNewChat,
-    onSchedulesClick,
-  } = props;
+  const { isSchedulesActive, commandPaletteShortcutLabel, onSchedulesClick } = props;
 
   return (
     <div className="flex items-center gap-1" data-testid={SIDEBAR_ICON_ACTIONS_TESTID}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              aria-label="Create new chat"
-              data-testid="sidebar-new-chat-trigger"
-              className={SIDEBAR_HORIZONTAL_ACTION_BUTTON_CLASS}
-              onClick={onNewChat}
-            />
-          }
-        >
-          <SidebarNewChatIcon className="size-4" />
-        </TooltipTrigger>
-        <TooltipPopup side="bottom">
-          New chat{newThreadShortcutLabel ? ` (${newThreadShortcutLabel})` : null}
-        </TooltipPopup>
-      </Tooltip>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -3706,13 +3698,25 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     <SidebarContent className="gap-0">
       <SidebarGroup className="px-2 pt-2 pb-1">
         {sidebarLayout === "horizontal" ? (
-          <SidebarIconActions
-            isSchedulesActive={pathname === "/schedules"}
-            newThreadShortcutLabel={newThreadShortcutLabel}
-            commandPaletteShortcutLabel={commandPaletteShortcutLabel}
-            onNewChat={handleNewChat}
-            onSchedulesClick={handleSchedulesClick}
-          />
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                size="sm"
+                className="sidebar-row-action gap-2 rounded-xl border border-border/70 bg-card px-2.5 py-2 font-medium text-foreground shadow-xs hover:bg-accent focus-visible:ring-0"
+                data-testid="sidebar-new-chat-trigger"
+                aria-label="Create new chat"
+                onClick={handleNewChat}
+              >
+                <SidebarNewChatIcon className="size-3.5" />
+                <span className="flex-1 truncate text-left text-xs">New chat</span>
+                {newThreadShortcutLabel ? (
+                  <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">
+                    {newThreadShortcutLabel}
+                  </Kbd>
+                ) : null}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         ) : (
           <SidebarMenu>
             <SidebarMenuItem>
@@ -4741,7 +4745,7 @@ export default function Sidebar() {
           />
 
           <SidebarSeparator />
-          <SidebarChromeFooter />
+          <SidebarChromeFooter commandPaletteShortcutLabel={commandPaletteShortcutLabel} />
         </>
       )}
     </>

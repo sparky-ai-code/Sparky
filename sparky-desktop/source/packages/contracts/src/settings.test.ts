@@ -63,6 +63,19 @@ describe("ClientSettings sidebar grouping", () => {
   });
 });
 
+describe("ClientSettings sidebar layout", () => {
+  it("defaults to the focused (horizontal) layout", () => {
+    expect(decodeClientSettings({}).sidebarLayout).toBe("horizontal");
+  });
+
+  it("accepts horizontal layout patches and rejects unknown layouts", () => {
+    expect(decodeClientSettingsPatch({ sidebarLayout: "horizontal" }).sidebarLayout).toBe(
+      "horizontal",
+    );
+    expect(() => decodeClientSettingsPatch({ sidebarLayout: "grid" })).toThrow();
+  });
+});
+
 describe("ClientSettings streaming text animation", () => {
   it("defaults legacy settings to fade and lift", () => {
     expect(decodeClientSettings({}).streamingTextAnimation).toBe("lift");

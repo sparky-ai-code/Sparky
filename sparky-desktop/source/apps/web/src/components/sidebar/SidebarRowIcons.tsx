@@ -39,10 +39,10 @@ export function SidebarPullRequestsIcon(props: RowIconProps) {
     <RowIcon {...props}>
       <circle cx="4" cy="3.5" r="1.5" />
       <circle cx="4" cy="12.5" r="1.5" />
-      <circle className="sidebar-row-icon-pulse" cx="12" cy="12.5" r="1.5" />
+      <circle className="sidebar-row-icon-pop" cx="12" cy="12.5" r="1.5" />
       <path d="M4 5v6" />
-      <path d="M12 11V6.25A2.25 2.25 0 0 0 9.75 4H8" />
-      <path className="sidebar-row-icon-nudge" d="M9.5 2.5 8 4l1.5 1.5" />
+      <path className="sidebar-row-icon-draw" pathLength={1} d="M12 11V6.25A2.25 2.25 0 0 0 9.75 4H8" />
+      <path className="sidebar-row-icon-arrow" d="M9.5 2.5 8 4l1.5 1.5" />
     </RowIcon>
   );
 }

@@ -1311,13 +1311,12 @@ label:has(> select#reasoning-effort) select {
    Animations run only while the button is hovered, and never when the user prefers reduced motion. */
 @media (prefers-reduced-motion: no-preference) {
   .sidebar-row-icon-write,
-  .sidebar-row-icon-nudge,
   .sidebar-row-icon-plug,
   .sidebar-row-icon-hour,
   .sidebar-row-icon-minute,
   .sidebar-row-icon-ripple,
   .sidebar-row-icon-scan,
-  .sidebar-row-icon-pulse {
+  .sidebar-row-icon-pop {
     transform-box: view-box;
   }
 
@@ -1327,18 +1326,22 @@ label:has(> select#reasoning-effort) select {
     animation: sidebar-row-write 0.9s ease-in-out infinite;
   }
 
-  /* Pull requests: the branch arrowhead nudges and the target node breathes. */
-  .sidebar-row-action:hover .sidebar-row-icon-nudge {
-    animation: sidebar-row-nudge 1.1s ease-in-out infinite;
+  /* Pull requests: the branch draws from the source node to the target, the arrowhead
+     lands last, and the target node pops in. Plays once per hover. */
+  .sidebar-row-action:hover .sidebar-row-icon-draw {
+    animation: sidebar-row-draw 0.6s ease-out forwards;
   }
-  .sidebar-row-action:hover .sidebar-row-icon-pulse {
+  .sidebar-row-action:hover .sidebar-row-icon-arrow {
+    animation: sidebar-row-arrive 0.25s ease-out 0.5s both;
+  }
+  .sidebar-row-action:hover .sidebar-row-icon-pop {
     transform-origin: 12px 12px;
-    animation: sidebar-row-pulse 1.1s ease-in-out infinite;
+    animation: sidebar-row-pop 0.35s cubic-bezier(0.3, 1.5, 0.5, 1) 0.25s both;
   }
 
-  /* Plugins: the plug drops into its socket, bounces once, then holds. */
+  /* Plugins: the plug slides straight down into its socket and stops. Plays once per hover. */
   .sidebar-row-action:hover .sidebar-row-icon-plug {
-    animation: sidebar-row-plug-in 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+    animation: sidebar-row-plug-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
   }
 
   /* Schedule: the minute hand ticks in steps; the hour hand drifts around slowly. */
@@ -1377,40 +1380,41 @@ label:has(> select#reasoning-effort) select {
   }
 }
 
-@keyframes sidebar-row-nudge {
-  0%,
-  100% {
-    transform: translate(0, 0);
+@keyframes sidebar-row-draw {
+  from {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
   }
-  50% {
-    transform: translate(-1px, 0);
+  to {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
   }
 }
 
-@keyframes sidebar-row-pulse {
-  0%,
-  100% {
-    transform: scale(1);
+@keyframes sidebar-row-arrive {
+  from {
+    opacity: 0;
   }
-  50% {
-    transform: scale(1.18);
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sidebar-row-pop {
+  from {
+    transform: scale(0.3);
+  }
+  to {
+    transform: scale(1);
   }
 }
 
 @keyframes sidebar-row-plug-in {
-  0% {
+  from {
     transform: translateY(-3px);
-    opacity: 0.25;
+    opacity: 0.3;
   }
-  45% {
-    transform: translateY(0.75px);
-    opacity: 1;
-  }
-  60% {
-    transform: translateY(-0.4px);
-  }
-  75%,
-  100% {
+  to {
     transform: translateY(0);
     opacity: 1;
   }

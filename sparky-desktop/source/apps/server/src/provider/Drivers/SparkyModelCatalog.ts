@@ -652,16 +652,38 @@ function parseModelsDevCatalog(payload: Record<string, unknown>): ModelsDevCatal
   return providers;
 }
 
-async function loadModelsDevCatalog(
+const MODELS_DEV_CACHE_TTL_MS = 60 * 60 * 1000;
+// Keyed by fetch implementation so injected fetches (tests) never share results.
+const modelsDevCache = new WeakMap<
+  object,
+  { readonly at: number; readonly catalog: Promise<ModelsDevCatalog | undefined> }
+>();
+
+function loadModelsDevCatalog(
   fetchImplementation: FetchImplementation,
 ): Promise<ModelsDevCatalog | undefined> {
-  try {
-    return parseModelsDevCatalog(
-      await fetchJson(fetchImplementation, "https://models.dev/api.json", {}),
-    );
-  } catch {
-    return undefined;
+  const cached = modelsDevCache.get(fetchImplementation);
+  if (cached && Date.now() - cached.at < MODELS_DEV_CACHE_TTL_MS) {
+    return cached.catalog;
   }
+  const catalog = (async () => {
+    try {
+      return parseModelsDevCatalog(
+        await fetchJson(fetchImplementation, "https://models.dev/api.json", {}),
+      );
+    } catch {
+      return undefined;
+    }
+  })();
+  const entry = { at: Date.now(), catalog };
+  modelsDevCache.set(fetchImplementation, entry);
+  // Never keep a failed lookup around: retry on the next refresh.
+  void catalog.then((value) => {
+    if (value === undefined && modelsDevCache.get(fetchImplementation) === entry) {
+      modelsDevCache.delete(fetchImplementation);
+    }
+  });
+  return catalog;
 }
 
 function providerBaseUrl(fallback: string): string {

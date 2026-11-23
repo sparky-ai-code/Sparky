@@ -96,7 +96,9 @@ export default defineConfig(({ mode }) => {
   return {
     base: demoBuild ? "/demo/" : "/",
     plugins: [
-      ...(demoBuild ? [] : [tanstackRouter()]),
+      // autoCodeSplitting lazy-loads each route's component, so settings panels,
+      // plugins, schedules, etc. are not part of the initial bundle.
+      ...(demoBuild ? [] : [tanstackRouter({ autoCodeSplitting: true })]),
       react(),
       babel({
         // We need to be explicit about the parser options after moving to @vitejs/plugin-react v6.0.0

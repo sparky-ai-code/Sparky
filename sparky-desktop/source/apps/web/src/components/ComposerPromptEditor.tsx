@@ -973,6 +973,8 @@ interface ComposerPromptEditorProps {
   skills: ReadonlyArray<ServerProviderSkill>;
   disabled: boolean;
   placeholder: string;
+  /** Predicted next prompt shown in place of the placeholder while the editor is empty. */
+  suggestion?: string | null;
   className?: string;
   onRemoveTerminalContext: (contextId: string) => void;
   onChange: (
@@ -1622,6 +1624,7 @@ function ComposerPromptEditorInner({
   skills,
   disabled,
   placeholder,
+  suggestion,
   className,
   onRemoveTerminalContext,
   onChange,
@@ -1852,7 +1855,19 @@ function ComposerPromptEditorInner({
             />
           }
           placeholder={
-            terminalContexts.length > 0 ? null : (
+            terminalContexts.length > 0 ? null : suggestion ? (
+              <div className="pointer-events-none absolute inset-0 flex items-start gap-2 text-[16px] leading-relaxed sm:text-[14px]">
+                <span
+                  data-testid="composer-prompt-suggestion"
+                  className="min-w-0 truncate text-muted-foreground/45 blur-[0.6px] select-none"
+                >
+                  {suggestion}
+                </span>
+                <kbd className="mt-[0.2em] shrink-0 rounded border border-border/60 px-1 text-[10px] leading-4 text-muted-foreground/60">
+                  Tab
+                </kbd>
+              </div>
+            ) : (
               <div className="pointer-events-none absolute inset-0 text-[16px] leading-relaxed text-muted-foreground/35 sm:text-[14px]">
                 {placeholder}
               </div>
@@ -1882,6 +1897,7 @@ export function ComposerPromptEditor({
   skills,
   disabled,
   placeholder,
+  suggestion,
   className,
   onRemoveTerminalContext,
   onChange,
@@ -1925,6 +1941,7 @@ export function ComposerPromptEditor({
         skills={skills}
         disabled={disabled}
         placeholder={placeholder}
+        {...(suggestion ? { suggestion } : {})}
         onRemoveTerminalContext={onRemoveTerminalContext}
         onChange={onChange}
         onPaste={onPaste}

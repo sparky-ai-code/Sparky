@@ -74,6 +74,7 @@ import {
   shouldUseCompactComposerFooter,
 } from "../composerFooterLayout";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
+import { usePromptSuggestion } from "./usePromptSuggestion";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { ComposerAddMenu } from "./ComposerAddMenu";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
@@ -556,7 +557,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
-    isServerThread: _isServerThread,
+    isServerThread,
     isLocalDraftThread: _isLocalDraftThread,
     forceExpandedOnMobile,
     projectSelectionRequired,
@@ -1680,6 +1681,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     });
   }, []);
 
+  const promptSuggestion = usePromptSuggestion({
+    thread: activeThread,
+    cwd: gitCwd,
+    enabled:
+      isServerThread &&
+      !isComposerApprovalState &&
+      !isSendBusy &&
+      !isConnecting &&
+      pendingUserInputs.length === 0 &&
+      phase !== "disconnected",
+  });
+  // Only offer the suggestion while the prompt box is empty, matching where it is drawn.
+  const visiblePromptSuggestion =
+    prompt.length === 0 && composerTerminalContexts.length === 0 ? promptSuggestion : null;
+
   const onComposerCommandKey = (
     key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
     event: KeyboardEvent,
@@ -1713,6 +1729,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onSelectComposerItem(selectedItem);
         return true;
       }
+    }
+    if (key === "Tab" && !event.shiftKey && visiblePromptSuggestion) {
+      onPromptChange(
+        visiblePromptSuggestion,
+        visiblePromptSuggestion.length,
+        visiblePromptSuggestion.length,
+        false,
+        [],
+      );
+      return true;
     }
     if (
       key === "Enter" &&
@@ -2360,6 +2386,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     : []
                 }
                 skills={selectedProviderStatus?.skills ?? []}
+                suggestion={visiblePromptSuggestion}
                 {...(showMobilePendingAnswerActions ? { className: "max-sm:pb-11" } : {})}
                 onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                 onChange={onPromptChange}

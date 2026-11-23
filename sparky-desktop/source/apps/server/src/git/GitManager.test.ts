@@ -100,6 +100,12 @@ interface FakeGitTextGeneration {
     message: string;
     modelSelection: ModelSelection;
   }) => Effect.Effect<{ title: string }, TextGenerationError>;
+  generatePromptSuggestion: (input: {
+    cwd: string;
+    userMessage: string;
+    assistantMessage: string;
+    modelSelection: ModelSelection;
+  }) => Effect.Effect<{ suggestion: string }, TextGenerationError>;
 }
 
 type FakePullRequest = NonNullable<FakeGhScenario["pullRequest"]>;
@@ -322,6 +328,10 @@ function createTextGeneration(
       Effect.succeed({
         title: "Update workflow",
       }),
+    generatePromptSuggestion: () =>
+      Effect.succeed({
+        suggestion: "",
+      }),
     ...overrides,
   };
 
@@ -376,6 +386,17 @@ function createTextGeneration(
           (cause) =>
             new TextGenerationError({
               operation: "generateThreadTitle",
+              detail: "fake text generation failed",
+              ...(cause !== undefined ? { cause } : {}),
+            }),
+        ),
+      ),
+    generatePromptSuggestion: (input) =>
+      implementation.generatePromptSuggestion(input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({
+              operation: "generatePromptSuggestion",
               detail: "fake text generation failed",
               ...(cause !== undefined ? { cause } : {}),
             }),

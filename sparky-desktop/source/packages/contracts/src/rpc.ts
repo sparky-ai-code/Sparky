@@ -27,6 +27,7 @@ import {
   VcsListRefsInput,
   VcsListRefsResult,
   GitManagerServiceError,
+  TextGenerationError,
   GitPreparePullRequestThreadInput,
   GitPreparePullRequestThreadResult,
   GitPullRequestReviewInput,
@@ -47,6 +48,7 @@ import {
   ReviewDiffPreviewResult,
 } from "./review.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
+import { PromptSuggestionInput, PromptSuggestionResult } from "./promptSuggestion.ts";
 import {
   ClientOrchestrationCommand,
   ORCHESTRATION_WS_METHODS,
@@ -192,6 +194,9 @@ export const WS_METHODS = {
   gitResolvePullRequest: "git.resolvePullRequest",
   gitReviewPullRequest: "git.reviewPullRequest",
   gitPreparePullRequestThread: "git.preparePullRequestThread",
+
+  // Text generation methods
+  generatePromptSuggestion: "textGeneration.generatePromptSuggestion",
 
   // Review methods
   reviewGetDiffPreview: "review.getDiffPreview",
@@ -492,6 +497,12 @@ export const WsGitReviewPullRequestRpc = Rpc.make(WS_METHODS.gitReviewPullReques
   error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
 });
 
+export const WsGeneratePromptSuggestionRpc = Rpc.make(WS_METHODS.generatePromptSuggestion, {
+  payload: PromptSuggestionInput,
+  success: PromptSuggestionResult,
+  error: Schema.Union([TextGenerationError, EnvironmentAuthorizationError]),
+});
+
 export const WsGitPreparePullRequestThreadRpc = Rpc.make(WS_METHODS.gitPreparePullRequestThread, {
   payload: GitPreparePullRequestThreadInput,
   success: GitPreparePullRequestThreadResult,
@@ -784,6 +795,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsGitResolvePullRequestRpc,
   WsGitReviewPullRequestRpc,
   WsGitPreparePullRequestThreadRpc,
+  WsGeneratePromptSuggestionRpc,
   WsVcsListRefsRpc,
   WsVcsCreateWorktreeRpc,
   WsVcsRemoveWorktreeRpc,

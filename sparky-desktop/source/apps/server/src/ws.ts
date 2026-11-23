@@ -95,6 +95,7 @@ import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
@@ -394,6 +395,7 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.gitRunStackedAction, AuthOrchestrationOperateScope],
   [WS_METHODS.gitResolvePullRequest, AuthOrchestrationOperateScope],
   [WS_METHODS.gitReviewPullRequest, AuthOrchestrationOperateScope],
+  [WS_METHODS.generatePromptSuggestion, AuthOrchestrationOperateScope],
   [WS_METHODS.gitPreparePullRequestThread, AuthOrchestrationOperateScope],
   [WS_METHODS.vcsListRefs, AuthOrchestrationReadScope],
   [WS_METHODS.vcsCreateWorktree, AuthOrchestrationOperateScope],
@@ -482,6 +484,7 @@ const makeWsRpcLayer = (
       const keybindings = yield* Keybindings.Keybindings;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
+      const textGeneration = yield* TextGeneration.TextGeneration;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -1973,6 +1976,14 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.gitReviewPullRequest, gitWorkflow.reviewPullRequest(input), {
             "rpc.aggregate": "git",
           }),
+        [WS_METHODS.generatePromptSuggestion]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.generatePromptSuggestion,
+            textGeneration.generatePromptSuggestion(input),
+            {
+              "rpc.aggregate": "textGeneration",
+            },
+          ),
         [WS_METHODS.gitPreparePullRequestThread]: (input) =>
           observeRpcEffect(
             WS_METHODS.gitPreparePullRequestThread,

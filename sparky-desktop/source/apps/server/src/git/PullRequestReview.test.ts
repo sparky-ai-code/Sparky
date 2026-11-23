@@ -1,4 +1,4 @@
-import * as NodePath from "node:path";
+import * as Clock from "effect/Clock";
 
 import { it } from "@effect/vitest";
 import { expect } from "vite-plus/test";
@@ -76,7 +76,7 @@ it.effect("returns every validated bug in the report without an extra AI summary
 
 it.effect("uses a valid server cwd when the PR workspace has disappeared", () =>
   Effect.gen(function* () {
-    const missingCwd = NodePath.join(process.cwd(), `.missing-pr-review-${Date.now()}`);
+    const missingCwd = `${process.cwd()}/.missing-pr-review-${yield* Clock.currentTimeMillis}`;
     let observedCwd = "";
     yield* runPullRequestReview({ ...input, cwd: missingCwd }, (request) => {
       observedCwd = request.cwd;

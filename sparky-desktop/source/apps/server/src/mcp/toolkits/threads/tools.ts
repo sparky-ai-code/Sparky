@@ -127,6 +127,44 @@ export const SteerThreadTool = Tool.make("sparky_thread_steer", {
   .annotate(Tool.OpenWorld, false)
   .annotate(Tool.Destructive, true);
 
+export const SpawnSubagentTool = Tool.make("sparky_subagent_spawn", {
+  description:
+    "Launch an independent Sparky subagent INSIDE this conversation's team, using Sparky's normal runtime and tools (not an external harness). The child inherits your project, workspace, and permission mode, but can choose any enabled model/provider via modelSelection. Use sparky_thread_models to discover supported models/options. The subagent starts asynchronously, receives only this task and its parent reply address, can message/steer you or other subagents mid-work, and reports its result via sparky_thread_message. Call sparky_subagents_list to check the team and sparky_thread_read to inspect its progress.",
+  parameters: Schema.Struct({
+    title: NonWhitespaceText,
+    task: NonWhitespaceText,
+    modelSelection: Schema.optional(ModelSelection),
+  }),
+  success: Schema.Unknown,
+  failure: Schema.Never,
+})
+  .annotate(Tool.Title, "Spawn subagent")
+  .annotate(Tool.OpenWorld, false)
+  .annotate(Tool.Destructive, true);
+
+export const ListSubagentsTool = Tool.make("sparky_subagents_list", {
+  description:
+    "List subagents running in your conversation, plus the parent agent and sibling agents when you are a subagent. Returns stable thread IDs, selected models, running/completed states and reply addresses. Use sparky_thread_read to examine their work, sparky_thread_message to message any team member, or sparky_thread_steer to steer an active run.",
+  parameters: Schema.Struct({}),
+  success: Schema.Unknown,
+  failure: Schema.Never,
+})
+  .annotate(Tool.Title, "List subagents")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
+
+export const StopSubagentTool = Tool.make("sparky_subagent_stop", {
+  description:
+    "Stop a direct child subagent and its nested subagents by threadId. Cancels their active Sparky provider sessions without affecting other threads or the parent. Only an agent's own children can be stopped.",
+  parameters: Schema.Struct({ threadId: NonEmptyText }),
+  success: Schema.Unknown,
+  failure: Schema.Never,
+})
+  .annotate(Tool.Title, "Stop subagent")
+  .annotate(Tool.OpenWorld, false)
+  .annotate(Tool.Destructive, true);
+
 export const ThreadTools = [
   ListThreadsTool,
   ProjectBranchesTool,
@@ -135,4 +173,7 @@ export const ThreadTools = [
   CreateThreadTool,
   MessageThreadTool,
   SteerThreadTool,
+  SpawnSubagentTool,
+  ListSubagentsTool,
+  StopSubagentTool,
 ] as const;

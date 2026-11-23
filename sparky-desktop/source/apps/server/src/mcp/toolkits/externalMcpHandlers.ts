@@ -1,3 +1,5 @@
+import * as Crypto from "effect/Crypto";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 
 import * as ServerSettings from "../../serverSettings.ts";
@@ -5,10 +7,18 @@ import type { McpServerConfig } from "@sparky/contracts";
 import { callExternalMcpTool, listExternalMcpTools } from "../ExternalMcp.ts";
 import { ExternalMcpToolkit } from "./externalMcpTools.ts";
 
-const handlers = {
+class ExternalMcpConnectionError extends Data.TaggedError("ExternalMcpConnectionError")<{
+  readonly message: string;
+}> {}
+
+const makeHandlers = Effect.gen(function* () {
+  // Capture server settings when the toolkit layer is constructed rather than
+  // requiring a service from an unscoped tool invocation.
+  const settings = yield* ServerSettings.ServerSettingsService;
+  const crypto = yield* Crypto.Crypto;
+  return {
   sparky_mcp_setup_server: (input) =>
     Effect.gen(function* () {
-      const settings = yield* ServerSettings.ServerSettingsService;
       const current = yield* settings.getSettings;
       const name = input.name.trim();
       if (!name) return { error: "Enter a name for the MCP server." };
@@ -29,7 +39,7 @@ const handlers = {
         return { error: `An MCP server named '${name}' is already configured.` };
       }
       const server: McpServerConfig = {
-        id: crypto.randomUUID(),
+        id: yield* crypto.randomUUIDv4,
         name,
         url: parsedUrl.toString(),
         authorizationToken: input.authorizationToken ?? "",
@@ -38,7 +48,7 @@ const handlers = {
       };
       const tools = yield* Effect.tryPromise({
         try: () => listExternalMcpTools(server),
-        catch: () => new Error("MCP connection failed."),
+        catch: () => new ExternalMcpConnectionError({ message: "MCP connection failed." }),
       }).pipe(
         Effect.catch((error) =>
           Effect.succeed({ error: error instanceof Error ? error.message : "MCP connection failed." }),
@@ -56,11 +66,10 @@ const handlers = {
             : "(unnamed tool)",
         ),
       };
-    }),
+    }).pipe(Effect.catch((error) => Effect.succeed({ error: error.message }))),
   sparky_mcp_list_tools: (input) =>
     Effect.gen(function* () {
-      const settings = yield* ServerSettings.ServerSettingsService;
-      const configured = (yield* settings.getSettings).mcpServers.filter((server) => server.enabled);
+       const configured = (yield* settings.getSettings).mcpServers.filter((server) => server.enabled);
       const selected = input.serverName
         ? configured.filter((server) => server.name === input.serverName)
         : configured;
@@ -69,7 +78,9 @@ const handlers = {
         (server) =>
           Effect.tryPromise({
             try: () => listExternalMcpTools(server),
-            catch: (error) => error,
+            catch: (error) => new ExternalMcpConnectionError({
+              message: error instanceof Error ? error.message : String(error),
+            }),
           }).pipe(
             Effect.map((tools) => ({ serverName: server.name, tools })),
             Effect.catch((error) =>
@@ -81,23 +92,25 @@ const handlers = {
           ),
         { concurrency: 4 },
       );
-    }),
+    }).pipe(Effect.catch((error) => Effect.succeed({ error: error.message }))),
   sparky_mcp_call_tool: (input) =>
     Effect.gen(function* () {
-      const settings = yield* ServerSettings.ServerSettingsService;
-      const server = (yield* settings.getSettings).mcpServers.find(
+       const server = (yield* settings.getSettings).mcpServers.find(
         (candidate) => candidate.enabled && candidate.name === input.serverName,
       );
       if (!server) return { error: `MCP server '${input.serverName}' is not configured or enabled.` };
       return yield* Effect.tryPromise({
         try: () => callExternalMcpTool(server, input.toolName, input.arguments),
-        catch: (error) => error,
+        catch: (error) => new ExternalMcpConnectionError({
+          message: error instanceof Error ? error.message : String(error),
+        }),
       }).pipe(
         Effect.catch((error) =>
           Effect.succeed({ error: error instanceof Error ? error.message : String(error) }),
         ),
       );
-    }),
-} satisfies Parameters<typeof ExternalMcpToolkit.toLayer>[0];
+    }).pipe(Effect.catch((error) => Effect.succeed({ error: error.message }))),
+  } satisfies Parameters<typeof ExternalMcpToolkit.toLayer>[0];
+});
 
-export const ExternalMcpToolkitHandlersLive = ExternalMcpToolkit.toLayer(handlers);
+export const ExternalMcpToolkitHandlersLive = ExternalMcpToolkit.toLayer(makeHandlers);

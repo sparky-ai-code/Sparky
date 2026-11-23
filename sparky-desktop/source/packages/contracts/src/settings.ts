@@ -688,6 +688,7 @@ export const ClientSettingsPatch = Schema.Struct({
   profileName: Schema.optionalKey(TrimmedString),
   profileImage: Schema.optionalKey(TrimmedString),
   autoOpenPlanSidebar: Schema.optionalKey(Schema.Boolean),
+  persistentBrowserProfileEnabled: Schema.optionalKey(Schema.Boolean),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),

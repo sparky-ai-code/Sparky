@@ -1,36 +1,56 @@
+import * as Data from "effect/Data";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
+
 import type { McpServerConfig } from "@sparky/contracts";
 
-type JsonRpcResponse = {
-  readonly result?: Record<string, unknown>;
-  readonly error?: { readonly message?: string };
-};
+const JsonRpcResponseSchema = Schema.fromJsonString(
+  Schema.Struct({
+    result: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+    error: Schema.optional(Schema.Struct({ message: Schema.optional(Schema.String) })),
+  }),
+);
+type JsonRpcResponse = typeof JsonRpcResponseSchema.Type;
 
-async function readSseData(response: Response): Promise<string> {
-  if (!response.body) throw new Error("MCP server returned an empty event stream.");
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      buffer += decoder.decode(value, { stream: !done });
-      const boundary = buffer.search(/\r?\n\r?\n/u);
-      if (boundary >= 0) {
-        const event = buffer.slice(0, boundary);
-        const data = event
-          .split(/\r?\n/u)
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice(5).trim())
-          .join("\n");
-        if (data) return data;
-        buffer = buffer.slice(boundary).replace(/^\r?\n\r?\n/u, "");
-      }
-      if (done) break;
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined);
+
+class ExternalMcpProtocolError extends Data.TaggedError("ExternalMcpProtocolError")<{
+  readonly message: string;
+}> {}
+
+/** Return the first complete SSE event carrying data (skipping heartbeats). */
+export function firstSseData(buffer: string): string | null {
+  const events = buffer.split(/\r?\n\r?\n/u);
+  for (const event of events.slice(0, -1)) {
+    const data = event
+      .split(/\r?\n/u)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim())
+      .join("\n");
+    if (data) return data;
   }
-  throw new Error("MCP server event stream did not contain a response.");
+  return null;
+}
+
+function readSseData<E, R>(body: Stream.Stream<Uint8Array, E, R>) {
+  const decoder = new TextDecoder();
+  return body.pipe(
+    Stream.map((chunk) => decoder.decode(chunk, { stream: true })),
+    Stream.scan("", (buffer, chunk) => buffer + chunk),
+    Stream.filter((buffer) => firstSseData(buffer) !== null),
+    Stream.runHead,
+    Effect.flatMap((result) => {
+      const data = Option.isSome(result) ? firstSseData(result.value) : null;
+      return data
+        ? Effect.succeed(data)
+        : Effect.fail(new ExternalMcpProtocolError({
+            message: "MCP server event stream did not contain a response.",
+          }));
+    }),
+  );
 }
 
 async function send(
@@ -44,32 +64,50 @@ async function send(
   };
   if (sessionId) headers["mcp-session-id"] = sessionId;
   if (config.authorizationToken) headers.authorization = `Bearer ${config.authorizationToken}`;
-  const response = await fetch(config.url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-    redirect: "error",
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!response.ok && response.status !== 202) {
-    throw new Error(`MCP server ${config.name} returned HTTP ${response.status}.`);
-  }
-  const nextSessionId = response.headers.get("mcp-session-id") ?? sessionId;
-  if (response.status === 202 || response.status === 204) {
-    return { response: null, ...(nextSessionId ? { sessionId: nextSessionId } : {}) };
-  }
-  const data = response.headers.get("content-type")?.includes("text/event-stream")
-    ? await readSseData(response)
-    : await response.text();
-  if (!data) throw new Error(`MCP server ${config.name} returned an empty response.`);
-  let parsed: JsonRpcResponse;
-  try {
-    parsed = JSON.parse(data) as JsonRpcResponse;
-  } catch {
-    throw new Error(`MCP server ${config.name} returned an invalid JSON-RPC response.`);
-  }
-  if (parsed.error) throw new Error(parsed.error.message ?? `MCP server ${config.name} returned an error.`);
-  return { response: parsed, ...(nextSessionId ? { sessionId: nextSessionId } : {}) };
+
+  // A scoped Effect HTTP client supports streaming responses and cancellation
+  // without relying on a global fetch or manual reader lifetime management.
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const requestBody = yield* Schema.encodeUnknownEffect(Schema.UnknownFromJsonString)(payload);
+      const request = HttpClientRequest.post(config.url).pipe(
+        HttpClientRequest.setHeaders(headers),
+        HttpClientRequest.bodyText(requestBody, "application/json"),
+      );
+      const response = yield* HttpClient.execute(request);
+      if (response.status < 200 || response.status >= 300) {
+        return yield* Effect.fail(new ExternalMcpProtocolError({
+          message: `MCP server ${config.name} returned HTTP ${response.status}.`,
+        }));
+      }
+      const nextSessionId = response.headers["mcp-session-id"] ?? sessionId;
+      if (response.status === 202 || response.status === 204) {
+        return { response: null, ...(nextSessionId ? { sessionId: nextSessionId } : {}) };
+      }
+      const body = response.headers["content-type"]?.includes("text/event-stream")
+        ? yield* readSseData(response.stream)
+        : yield* response.text;
+      if (!body) {
+        return yield* Effect.fail(new ExternalMcpProtocolError({
+          message: `MCP server ${config.name} returned an empty response.`,
+        }));
+      }
+      const parsed = yield* Schema.decodeUnknownEffect(JsonRpcResponseSchema)(body).pipe(
+        Effect.mapError(() => new ExternalMcpProtocolError({
+          message: `MCP server ${config.name} returned an invalid JSON-RPC response.`,
+        })),
+      );
+      if (parsed.error) {
+        return yield* Effect.fail(new ExternalMcpProtocolError({
+          message: parsed.error.message ?? `MCP server ${config.name} returned an error.`,
+        }));
+      }
+      return { response: parsed, ...(nextSessionId ? { sessionId: nextSessionId } : {}) };
+    }).pipe(
+      Effect.timeout("20 seconds"),
+      Effect.provide(NodeHttpClient.layerNodeHttp),
+    ),
+  );
 }
 
 async function initialize(config: McpServerConfig): Promise<string | undefined> {

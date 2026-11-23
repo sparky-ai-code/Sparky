@@ -1,6 +1,8 @@
 import { useId, type SVGProps } from "react";
 
-import logoUrl from "../../../../assets/prod/sparky-universal-1024.png?inline";
+// The mask renders at most ~80px, so a 256px copy of the approved artwork is
+// enough (3x density) and keeps ~170KB of base64 out of the main JS bundle.
+import logoUrl from "../assets/sparky-logo-mask-256.png?inline";
 
 /** Use the approved artwork's alpha, so the mark follows the surrounding text color. */
 export function SparkyLogo(props: SVGProps<SVGSVGElement>) {

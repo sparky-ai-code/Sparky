@@ -147,7 +147,22 @@ async function ensureSparkyRuntime(): Promise<string> {
   // Electron's native runtime is kept beside its DLLs. A same-directory
   // Sparky.exe preserves that layout while giving Windows the product's
   // executable identity instead of electron.exe. Refresh it on each launch
-  // so an npm update cannot leave an older runtime behind.
+  // so an npm update cannot leave an older runtime behind. Copying and
+  // re-stamping a ~200MB binary is slow, so a stamp of the source binary's
+  // size and mtime lets unchanged runtimes skip the work.
+  const stampPath = `${sparkyBinary}.stamp`;
+  const sourceStat = await NodeFileSystem.stat(electronBinary);
+  const sourceStamp = `${sourceStat.size}:${Math.trunc(sourceStat.mtimeMs)}`;
+  const upToDate =
+    (await NodeFileSystem.readFile(stampPath, "utf8").catch(() => null)) === sourceStamp &&
+    (await NodeFileSystem.stat(sparkyBinary).then(
+      () => true,
+      () => false,
+    ));
+  if (upToDate) {
+    return sparkyBinary;
+  }
+  await NodeFileSystem.rm(stampPath, { force: true });
   await NodeFileSystem.copyFile(electronBinary, sparkyBinary);
   await rcedit(sparkyBinary, {
     "version-string": {
@@ -158,6 +173,7 @@ async function ensureSparkyRuntime(): Promise<string> {
       ProductName: "Sparky",
     },
   });
+  await NodeFileSystem.writeFile(stampPath, sourceStamp);
   return sparkyBinary;
 }
 

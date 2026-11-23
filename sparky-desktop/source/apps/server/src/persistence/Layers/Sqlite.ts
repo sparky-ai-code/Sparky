@@ -34,6 +34,10 @@ const setup = Layer.effectDiscard(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* sql`PRAGMA journal_mode = WAL;`;
+    // WAL + NORMAL is durable across app crashes and only risks the last few
+    // commits on power loss, while avoiding an fsync on every commit.
+    yield* sql`PRAGMA synchronous = NORMAL;`;
+    yield* sql`PRAGMA busy_timeout = 5000;`;
     yield* sql`PRAGMA foreign_keys = ON;`;
     yield* runMigrations();
   }),

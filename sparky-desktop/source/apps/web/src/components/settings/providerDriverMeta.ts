@@ -1,8 +1,9 @@
 import {
+  ClaudeSettings,
   ProviderDriverKind,
 } from "@sparky/contracts";
 import * as Schema from "effect/Schema";
-import { SparkyIcon, type Icon } from "../Icons";
+import { ClaudeAI, SparkyIcon, type Icon } from "../Icons";
 type ProviderSettingsSchema = {
   readonly fields: Readonly<Record<string, Schema.Top>>;
 } & Schema.Top;
@@ -29,6 +30,12 @@ export interface ProviderClientDefinition {
 }
 
 export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
+  {
+    value: ProviderDriverKind.make("claudeAgent"),
+    label: "Claude Code",
+    icon: ClaudeAI,
+    settingsSchema: ClaudeSettings,
+  },
   {
     value: ProviderDriverKind.make("sparky"),
     label: "Sparky",

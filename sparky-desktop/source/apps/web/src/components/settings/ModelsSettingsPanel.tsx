@@ -46,6 +46,7 @@ import {
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
+import { ClaudeCodeSettings } from "./ClaudeCodeSettings";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
 type Logo = ComponentType<SVGProps<SVGSVGElement>>;
@@ -670,6 +671,7 @@ export function ModelsSettingsPanel() {
           </div>
         </details>
       </SettingsSection>
+      <ClaudeCodeSettings />
     </SettingsPageContainer>
   );
 }

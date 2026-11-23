@@ -8,10 +8,8 @@
  * as an `"unavailable"` shadow snapshot at runtime (see
  * `buildUnavailableProviderSnapshot`).
  *
- * The aggregated Sparky driver owns the OpenAI/Codex, Claude/Anthropic,
- * and Google/Gemini catalogs. Standalone native CLI drivers are
- * intentionally not registered here, so they cannot create duplicate
- * provider instances in the backend or picker.
+ * The aggregated Sparky driver owns the API model catalogs. Claude Code is
+ * registered separately because it owns its own CLI login and transcripts.
  *
  * Adding a new first-party driver means:
  *   1. implement `ProviderDriver` in a sibling `Drivers/<Name>Driver.ts`,
@@ -25,6 +23,7 @@
  *
  * @module provider/builtInDrivers
  */
+import { ClaudeCodeDriver } from "./Drivers/ClaudeCodeDriver.ts";
 import { SparkyDriver } from "./Drivers/SparkyDriver.ts";
 import type { AnyProviderDriver } from "./ProviderDriver.ts";
 import type { ServerSettingsService } from "../serverSettings.ts";
@@ -41,7 +40,7 @@ export type BuiltInDriversEnv =
   | ServerConfig
   | ProviderEventLoggers;
 
-/** Only the aggregated Sparky runtime is exposed as a built-in provider. */
 export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
   SparkyDriver,
+  ClaudeCodeDriver,
 ];

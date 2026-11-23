@@ -29,6 +29,7 @@ import {
 import {
   asClaudeJson,
   claudeResultError,
+  findClaudeExecutable,
   loadClaudeInput,
   parseClaudeLaunchArgs,
   probeClaude,
@@ -43,10 +44,11 @@ const configSchema = Schema.Struct({
   launchArgs: ClaudeSettings.fields.launchArgs,
 });
 
-const stockModels: ReadonlyArray<ServerProviderModel> = [
+export const CLAUDE_CODE_STOCK_MODELS: ReadonlyArray<ServerProviderModel> = [
   { slug: "sonnet", name: "Claude Sonnet", isCustom: false, isDefault: true, capabilities: null },
   { slug: "opus", name: "Claude Opus", isCustom: false, capabilities: null },
   { slug: "haiku", name: "Claude Haiku", isCustom: false, capabilities: null },
+  { slug: "fable", name: "Claude Fable", isCustom: false, capabilities: null },
 ];
 
 function pathSetting(value: string): string {
@@ -144,20 +146,22 @@ export const ClaudeCodeDriver: ProviderDriver<typeof configSchema.Type, ServerCo
     }
     if (input.config.homePath) environment.CLAUDE_CONFIG_DIR = resolve(server.cwd, pathSetting(input.config.homePath));
     const configuredBinary = pathSetting(input.config.binaryPath.trim() || "claude");
-    const binaryPath = isAbsolute(configuredBinary) || !/[/\\]/u.test(configuredBinary)
-      ? configuredBinary : resolve(server.cwd, configuredBinary);
+    const detectedBinary = configuredBinary === "claude" ? findClaudeExecutable(environment) : undefined;
+    const binaryPath = detectedBinary ?? (isAbsolute(configuredBinary) || !/[/\\]/u.test(configuredBinary)
+      ? configuredBinary : resolve(server.cwd, configuredBinary));
     const executable = { binaryPath, environment };
     const continuationIdentity = defaultProviderContinuationIdentity({ driverKind: CLAUDE_CODE_DRIVER, instanceId: input.instanceId });
-    const models = [...stockModels];
+    const models = [...CLAUDE_CODE_STOCK_MODELS];
     for (const configuredModel of input.config.customModels) {
       const slug = configuredModel.trim();
       if (!slug || models.some((model) => model.slug === slug)) continue;
       models.push({ slug, name: slug, isCustom: true, capabilities: null });
     }
     const loadSnapshot = Effect.promise(async (signal): Promise<ServerProvider> => {
-      const version = input.enabled ? await probeClaude(executable, ["--version"], server.cwd, signal) : undefined;
+      // A version probe is read-only and lets the setup flow detect a disabled CLI before enabling it.
+      const version = await probeClaude(executable, ["--version"], server.cwd, signal);
       const installed = version?.ok === true;
-      const authProbe = installed ? await probeClaude(executable, ["auth", "status", "--json"], server.cwd, signal) : undefined;
+      const authProbe = input.enabled && installed ? await probeClaude(executable, ["auth", "status", "--json"], server.cwd, signal) : undefined;
       let auth: ServerProvider["auth"] = { status: "unknown" };
       if (authProbe?.stdout.trim()) {
         try {
@@ -185,6 +189,7 @@ export const ClaudeCodeDriver: ProviderDriver<typeof configSchema.Type, ServerCo
         status: !input.enabled ? "disabled" : !installed ? "error" : auth.status === "unauthenticated" ? "warning" : "ready",
         auth,
         checkedAt: new Date().toISOString(),
+        executablePath: installed ? binaryPath : undefined,
         availability: "available",
         ...(message ? { message } : {}),
         models: installed ? models.map((model) => ({ ...model, subProvider: "Claude Code" })) : [],

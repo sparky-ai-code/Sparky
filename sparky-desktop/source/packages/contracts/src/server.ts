@@ -180,6 +180,7 @@ export const ServerProvider = Schema.Struct({
   status: ServerProviderState,
   auth: ServerProviderAuth,
   checkedAt: IsoDateTime,
+  executablePath: Schema.optional(TrimmedNonEmptyString),
   message: Schema.optional(TrimmedNonEmptyString),
   // Optional for back-compat: every legacy producer omits this field and
   // an absent value is interpreted as `"available"` by consumers (see

@@ -1,6 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import { execFile, spawn } from "node:child_process";
+import { statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { delimiter, join, win32 } from "node:path";
 import { createInterface } from "node:readline";
 import type { ChatAttachment } from "@sparky/contracts";
 
@@ -17,6 +20,42 @@ export type ClaudeInputBlock =
 export interface ClaudeExecutable {
   readonly binaryPath: string;
   readonly environment: NodeJS.ProcessEnv;
+}
+
+/** Resolve Claude Code from PATH first, then common native-install locations. */
+export function findClaudeExecutable(
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+  home = environment.USERPROFILE?.trim() || environment.HOME?.trim() || homedir(),
+): string | undefined {
+  const pathApi = platform === "win32" ? win32 : { join };
+  const pathEntries = (environment.PATH ?? environment.Path ?? environment.path ?? "")
+    .split(platform === "win32" ? ";" : delimiter)
+    .map((entry) => entry.trim().replace(/^"|"$/gu, ""))
+    .filter(Boolean);
+  const binaryNames = platform === "win32" ? ["claude.exe"] : ["claude"];
+  const candidates = pathEntries.flatMap((entry) => binaryNames.map((name) => pathApi.join(entry, name)));
+  const localData = environment.LOCALAPPDATA?.trim();
+  candidates.push(
+    ...(platform === "win32"
+      ? [
+          pathApi.join(home, ".local", "bin", "claude.exe"),
+          pathApi.join(home, ".claude", "local", "claude.exe"),
+          ...(localData ? [pathApi.join(localData, "Programs", "Claude Code", "claude.exe")] : []),
+        ]
+      : [pathApi.join(home, ".local", "bin", "claude"), pathApi.join(home, ".claude", "local", "claude")]),
+  );
+  const seen = new Set<string>();
+  return candidates.find((candidate) => {
+    const key = platform === "win32" ? candidate.toLowerCase() : candidate;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    try {
+      return statSync(candidate).isFile();
+    } catch {
+      return false;
+    }
+  });
 }
 
 export function parseClaudeLaunchArgs(value: string): ReadonlyArray<string> {

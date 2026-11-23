@@ -58,6 +58,25 @@ export function findClaudeExecutable(
   });
 }
 
+/**
+ * Resolve the standard executable aliases to a discovered absolute path.
+ * Windows users commonly configure `claude.exe`, while the default config
+ * uses `claude`; both should benefit from the same PATH and install-location
+ * detection instead of relying on the process PATH at launch time.
+ */
+export function resolveClaudeExecutablePath(
+  configuredBinary: string,
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+  home = environment.USERPROFILE?.trim() || environment.HOME?.trim() || homedir(),
+): string | undefined {
+  const command = configuredBinary.trim().toLowerCase();
+  const isDefaultAlias = platform === "win32"
+    ? command === "claude" || command === "claude.exe"
+    : command === "claude";
+  return isDefaultAlias ? findClaudeExecutable(environment, platform, home) : undefined;
+}
+
 export function parseClaudeLaunchArgs(value: string): ReadonlyArray<string> {
   const args: string[] = [];
   let token = "";

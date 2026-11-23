@@ -4,7 +4,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import { findClaudeExecutable } from "./claudeCodeProcess.ts";
+import { findClaudeExecutable, resolveClaudeExecutablePath } from "./claudeCodeProcess.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -40,6 +40,22 @@ describe("findClaudeExecutable", () => {
     NodeFS.writeFileSync(executable, "");
 
     expect(findClaudeExecutable({ PATH: bin, USERPROFILE: home }, "win32", home)).toBe(executable);
+  });
+
+  it("resolves the Windows executable alias from native install locations", () => {
+    if (process.platform !== "win32") return;
+    const home = makeHome();
+    const bin = NodePath.win32.join(home, ".local", "bin");
+    NodeFS.mkdirSync(bin, { recursive: true });
+    const executable = NodePath.win32.join(bin, "claude.exe");
+    NodeFS.writeFileSync(executable, "");
+
+    expect(resolveClaudeExecutablePath("claude.exe", { USERPROFILE: home }, "win32", home)).toBe(executable);
+  });
+
+  it("does not replace an explicitly configured custom executable", () => {
+    const home = makeHome();
+    expect(resolveClaudeExecutablePath("custom-claude", { HOME: home }, "linux", home)).toBeUndefined();
   });
 
   it("finds a native install in the user's local bin directory", () => {

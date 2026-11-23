@@ -29,7 +29,7 @@ import {
 import {
   asClaudeJson,
   claudeResultError,
-  findClaudeExecutable,
+  resolveClaudeExecutablePath,
   loadClaudeInput,
   parseClaudeLaunchArgs,
   probeClaude,
@@ -146,7 +146,7 @@ export const ClaudeCodeDriver: ProviderDriver<typeof configSchema.Type, ServerCo
     }
     if (input.config.homePath) environment.CLAUDE_CONFIG_DIR = resolve(server.cwd, pathSetting(input.config.homePath));
     const configuredBinary = pathSetting(input.config.binaryPath.trim() || "claude");
-    const detectedBinary = configuredBinary === "claude" ? findClaudeExecutable(environment) : undefined;
+    const detectedBinary = resolveClaudeExecutablePath(configuredBinary, environment);
     const binaryPath = detectedBinary ?? (isAbsolute(configuredBinary) || !/[/\\]/u.test(configuredBinary)
       ? configuredBinary : resolve(server.cwd, configuredBinary));
     const executable = { binaryPath, environment };

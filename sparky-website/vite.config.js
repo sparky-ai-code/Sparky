@@ -11,6 +11,10 @@ const docsRoot = resolve(root, "docs");
 const docsPages = readdirSync(docsRoot)
   .filter((name) => name.endsWith(".html"))
   .map((name) => [`docs-${basename(name, ".html")}`, resolve(docsRoot, name)]);
+const blogRoot = resolve(root, "blog");
+const blogPages = readdirSync(blogRoot)
+  .filter((name) => name.endsWith(".html"))
+  .map((name) => [`blog-${basename(name, ".html")}`, resolve(blogRoot, name)]);
 
 const siteUrl = "https://sparky.llc";
 const googleVerificationContent = "mYlfTvYpay5cARIQYu8KWcQfQELLQ0C-mAfcwX_nR9w";
@@ -112,6 +116,15 @@ const pageSeo = {
   "docs/troubleshooting.html": {
     title: "Sparky Docs - Troubleshooting",
     description: "Find fixes and practical guidance for common Sparky setup and workflow issues.",
+  },
+  "blog/index.html": {
+    title: "Sparky Blog - News and notes",
+    description: "News, product introductions and notes from the Sparky team and Sparky Lab.",
+  },
+  "blog/can.html": {
+    title: "Introducing Can by Sparky Lab - Sparky Blog",
+    description:
+      "Can by Sparky Lab is a fully virtual sandbox for AI agents: its own filesystem, processes, ports and browser, with zero npm dependencies.",
   },
 };
 
@@ -300,7 +313,7 @@ export default defineConfig(({ mode }) => {
     ],
     build: {
       rollupOptions: {
-        input: Object.fromEntries([...rootPages, ...docsPages]),
+        input: Object.fromEntries([...rootPages, ...docsPages, ...blogPages]),
       },
     },
   };

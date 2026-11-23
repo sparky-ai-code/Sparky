@@ -460,7 +460,9 @@ export const McpServerConfig = Schema.Struct({
   name: TrimmedNonEmptyString,
   url: Schema.String.check(Schema.isPattern(/^https?:\/\//u)),
   authorizationToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  authorizationTokenRedacted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  authorizationTokenRedacted: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type McpServerConfig = typeof McpServerConfig.Type;
@@ -713,6 +715,7 @@ export const ClientSettingsPatch = Schema.Struct({
     ),
   ),
   focusMode: Schema.optionalKey(Schema.Boolean),
+  persistentBrowserProfileEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),

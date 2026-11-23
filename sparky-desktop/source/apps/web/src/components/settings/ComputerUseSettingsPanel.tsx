@@ -13,15 +13,18 @@ export function ComputerUseSettingsPanel() {
   const [instructions, setInstructions] = useState(computerUse.customInstructions);
   const [themeId, setThemeId] = useState(computerUse.cursorThemeId);
 
-  useEffect(() => setInstructions(computerUse.customInstructions), [computerUse.customInstructions]);
+  useEffect(
+    () => setInstructions(computerUse.customInstructions),
+    [computerUse.customInstructions],
+  );
   useEffect(() => setThemeId(computerUse.cursorThemeId), [computerUse.cursorThemeId]);
 
   const saveInstructions = () =>
-    updateSettings({ computerUse: { customInstructions: instructions.trim() } });
+    updateSettings({ computerUse: { ...computerUse, customInstructions: instructions.trim() } });
   const saveThemeId = () => {
     const nextThemeId = themeId.trim() || "cua.default";
     setThemeId(nextThemeId);
-    updateSettings({ computerUse: { cursorThemeId: nextThemeId } });
+    updateSettings({ computerUse: { ...computerUse, cursorThemeId: nextThemeId } });
   };
 
   return (
@@ -34,7 +37,7 @@ export function ComputerUseSettingsPanel() {
             <Switch
               checked={computerUse.enabled}
               onCheckedChange={(checked) =>
-                updateSettings({ computerUse: { enabled: Boolean(checked) } })
+                updateSettings({ computerUse: { ...computerUse, enabled: Boolean(checked) } })
               }
               aria-label="Allow computer use on this computer"
             />

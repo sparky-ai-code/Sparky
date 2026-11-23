@@ -127,8 +127,18 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
         // A server restart cannot resume an in-flight turn safely. Reconcile
         // persisted provider sessions before accepting new work, and stop live
         // sessions again during graceful shutdown.
-        yield* stopAllSessions;
-        yield* Effect.addFinalizer(() => stopAllSessions);
+        yield* stopAllSessions.pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("provider.session.reaper.stop-all-failed", { error }),
+          ),
+        );
+        yield* Effect.addFinalizer(() =>
+          stopAllSessions.pipe(
+            Effect.catch((error) =>
+              Effect.logWarning("provider.session.reaper.stop-all-failed", { error }),
+            ),
+          ),
+        );
 
         yield* Effect.forkScoped(
           sweep.pipe(

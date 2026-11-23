@@ -1063,10 +1063,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ? { "provider.model": effectiveModelSelection.model }
           : {}),
       });
-      // Sparky launches one short-lived MCP client per turn. Refresh its
-      // provider-scoped credential immediately before launch so an idle or
-      // restarted MCP registry cannot leave the child with an expired token.
-      if (String(routed.adapter.provider) === "sparky") {
+      // Sparky launches one short-lived MCP client per turn, and the Claude Code
+      // runtime connects to the same bridge per turn. Refresh the provider-scoped
+      // credential immediately before launch so an idle or restarted MCP registry
+      // cannot leave the child with an expired token.
+      if (
+        String(routed.adapter.provider) === "sparky" ||
+        String(routed.adapter.provider) === "claudeAgent"
+      ) {
         yield* prepareMcpSession(
           input.threadId,
           routed.instanceId,

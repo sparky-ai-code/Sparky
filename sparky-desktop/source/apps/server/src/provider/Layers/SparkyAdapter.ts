@@ -1,3 +1,4 @@
+// @effect-diagnostics preferSchemaOverJson:off
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalDateInEffect:off globalTimers:off
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
@@ -226,7 +227,7 @@ interface SessionState {
   nextTurn: number;
 }
 
-type SparkyChildProcess = ReturnType<typeof NodeChildProcess.spawn>;
+type SparkyChildProcess = NodeChildProcess.ChildProcessWithoutNullStreams;
 
 interface PendingPersistentTurn {
   readonly decoder: ReturnType<typeof makeSparkyStreamDecoder>;
@@ -241,7 +242,7 @@ interface PersistentSparkyProcess {
   signature: string;
   prewarmed?: boolean | undefined;
   stderr: string;
-  pending?: PendingPersistentTurn;
+  pending?: PendingPersistentTurn | undefined;
 }
 
 export function makeSparkyStreamDecoder(callbacks: SparkyStreamCallbacks = {}) {
@@ -1205,7 +1206,8 @@ function runPersistentSparky(input: {
             }
             const activeTurn = currentProcess.pending;
             if (!activeTurn) return;
-            const detail = currentProcess.stderr.trim() || `Sparky exited (exit code ${code ?? "unknown"}).`;
+            const detail =
+              currentProcess.stderr.trim() || `Sparky exited (exit code ${code ?? "unknown"}).`;
             activeTurn.decoder.failOpenTools(detail);
             activeTurn.fail?.(new Error(detail));
           });

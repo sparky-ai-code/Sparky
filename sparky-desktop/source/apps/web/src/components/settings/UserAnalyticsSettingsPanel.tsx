@@ -57,7 +57,7 @@ function parseCodexRateLimits(value: unknown): CodexRateLimitData | undefined {
     .flatMap(([key, value]) => {
       const window = asRecord(value);
       const usedPercent = window?.used_percent;
-      if (typeof usedPercent !== "number" || !Number.isFinite(usedPercent)) return [];
+      if (!window || typeof usedPercent !== "number" || !Number.isFinite(usedPercent)) return [];
       const data: CodexRateWindow = {
         usedPercent: Math.min(100, Math.max(0, usedPercent)),
         ...(typeof window.reset_at === "number" ? { resetAt: window.reset_at } : {}),
@@ -394,7 +394,7 @@ export function UserAnalyticsSettingsPanel() {
           <div className="ms-auto flex shrink-0 items-center justify-end gap-2">
             <ToggleGroup
               aria-label="Usage period"
-              variant="segmented"
+              variant="outline"
               value={[String(days)]}
               onValueChange={(next) => {
                 const value = next[0];
@@ -411,7 +411,7 @@ export function UserAnalyticsSettingsPanel() {
             </ToggleGroup>
             <ToggleGroup
               aria-label="Usage metric"
-              variant="segmented"
+              variant="outline"
               value={[metric]}
               onValueChange={(next) => {
                 const value = next[0];
@@ -472,7 +472,9 @@ export function UserAnalyticsSettingsPanel() {
                       <div className="flex items-baseline justify-between gap-4">
                         <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
                           {ModelIcon ? <ModelIcon className="size-4 shrink-0" aria-hidden /> : null}
-                          <span className="truncate">{getDisplayModelName({ slug: row.model, name: row.model })}</span>
+                          <span className="truncate">
+                            {getDisplayModelName({ slug: row.model, name: row.model })}
+                          </span>
                           <span className="shrink-0 whitespace-nowrap text-2xs text-muted-foreground tabular-nums">
                             {formatCount(row.turns)} turns
                           </span>
@@ -541,7 +543,7 @@ export function UserAnalyticsSettingsPanel() {
               <h2 className="text-sm font-medium text-foreground">Breakdown</h2>
               <ToggleGroup
                 aria-label="Usage breakdown"
-                variant="segmented"
+                variant="outline"
                 value={[breakdown]}
                 onValueChange={(next) => {
                   const value = next[0];
@@ -581,8 +583,12 @@ export function UserAnalyticsSettingsPanel() {
                         <td className="py-2.5 text-left whitespace-normal text-foreground">
                           <span className="inline-flex min-w-0 items-center gap-2">
                             {(() => {
-                              const ModelIcon = getModelProviderPresentation({ slug: row.model })?.Icon;
-                              return ModelIcon ? <ModelIcon className="size-4 shrink-0" aria-hidden /> : null;
+                              const ModelIcon = getModelProviderPresentation({
+                                slug: row.model,
+                              })?.Icon;
+                              return ModelIcon ? (
+                                <ModelIcon className="size-4 shrink-0" aria-hidden />
+                              ) : null;
                             })()}
                             <span>{getDisplayModelName({ slug: row.model, name: row.model })}</span>
                           </span>

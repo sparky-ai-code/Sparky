@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalErrorInEffectCatch:off globalErrorInEffectFailure:off
 import * as NodeFS from "node:fs";
 
 import * as Effect from "effect/Effect";

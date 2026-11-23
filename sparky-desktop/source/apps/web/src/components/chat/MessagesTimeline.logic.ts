@@ -24,13 +24,18 @@ export interface AgentThreadAttribution {
 }
 
 export function parseAgentThreadAttribution(text: string): AgentThreadAttribution | null {
-  const match = /^\[Message from Sparky agent in thread (.+?) \(environment (.+?)\)\]\nReply to this agent with sparky_thread_message\(threadId=("(?:[^"\\]|\\.)*"), environmentId=("(?:[^"\\]|\\.)*")\)\. A reply in this conversation alone is not delivered to the sender\.\n\n([\s\S]*)$/.exec(text);
+  const match =
+    /^\[Message from Sparky agent in thread (.+?) \(environment (.+?)\)\]\nReply to this agent with sparky_thread_message\(threadId=("(?:[^"\\]|\\.)*"), environmentId=("(?:[^"\\]|\\.)*")\)\. A reply in this conversation alone is not delivered to the sender\.\n\n([\s\S]*)$/.exec(
+      text,
+    );
   if (!match) return null;
+  // Destructure with defaults so every group is a string under strict indexing.
+  const [, , , threadJson = "", environmentJson = "", message = ""] = match;
   try {
-    const threadId = JSON.parse(match[3]) as unknown;
-    const environmentId = JSON.parse(match[4]) as unknown;
+    const threadId = JSON.parse(threadJson) as unknown;
+    const environmentId = JSON.parse(environmentJson) as unknown;
     if (typeof threadId !== "string" || typeof environmentId !== "string") return null;
-    return { threadId, environmentId, message: match[5] };
+    return { threadId, environmentId, message };
   } catch {
     return null;
   }
@@ -240,7 +245,10 @@ export function computeMessageDurationStart(
 }
 
 export function normalizeCompactToolLabel(value: string): string {
-  return value.replace(/_/g, " ").replace(/\s+(?:complete|completed)\s*$/i, "").trim();
+  return value
+    .replace(/_/g, " ")
+    .replace(/\s+(?:complete|completed)\s*$/i, "")
+    .trim();
 }
 
 export function resolveAssistantMessageCopyState({

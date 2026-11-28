@@ -8,6 +8,8 @@ import {
   isProviderInstancePickerVisible,
   resolveSelectableProviderInstance,
   resolveProviderDriverKindForInstanceSelection,
+  selectModelPickerRailInstances,
+  type ProviderInstanceEntry,
 } from "./providerInstances";
 
 function provider(input: {
@@ -232,5 +234,38 @@ describe("resolveProviderDriverKindForInstanceSelection", () => {
         ProviderInstanceId.make("removed_instance"),
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("selectModelPickerRailInstances", () => {
+  const entry = (driverKind: string, instanceId: string, enabled = true) =>
+    ({
+      instanceId,
+      driverKind,
+      enabled,
+      displayName: instanceId,
+    }) as unknown as ProviderInstanceEntry;
+
+  it("keeps Claude Code's rail beside Sparky's catalogs", () => {
+    const rail = selectModelPickerRailInstances(
+      [entry("sparky", "sparky"), entry("claudeAgent", "claudeAgent"), entry("codex", "codex")],
+      { sparkyCatalogsShown: true },
+    );
+    expect(rail.map((item) => item.instanceId)).toEqual(["claudeAgent"]);
+  });
+
+  it("hides disabled Claude Code instances", () => {
+    const rail = selectModelPickerRailInstances([entry("claudeAgent", "claudeAgent", false)], {
+      sparkyCatalogsShown: true,
+    });
+    expect(rail).toEqual([]);
+  });
+
+  it("shows every enabled instance when Sparky catalogs are not shown", () => {
+    const rail = selectModelPickerRailInstances(
+      [entry("sparky", "sparky"), entry("claudeAgent", "claudeAgent")],
+      { sparkyCatalogsShown: false },
+    );
+    expect(rail.map((item) => item.instanceId)).toEqual(["sparky", "claudeAgent"]);
   });
 });

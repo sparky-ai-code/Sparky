@@ -50,6 +50,7 @@ export const GroqLogo: Icon = ({ className }) =>
 
 const MODEL_PROVIDER_PRESENTATION_BY_LABEL: Readonly<Record<string, ModelProviderPresentation>> = {
   Claude: { label: "Claude", Icon: ClaudeAI },
+  "Claude Code": { label: "Claude Code", Icon: ClaudeAI },
   Google: { label: "Google", Icon: Gemini },
   OpenAI: { label: "OpenAI", Icon: OpenAI },
   "OpenAI Codex": { label: "OpenAI Codex", Icon: OpenAI },

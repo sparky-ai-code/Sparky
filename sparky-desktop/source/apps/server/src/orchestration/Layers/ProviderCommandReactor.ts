@@ -563,7 +563,7 @@ const make = Effect.gen(function* () {
       activeSession !== undefined &&
       activeSession.providerInstanceId !== undefined
         ? activeSession.providerInstanceId
-        : thread.modelSelection.instanceId;
+        : (thread.session?.providerInstanceId ?? thread.modelSelection.instanceId);
     const storedDesiredModelSelection = yield* annotateModelSelectionContextSource({
       selection: requestedModelSelection ?? thread.modelSelection,
       thread,
@@ -572,12 +572,14 @@ const make = Effect.gen(function* () {
       providerService.getInstanceInfo(storedInstanceId).pipe(
         Effect.map((info) => ({ instanceId: storedInstanceId, info, migrated: false }) as const),
         Effect.catch((originalError) =>
-          providerService.getInstanceInfo(SPARKY_INSTANCE_ID).pipe(
-            Effect.map(
-              (info) => ({ instanceId: SPARKY_INSTANCE_ID, info, migrated: true }) as const,
-            ),
-            Effect.mapError(() => originalError),
-          ),
+          storedInstanceId === "claudeAgent"
+            ? Effect.fail(originalError)
+            : providerService.getInstanceInfo(SPARKY_INSTANCE_ID).pipe(
+                Effect.map(
+                  (info) => ({ instanceId: SPARKY_INSTANCE_ID, info, migrated: true }) as const,
+                ),
+                Effect.mapError(() => originalError),
+              ),
         ),
       );
     const currentResolution = yield* resolveInstanceWithSparkyMigration(

@@ -3,6 +3,8 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
+  type OrchestrationThread,
+  type ProviderInstanceId,
   UNSCOPED_CHAT_PROJECT_ID,
 } from "@sparky/contracts";
 import * as DateTime from "effect/DateTime";
@@ -24,6 +26,16 @@ import {
 import { projectEvent } from "./projector.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+
+function isClaudeCodeProviderChange(thread: OrchestrationThread, requested: ProviderInstanceId | undefined) {
+  const current = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+  return requested !== undefined && requested !== current &&
+    (current === "claudeAgent" || requested === "claudeAgent" || thread.session?.providerName === "claudeAgent");
+}
+
+function hasAcceptedPrompt(thread: OrchestrationThread) {
+  return thread.session !== null || thread.latestTurn !== null || thread.messages.some(({ role }) => role === "user");
+}
 
 function withEventBase(
   input: Pick<OrchestrationCommand, "commandId"> & {
@@ -336,6 +348,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (hasAcceptedPrompt(thread) && isClaudeCodeProviderChange(thread, command.modelSelection?.instanceId)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Start a new thread to switch to or from Claude Code.",
+        });
+      }
       const branch =
         command.branch !== undefined &&
         command.expectedBranch !== undefined &&
@@ -416,6 +434,15 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      // The reactor enforces the bound instance once a provider session exists.
+      // Cover the gap between accepting the first prompt and creating that session.
+      if (targetThread.session === null && hasAcceptedPrompt(targetThread) &&
+        isClaudeCodeProviderChange(targetThread, command.modelSelection?.instanceId)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Start a new thread to switch to or from Claude Code.",
+        });
+      }
       const sourceProposedPlan = command.sourceProposedPlan;
       const sourceThread = sourceProposedPlan
         ? yield* requireThread({
@@ -485,9 +512,23 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           createdAt: command.createdAt,
         },
       };
-      return existingUserMessage
-        ? [turnStartRequestedEvent]
-        : [userMessageEvent, turnStartRequestedEvent];
+      const events = existingUserMessage ? [turnStartRequestedEvent] : [userMessageEvent, turnStartRequestedEvent];
+      const selection = command.modelSelection;
+      if (selection && targetThread.session === null && !hasAcceptedPrompt(targetThread) &&
+        isClaudeCodeProviderChange(targetThread, selection.instanceId)) {
+        // Bind a first-turn picker override before accepting another command.
+        events.unshift({
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.meta-updated",
+          payload: { threadId: command.threadId, modelSelection: selection, updatedAt: command.createdAt },
+        });
+      }
+      return events;
     }
 
     case "thread.turn.interrupt": {

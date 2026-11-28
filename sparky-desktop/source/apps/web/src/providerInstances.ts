@@ -305,3 +305,24 @@ export function resolveProviderDriverKindForInstanceSelection(
   }
   return undefined;
 }
+
+/**
+ * Native runtimes that keep their own provider rail beside Sparky's aggregated
+ * catalogs. Claude Code uses its own CLI login and transcripts, so its models
+ * are not part of any Sparky catalog section.
+ */
+const NATIVE_RUNTIME_RAIL_DRIVERS: ReadonlySet<string> = new Set(["claudeAgent"]);
+
+/**
+ * Provider rail entries for the model picker. When Sparky's catalogs are shown,
+ * only enabled native runtimes such as Claude Code get their own rail; other
+ * instances stay hidden to avoid duplicate catalog entries.
+ */
+export function selectModelPickerRailInstances(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+  options: { readonly sparkyCatalogsShown: boolean },
+): ReadonlyArray<ProviderInstanceEntry> {
+  const visible = entries.filter(isProviderInstancePickerVisible);
+  if (!options.sparkyCatalogsShown) return visible;
+  return visible.filter((entry) => NATIVE_RUNTIME_RAIL_DRIVERS.has(entry.driverKind));
+}

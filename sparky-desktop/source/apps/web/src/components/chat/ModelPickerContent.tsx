@@ -30,7 +30,7 @@ import { cn } from "~/lib/utils";
 import { TooltipProvider } from "../ui/tooltip";
 import {
   isProviderInstanceModelListAvailable,
-  isProviderInstancePickerVisible,
+  selectModelPickerRailInstances,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
@@ -250,13 +250,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     return disabled;
   }, [instanceEntries, isLocked, matchesLockedProvider]);
   // Sparky exposes the aggregated Claude/OpenAI/Google catalogs as
-  // the provider rail. Do not append the underlying native instances, which
-  // only produce duplicate or initials-only entries (CL/CO/GR/OP).
+  // the provider rail. Other native instances are not appended, since they
+  // only produce duplicate or initials-only entries (CL/CO/GR/OP). Claude Code
+  // is the exception: it has its own models and keeps its own rail.
   const sidebarInstanceEntries = useMemo(() => {
-    if (isSparkyRuntime) {
-      return [];
-    }
-    const enabledEntries = instanceEntries.filter(isProviderInstancePickerVisible);
+    const enabledEntries = selectModelPickerRailInstances(instanceEntries, {
+      sparkyCatalogsShown: isSparkyRuntime,
+    });
     const available: ProviderInstanceEntry[] = [];
     const disabled: ProviderInstanceEntry[] = [];
     for (const entry of enabledEntries) {
